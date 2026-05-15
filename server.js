@@ -96,7 +96,12 @@ app.use(session({
   }
 }));
 
-app.use(express.static(path.join(__dirname, 'public')));
+// Statické soubory (CSS, JS, obrázky) - bez auth
+// HTML soubory jsou chráněny přes explicitní routes níže
+app.use(express.static(path.join(__dirname, 'public'), {
+  index: false,  // Nezobrazovat index.html automaticky
+  extensions: [] // Nezkoušet přidat přípony
+}));
 
 // ── Auth middleware ──
 function requireAuth(req, res, next) {
