@@ -92,7 +92,7 @@ app.use(session({
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 dní
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production'
+    secure: false  // Railway proxy řeší HTTPS
   }
 }));
 
