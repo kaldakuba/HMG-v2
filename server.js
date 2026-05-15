@@ -1,250 +1,269 @@
 const express = require('express');
-const Database = require('better-sqlite3');
 const path = require('path');
 const crypto = require('crypto');
 const cookieParser = require('cookie-parser');
+const { Pool } = require('pg');
+const multer = require('multer');
+const XLSX = require('xlsx');
+const bcrypt = require('bcrypt');
+const session = require('express-session');
+const pgSession = require('connect-pg-simple')(session);
 
 const app = express();
-app.set('trust proxy', 1); // Railway reverse proxy
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
+
+// ── PostgreSQL pool ──
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('railway')
+    ? { rejectUnauthorized: false }
+    : false
+});
+
+// ── Inicializace tabulek ──
+async function initDb() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS week_data (
+      week_start TEXT PRIMARY KEY,
+      rows_json  TEXT NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS inputs (
+      id         INTEGER PRIMARY KEY DEFAULT 1,
+      rows_json  TEXT NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS companies (
+      id         INTEGER PRIMARY KEY DEFAULT 1,
+      data_json  TEXT NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS month_entries (
+      id         INTEGER PRIMARY KEY DEFAULT 1,
+      data_json  TEXT NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS users (
+      id            SERIAL PRIMARY KEY,
+      username      TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      role          TEXT NOT NULL DEFAULT 'viewer',
+      created_at    TIMESTAMPTZ DEFAULT NOW(),
+      last_seen     TIMESTAMPTZ
+    );
+    CREATE TABLE IF NOT EXISTS session (
+      sid    VARCHAR NOT NULL COLLATE "default",
+      sess   JSON NOT NULL,
+      expire TIMESTAMPTZ NOT NULL,
+      CONSTRAINT session_pkey PRIMARY KEY (sid) NOT DEFERRABLE INITIALLY IMMEDIATE
+    );
+    CREATE INDEX IF NOT EXISTS IDX_session_expire ON session (expire);
+  `);
+
+  // Vytvoř výchozího admina pokud neexistuje
+  const adminUser = process.env.ADMIN_USERNAME || 'admin';
+  const adminPass = process.env.ADMIN_PASSWORD || 'hmg2026';
+  const existing = await pool.query('SELECT id FROM users WHERE username = $1', [adminUser]);
+  if (existing.rows.length === 0) {
+    const hash = await bcrypt.hash(adminPass, 12);
+    await pool.query(
+      'INSERT INTO users (username, password_hash, role) VALUES ($1, $2, $3)',
+      [adminUser, hash, 'admin']
+    );
+    console.log(`Vytvořen admin účet: ${adminUser}`);
+  }
+}
 
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
-// Railway persistent volume - nastav volume mount path na /data v Railway dashboardu
-// Lokálně se použije ./data.db
-const DB_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH 
-  ? require('path').join(process.env.RAILWAY_VOLUME_MOUNT_PATH, 'data.db')
-  : path.join(__dirname, 'data.db');
-console.log('DB path:', DB_PATH);
-const db = new Database(DB_PATH);
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS week_data (
-    week_start TEXT PRIMARY KEY,
-    rows_json TEXT NOT NULL,
-    updated_at TEXT DEFAULT (datetime('now'))
-  );
-  CREATE TABLE IF NOT EXISTS inputs (
-    id INTEGER PRIMARY KEY,
-    rows_json TEXT NOT NULL,
-    updated_at TEXT DEFAULT (datetime('now'))
-  );
-  CREATE TABLE IF NOT EXISTS companies (
-    id INTEGER PRIMARY KEY,
-    data_json TEXT NOT NULL,
-    updated_at TEXT DEFAULT (datetime('now'))
-  );
-  CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS month_entries (
-    id INTEGER PRIMARY KEY,
-    data_json TEXT NOT NULL,
-    updated_at TEXT DEFAULT (datetime('now'))
-  );
-  CREATE TABLE IF NOT EXISTS viewers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT NOT NULL UNIQUE,
-    invite_token TEXT,
-    invite_used INTEGER DEFAULT 0,
-    session_token TEXT,
-    status TEXT DEFAULT 'pending',
-    created_at TEXT DEFAULT (datetime('now')),
-    last_seen TEXT
-  );
-`);
+// ── Sessions ──
+app.use(session({
+  store: new pgSession({ pool, tableName: 'session' }),
+  secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 dní
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production'
+  }
+}));
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-function requireViewer(req, res, next) {
-  try {
-    // Token může být v URL (?t=...) nebo v cookie
-    const token = req.query.t || (req.cookies && req.cookies.hmg_viewer_token);
-    if (!token) return res.redirect('/month-login');
-    const viewer = db.prepare('SELECT * FROM viewers WHERE session_token = ? AND status = ?').get(token, 'active');
-    if (!viewer) return res.redirect('/month-login');
-    try { db.prepare('UPDATE viewers SET last_seen = datetime("now") WHERE id = ?').run(viewer.id); } catch(e){}
-    req.viewer = viewer;
-    // Uložit token do cookie jako záloha
-    try {
-      res.cookie('hmg_viewer_token', token, {
-        httpOnly: true, maxAge: 365*24*60*60*1000, sameSite: 'lax'
-      });
-    } catch(e){}
-    next();
-  } catch(err) {
-    console.error('requireViewer error:', err);
-    res.redirect('/month-login');
+// ── Auth middleware ──
+function requireAuth(req, res, next) {
+  if (req.session && req.session.userId) return next();
+  if (req.xhr || req.path.startsWith('/api/')) {
+    return res.status(401).json({ error: 'Nepřihlášen' });
   }
+  res.redirect('/login');
 }
 
-app.get("/month", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "month.html"));
-});
-
-app.get("/inputs", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "inputs.html"));
-});
-
-app.get("/month-view", (req, res) => {
-  // Stránka se načte vždy, ověření tokenu probíhá v JS přes /api/viewer-check
-  const fp = path.join(__dirname, 'public', 'month-view.html');
-  res.sendFile(fp, err => {
-    if (err) {
-      console.error('month-view sendFile error:', err);
-      res.status(500).send('Soubor month-view.html nebyl nalezen na serveru.');
-    }
-  });
-});
-
-app.get('/month-login', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'month-login.html'));
-});
-
-app.get('/api/verify/:token', (req, res) => {
-  const { token } = req.params;
-
-  // Nejdřív zkus najít jako invite_token
-  let viewer = db.prepare('SELECT * FROM viewers WHERE invite_token = ?').get(token);
-  if (viewer) {
-    // Aktivuj - invite token se stane session tokenem (NEMAŽ ho - TrendMicro ho spotřebuje dřív)
-    db.prepare(`UPDATE viewers SET session_token=?, status='active', last_seen=datetime('now') WHERE id=?`)
-      .run(token, viewer.id);
-    // Přesměruj s tímto tokenem - platí opakovaně dokud admin neodvolá
-    return res.redirect('/month-view?t=' + token);
+function requireAdmin(req, res, next) {
+  if (req.session && req.session.role === 'admin') return next();
+  if (req.path.startsWith('/api/')) {
+    return res.status(403).json({ error: 'Nedostatečná oprávnění' });
   }
+  res.redirect('/');
+}
 
-  // Zkus jako session_token (opakované použití)
-  viewer = db.prepare('SELECT * FROM viewers WHERE session_token = ? AND status = ?').get(token, 'active');
-  if (viewer) {
-    db.prepare('UPDATE viewers SET last_seen = datetime("now") WHERE id = ?').run(viewer.id);
-    return res.redirect('/month-view?t=' + token);
-  }
-
-  return res.redirect('/month-login?err=invalid');
+// ── Stránky ──
+app.get('/login', (req, res) => {
+  if (req.session && req.session.userId) return res.redirect('/');
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
-// Ověření tokenu pro month-view
-app.get('/api/viewer-check', (req, res) => {
-  const token = req.query.t;
-  if (!token) return res.json({ ok: false });
-  const viewer = db.prepare('SELECT email, status FROM viewers WHERE session_token = ? AND status = ?').get(token, 'active');
-  if (!viewer) return res.json({ ok: false });
-  db.prepare('UPDATE viewers SET last_seen = datetime("now") WHERE session_token = ?').run(token);
-  res.json({ ok: true, email: viewer.email });
-});
-
-app.get('/api/viewers', (req, res) => {
-  const rows = db.prepare('SELECT id, email, status, invite_used, created_at, last_seen FROM viewers ORDER BY created_at DESC').all();
-  res.json(rows);
-});
-
-app.post('/api/viewers', (req, res) => {
-  const { email } = req.body;
-  if (!email || !email.includes('@')) return res.status(400).json({ error: 'Neplatný email' });
-  const existing = db.prepare('SELECT * FROM viewers WHERE email = ?').get(email);
-  const inviteToken = crypto.randomBytes(24).toString('hex');
-  if (existing) {
-    db.prepare(`UPDATE viewers SET invite_token=?, invite_used=0, session_token=NULL, status='pending', created_at=datetime('now') WHERE email=?`).run(inviteToken, email);
-  } else {
-    db.prepare(`INSERT INTO viewers (email, invite_token, status) VALUES (?, ?, 'pending')`).run(email, inviteToken);
-  }
-  const baseUrl = req.protocol + '://' + req.get('host');
-  const link = `${baseUrl}/api/verify/${inviteToken}`;
-  res.json({ ok: true, link, email });
-});
-
-app.post('/api/viewers/:id/revoke', (req, res) => {
-  db.prepare(`UPDATE viewers SET status='revoked', session_token=NULL WHERE id=?`).run(req.params.id);
-  res.json({ ok: true });
-});
-
-app.post('/api/viewers/:id/restore', (req, res) => {
-  const inviteToken = crypto.randomBytes(24).toString('hex');
-  db.prepare(`UPDATE viewers SET status='pending', invite_token=?, invite_used=0, session_token=NULL WHERE id=?`).run(inviteToken, req.params.id);
-  const viewer = db.prepare('SELECT email FROM viewers WHERE id=?').get(req.params.id);
-  const baseUrl = req.protocol + '://' + req.get('host');
-  const link = `${baseUrl}/api/verify/${inviteToken}`;
-  res.json({ ok: true, link, email: viewer.email });
-});
-
-app.delete('/api/viewers/:id', (req, res) => {
-  db.prepare('DELETE FROM viewers WHERE id=?').run(req.params.id);
-  res.json({ ok: true });
-});
-
-app.get('/api/week/:start', (req, res) => {
-  const row = db.prepare('SELECT rows_json FROM week_data WHERE week_start=?').get(req.params.start);
-  res.json(row ? JSON.parse(row.rows_json) : null);
-});
-app.post('/api/week/:start', (req, res) => {
-  const { rows } = req.body;
-  db.prepare(`INSERT INTO week_data (week_start,rows_json,updated_at) VALUES(?,?,datetime('now')) ON CONFLICT(week_start) DO UPDATE SET rows_json=excluded.rows_json,updated_at=excluded.updated_at`).run(req.params.start, JSON.stringify(rows));
-  res.json({ ok: true });
-});
-app.get('/api/weeks', (req, res) => {
-  const rows = db.prepare('SELECT week_start,rows_json FROM week_data ORDER BY week_start').all();
-  res.json(rows.map(r => ({ start: r.week_start, rows: JSON.parse(r.rows_json) })));
-});
-app.get('/api/month-entries', (req, res) => {
-  // Ověř token pokud přichází z month-view (má ?t=)
-  if (req.query.t) {
-    const viewer = db.prepare('SELECT * FROM viewers WHERE session_token = ? AND status = ?').get(req.query.t, 'active');
-    if (!viewer) return res.status(403).json({ error: 'Přístup zamítnut' });
-    try { db.prepare('UPDATE viewers SET last_seen = datetime("now") WHERE id = ?').run(viewer.id); } catch(e){}
-  }
-  const row = db.prepare('SELECT data_json FROM month_entries WHERE id=1').get();
-  res.json(row ? JSON.parse(row.data_json) : {});
-});
-app.post('/api/month-entries', (req, res) => {
-  db.prepare(`INSERT INTO month_entries (id,data_json,updated_at) VALUES(1,?,datetime('now')) ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json,updated_at=excluded.updated_at`).run(JSON.stringify(req.body));
-  res.json({ ok: true });
-});
-app.get('/api/inputs', (req, res) => {
-  const row = db.prepare('SELECT rows_json FROM inputs WHERE id=1').get();
-  res.json(row ? JSON.parse(row.rows_json) : null);
-});
-app.post('/api/inputs', (req, res) => {
-  const { rows } = req.body;
-  db.prepare(`INSERT INTO inputs (id,rows_json,updated_at) VALUES(1,?,datetime('now')) ON CONFLICT(id) DO UPDATE SET rows_json=excluded.rows_json,updated_at=excluded.updated_at`).run(JSON.stringify(rows));
-  res.json({ ok: true });
-});
-app.get('/api/companies', (req, res) => {
-  const row = db.prepare('SELECT data_json FROM companies WHERE id=1').get();
-  res.json(row ? JSON.parse(row.data_json) : null);
-});
-app.post('/api/companies', (req, res) => {
-  const { companies } = req.body;
-  db.prepare(`INSERT INTO companies (id,data_json,updated_at) VALUES(1,?,datetime('now')) ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json,updated_at=excluded.updated_at`).run(JSON.stringify(companies));
-  res.json({ ok: true });
-});
-app.get('/api/settings', (req, res) => {
-  const rows = db.prepare('SELECT key,value FROM settings').all();
-  const obj = {}; rows.forEach(r => obj[r.key]=r.value); res.json(obj);
-});
-app.post('/api/settings', (req, res) => {
-  const upsert = db.prepare(`INSERT INTO settings (key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`);
-  Object.entries(req.body).forEach(([k,v]) => upsert.run(k, String(v)));
-  res.json({ ok: true });
-});
-app.get('/api/export', (req, res) => {
-  const weeks = db.prepare('SELECT week_start,rows_json FROM week_data ORDER BY week_start').all().map(r=>({start:r.week_start,rows:JSON.parse(r.rows_json)}));
-  res.json({ version:2, type:'HMG_WEEK_DATA', created:new Date().toISOString(), weeks });
-});
-
-app.get('*', (req, res) => {
+app.get('/', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// ── IMPORT Z EXCELU (xlsx, cellDates:false = raw serial numbers) ──
-const multer = require('multer');
-const XLSX = require('xlsx');
+app.get('/month', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'month.html'));
+});
+
+app.get('/inputs', requireAuth, requireAdmin, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'inputs.html'));
+});
+
+app.get('/month-view', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'month-view.html'));
+});
+
+// ── Auth API ──
+app.post('/api/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'Vyplňte jméno a heslo' });
+    const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    const user = result.rows[0];
+    if (!user) return res.status(401).json({ error: 'Nesprávné jméno nebo heslo' });
+    const ok = await bcrypt.compare(password, user.password_hash);
+    if (!ok) return res.status(401).json({ error: 'Nesprávné jméno nebo heslo' });
+    req.session.userId = user.id;
+    req.session.username = user.username;
+    req.session.role = user.role;
+    await pool.query('UPDATE users SET last_seen = NOW() WHERE id = $1', [user.id]);
+    res.json({ ok: true, role: user.role });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+app.post('/api/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie('connect.sid');
+    res.json({ ok: true });
+  });
+});
+
+app.get('/api/me', requireAuth, (req, res) => {
+  res.json({ username: req.session.username, role: req.session.role });
+});
+
+// ── Data API (chráněno přihlášením) ──
+app.get('/api/week/:start', requireAuth, async (req, res) => {
+  const r = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1', [req.params.start]);
+  res.json(r.rows[0] ? JSON.parse(r.rows[0].rows_json) : null);
+});
+
+app.post('/api/week/:start', requireAuth, requireAdmin, async (req, res) => {
+  const { rows } = req.body;
+  await pool.query(
+    `INSERT INTO week_data (week_start,rows_json,updated_at) VALUES($1,$2,NOW())
+     ON CONFLICT(week_start) DO UPDATE SET rows_json=EXCLUDED.rows_json, updated_at=NOW()`,
+    [req.params.start, JSON.stringify(rows)]
+  );
+  res.json({ ok: true });
+});
+
+app.get('/api/weeks', requireAuth, async (req, res) => {
+  const r = await pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start');
+  res.json(r.rows.map(r => ({ start: r.week_start, rows: JSON.parse(r.rows_json) })));
+});
+
+app.get('/api/month-entries', requireAuth, async (req, res) => {
+  const r = await pool.query('SELECT data_json FROM month_entries WHERE id=1');
+  res.json(r.rows[0] ? JSON.parse(r.rows[0].data_json) : {});
+});
+
+app.post('/api/month-entries', requireAuth, requireAdmin, async (req, res) => {
+  await pool.query(
+    `INSERT INTO month_entries (id,data_json,updated_at) VALUES(1,$1,NOW())
+     ON CONFLICT(id) DO UPDATE SET data_json=EXCLUDED.data_json, updated_at=NOW()`,
+    [JSON.stringify(req.body)]
+  );
+  res.json({ ok: true });
+});
+
+app.get('/api/inputs', requireAuth, async (req, res) => {
+  const r = await pool.query('SELECT rows_json FROM inputs WHERE id=1');
+  res.json(r.rows[0] ? JSON.parse(r.rows[0].rows_json) : null);
+});
+
+app.post('/api/inputs', requireAuth, requireAdmin, async (req, res) => {
+  const { rows } = req.body;
+  await pool.query(
+    `INSERT INTO inputs (id,rows_json,updated_at) VALUES(1,$1,NOW())
+     ON CONFLICT(id) DO UPDATE SET rows_json=EXCLUDED.rows_json, updated_at=NOW()`,
+    [JSON.stringify(rows)]
+  );
+  res.json({ ok: true });
+});
+
+app.get('/api/companies', requireAuth, async (req, res) => {
+  const r = await pool.query('SELECT data_json FROM companies WHERE id=1');
+  res.json(r.rows[0] ? JSON.parse(r.rows[0].data_json) : null);
+});
+
+app.post('/api/companies', requireAuth, requireAdmin, async (req, res) => {
+  const { companies } = req.body;
+  await pool.query(
+    `INSERT INTO companies (id,data_json,updated_at) VALUES(1,$1,NOW())
+     ON CONFLICT(id) DO UPDATE SET data_json=EXCLUDED.data_json, updated_at=NOW()`,
+    [JSON.stringify(companies)]
+  );
+  res.json({ ok: true });
+});
+
+app.get('/api/settings', requireAuth, async (req, res) => {
+  const r = await pool.query('SELECT key,value FROM settings');
+  const obj = {};
+  r.rows.forEach(row => obj[row.key] = row.value);
+  res.json(obj);
+});
+
+app.post('/api/settings', requireAuth, requireAdmin, async (req, res) => {
+  for (const [k, v] of Object.entries(req.body)) {
+    await pool.query(
+      `INSERT INTO settings (key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,
+      [k, String(v)]
+    );
+  }
+  res.json({ ok: true });
+});
+
+app.get('/api/export', requireAuth, async (req, res) => {
+  const r = await pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start');
+  res.json({
+    version: 2, type: 'HMG_WEEK_DATA',
+    created: new Date().toISOString(),
+    weeks: r.rows.map(row => ({ start: row.week_start, rows: JSON.parse(row.rows_json) }))
+  });
+});
+
+// ── Import z Excelu ──
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 function xlsxDateToIso(serial) {
-  // Excel serial -> ISO date string
   const d = XLSX.SSF.parse_date_code(serial);
   if (!d) return null;
   return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
@@ -252,18 +271,15 @@ function xlsxDateToIso(serial) {
 
 function fv(v) {
   if (v === null || v === undefined || v === '') return '';
-  if (typeof v === 'object') return ''; // datum objekt
+  if (typeof v === 'object') return '';
   const n = parseFloat(v);
   return isNaN(n) || n === 0 ? '' : Math.round(n * 10) / 10;
 }
 
-app.post('/api/import-excel', upload.single('file'), (req, res) => {
+app.post('/api/import-excel', requireAuth, requireAdmin, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Žádný soubor' });
   try {
-    // cellDates:false = všechny datumy jako čísla (serial), raw:true = neformátovat
     const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: false, raw: true });
-
-    // ── RECEPTURY ──
     const recSheet = wb.Sheets['seznam balenéreceptury'];
     if (!recSheet) return res.status(400).json({ error: 'Chybí záložka "seznam balenéreceptury"' });
 
@@ -278,7 +294,7 @@ app.post('/api/import-excel', upload.single('file'), (req, res) => {
       if (isNaN(cisloNum)) continue;
       const cislo = String(Math.round(cisloNum));
       const smes = String(r[1]).trim();
-      const zt   = r[2] ? String(r[2]).trim() : '';
+      const zt = r[2] ? String(r[2]).trim() : '';
       if (zt) ittToCislo[zt] = cislo;
       receptury.push({
         cislo, smes, zt,
@@ -290,7 +306,6 @@ app.post('/api/import-excel', upload.single('file'), (req, res) => {
       });
     }
 
-    // ── TÝDENNÍ DATA ──
     const weekSheets = wb.SheetNames.filter(s => /^\d+$/.test(s));
     const weekMap = {};
     const hmgEntries = {};
@@ -298,122 +313,83 @@ app.post('/api/import-excel', upload.single('file'), (req, res) => {
     for (const sheetName of weekSheets) {
       const ws = wb.Sheets[sheetName];
       if (!ws) continue;
-
-      // Řádek 2 (index 1 = row 2): datumy v sloupcích G-M (col index 6-12)
-      // S cellDates:false jsou datumy Excel serial čísla
       const dates = [];
       for (let ci = 6; ci <= 12; ci++) {
         const addr = XLSX.utils.encode_cell({ r: 1, c: ci });
         const cell = ws[addr];
         if (!cell) { dates.push(null); continue; }
-        // Datum buňka má type 'n' a number_format obsahuje datum
         let iso = null;
-        if (cell.t === 'n' && cell.v > 40000) {
-          iso = xlsxDateToIso(cell.v);
-        } else if (cell.t === 'd') {
+        if (cell.t === 'n' && cell.v > 40000) iso = xlsxDateToIso(cell.v);
+        else if (cell.t === 'd') {
           const dt = new Date(cell.v);
           iso = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
         }
         dates.push(iso);
       }
-
       const weekStart = dates[0];
       if (!weekStart) continue;
 
       const rows = [];
-      // Řádky 3-35 (row index 2-34)
       for (let ri = 2; ri <= 34; ri++) {
-        const getCell = (ci) => {
-          const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
-          return ws[addr] || null;
-        };
-        const getStr = (ci) => {
-          const cell = getCell(ci);
-          if (!cell) return '';
-          // Pokud je to vzorec (f) s výsledkem (v)
-          if (cell.v !== undefined && cell.v !== null) return String(cell.v).trim();
-          return '';
-        };
-        const getNum = (ci) => {
-          const cell = getCell(ci);
-          if (!cell || cell.v === undefined || cell.v === null) return '';
-          const n = parseFloat(cell.v);
-          return (isNaN(n) || n <= 0) ? '' : Math.round(n);
-        };
-
-        const smes = getStr(3);
-        const itt  = getStr(4);
-        const ceta = getStr(5);
+        const getCell = (ci) => ws[XLSX.utils.encode_cell({ r: ri, c: ci })] || null;
+        const getStr = (ci) => { const c = getCell(ci); return c && c.v !== undefined ? String(c.v).trim() : ''; };
+        const getNum = (ci) => { const c = getCell(ci); if (!c || c.v === undefined) return ''; const n = parseFloat(c.v); return (isNaN(n) || n <= 0) ? '' : Math.round(n); };
+        const smes = getStr(3); const itt = getStr(4); const ceta = getStr(5);
         if (!smes || !itt) continue;
-
-        // Cislo - může být vzorec, bereme hodnotu nebo z mapy
         let cislo = '';
         const cisloCell = getCell(0);
-        if (cisloCell && cisloCell.v !== undefined && cisloCell.v !== null) {
-          const n = parseFloat(cisloCell.v);
-          if (!isNaN(n) && n > 0) cislo = String(Math.round(n));
-        }
+        if (cisloCell && cisloCell.v !== undefined) { const n = parseFloat(cisloCell.v); if (!isNaN(n) && n > 0) cislo = String(Math.round(n)); }
         if (!cislo) cislo = ittToCislo[itt] || '';
-
-        // Objednávka
         let objednavka = getStr(2);
         const objCell = getCell(2);
         if (objCell && objCell.t === 'n') objednavka = String(Math.round(objCell.v));
-
         const entry = {
-          checked: false, cislo,
-          lokalita: getStr(1), objednavka,
-          smes, itt, ceta,
+          checked: false, cislo, lokalita: getStr(1), objednavka, smes, itt, ceta,
           d0: getNum(6), d1: getNum(7), d2: getNum(8), d3: getNum(9),
           d4: getNum(10), d5: getNum(11), d6: getNum(12)
         };
         rows.push(entry);
-
-        // Měsíční záznamy
         for (let di = 0; di <= 6; di++) {
           const tuny = parseInt(entry[`d${di}`]) || 0;
           if (!tuny || !dates[di]) continue;
           if (!hmgEntries[dates[di]]) hmgEntries[dates[di]] = [];
-          hmgEntries[dates[di]].push({
-            lokalita: entry.lokalita, objednavka: entry.objednavka,
-            smes, itt, ceta, tuny
-          });
+          hmgEntries[dates[di]].push({ lokalita: entry.lokalita, objednavka: entry.objednavka, smes, itt, ceta, tuny });
         }
       }
-
       if (rows.length > 0) weekMap[weekStart] = rows;
     }
 
-    // ── ULOŽIT DO DB ──
     if (receptury.length > 0) {
-      db.prepare(`INSERT INTO inputs (id, rows_json, updated_at) VALUES (1, ?, datetime('now'))
-        ON CONFLICT(id) DO UPDATE SET rows_json=excluded.rows_json, updated_at=excluded.updated_at`)
-        .run(JSON.stringify(receptury));
+      await pool.query(
+        `INSERT INTO inputs (id,rows_json,updated_at) VALUES(1,$1,NOW()) ON CONFLICT(id) DO UPDATE SET rows_json=EXCLUDED.rows_json,updated_at=NOW()`,
+        [JSON.stringify(receptury)]
+      );
     }
-
-    const upsertWeek = db.prepare(`INSERT INTO week_data (week_start, rows_json, updated_at) VALUES (?, ?, datetime('now'))
-      ON CONFLICT(week_start) DO UPDATE SET rows_json=excluded.rows_json, updated_at=excluded.updated_at`);
     for (const [ws, rows] of Object.entries(weekMap)) {
-      upsertWeek.run(ws, JSON.stringify(rows));
+      await pool.query(
+        `INSERT INTO week_data (week_start,rows_json,updated_at) VALUES($1,$2,NOW()) ON CONFLICT(week_start) DO UPDATE SET rows_json=EXCLUDED.rows_json,updated_at=NOW()`,
+        [ws, JSON.stringify(rows)]
+      );
     }
-
     if (Object.keys(hmgEntries).length > 0) {
-      db.prepare(`INSERT INTO month_entries (id, data_json, updated_at) VALUES (1, ?, datetime('now'))
-        ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json, updated_at=excluded.updated_at`)
-        .run(JSON.stringify(hmgEntries));
+      await pool.query(
+        `INSERT INTO month_entries (id,data_json,updated_at) VALUES(1,$1,NOW()) ON CONFLICT(id) DO UPDATE SET data_json=EXCLUDED.data_json,updated_at=NOW()`,
+        [JSON.stringify(hmgEntries)]
+      );
     }
-
-    res.json({
-      ok: true,
-      receptury: receptury.length,
-      tydnu: Object.keys(weekMap).length,
-      dnu: Object.keys(hmgEntries).length,
-      zaznamu: Object.values(hmgEntries).reduce((s, a) => s + a.length, 0)
-    });
+    res.json({ ok: true, receptury: receptury.length, tydnu: Object.keys(weekMap).length, dnu: Object.keys(hmgEntries).length });
   } catch (err) {
     console.error('Import error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-app.listen(PORT, () => console.log(`Server běží na portu ${PORT}`));
+// ── Fallback ──
+app.get('*', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// ── Start ──
+initDb()
+  .then(() => app.listen(PORT, () => console.log(`Server běží na portu ${PORT}`)))
+  .catch(err => { console.error('DB init error:', err); process.exit(1); });
