@@ -486,6 +486,20 @@ async function obnovitDB(event) {
 }
 
 loadViewers();
+
+async function doLogout() {
+  await fetch('/api/logout', { method: 'POST' }).catch(()=>{});
+  window.location.href = '/login';
+}
+fetch('/api/me').then(r=>r.json()).then(d=>{
+  const el = document.getElementById('footerUser');
+  if(el && d.username) el.textContent = d.username;
+}).catch(()=>{});
 </script>
 
+
+<footer style="border-top:0.5px solid #d1d5db;background:#f8fafc;padding:5px 16px;display:flex;align-items:center;justify-content:space-between">
+  <span style="font-size:11px;color:#9ca3af">Přihlášen jako <strong id="footerUser" style="color:#6b7280">admin</strong></span>
+  <span onclick="doLogout()" style="font-size:11px;color:#9ca3af;cursor:pointer;text-decoration:underline;text-underline-offset:2px">Odhlásit</span>
+</footer>
 </body></html>

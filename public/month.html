@@ -1,8 +1,8 @@
-<!doctype html><html lang="cs"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HARMONOGRAM VÝROBY - Měsíční přehled</title>
+<!doctype html><html lang="cs"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.3,maximum-scale=5,user-scalable=yes"><title>HARMONOGRAM VÝROBY - Měsíční přehled</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box}
-body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;-webkit-font-smoothing:antialiased;font-size:110%}
+body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;-webkit-font-smoothing:antialiased;font-size:100%}
 .topbar{background:#1a1a2e;color:#fff;min-height:64px;padding:0 16px;display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center;gap:12px;position:sticky;top:0;z-index:100}
 .title-left{font-size:18px;font-weight:700;color:#c8d0e0}
 .topbar h1{margin:0;text-align:center;font-size:22px;font-weight:800;letter-spacing:2px;color:#fff}
@@ -32,6 +32,46 @@ th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151}
 .box{display:inline-block;width:14px;height:10px;border:1px solid #a0aabb;border-radius:2px}
 .note{text-align:center;font-size:11px;color:#6b7280;padding:6px 12px;border-top:1px solid #a0aabb;background:#f8fafc}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#f1f5f9}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+/* ═══════════════════════════════════
+   MOBIL <= 900px  (portrait i landscape)
+   ═══════════════════════════════════ */
+@media(max-width:900px){
+  .topbar{display:flex;flex-direction:row;align-items:center;padding:0 5px;min-height:26px;height:26px;gap:3px}
+  .topbar h1{font-size:9px;font-weight:700;letter-spacing:.1px;white-space:nowrap;margin:0;flex:1;text-align:center}
+  .title-left{font-size:8px;color:#94a3b8;white-space:nowrap;overflow:hidden;max-width:80px;text-overflow:ellipsis;flex-shrink:0}
+  .actions{gap:2px;flex-wrap:nowrap;flex-shrink:0}
+  .actions .btn{padding:1px 5px;font-size:8px;border-radius:3px}
+  /* Skrýt export tlačítko na mobilu */
+  .btn.green{display:none!important}
+  .wrap{padding:1px 2px}
+  .card{border-radius:3px}
+  .month-toolbar{padding:3px 4px;gap:3px}
+  .month-toolbar .right{margin-left:auto}
+  input[type=month]{height:24px;font-size:9px;padding:1px 5px;border-radius:4px}
+  table{font-size:10px}
+  th,td{height:20px;padding:0 2px;font-size:10px}
+  th{height:21px;font-size:9px}
+  .col-lok{width:90px}.col-obj{width:80px}.col-smes{width:140px}.col-itt{width:65px}.col-ceta{width:65px}.day{width:38px}
+  .sticky-head-2 th{top:20px}
+  .legend{display:none}
+  .note{display:none}
+}
+/* ═══════════════════════════════════
+   LANDSCAPE: sirka<=900, vyska<500
+   ═══════════════════════════════════ */
+@media(max-width:900px) and (max-height:500px){
+  .topbar{height:22px;min-height:22px}
+  .topbar h1{font-size:8px}
+  .title-left{display:none}
+  .wrap{padding:1px}
+  .month-toolbar{padding:2px 3px}
+  input[type=month]{height:20px;font-size:8px;padding:1px 4px}
+  table{font-size:9px}
+  th,td{height:17px;padding:0 1px;font-size:9px}
+  th{height:18px;font-size:8px}
+  .col-lok{width:75px}.col-obj{width:65px}.col-smes{width:115px}.col-itt{width:55px}.col-ceta{width:55px}.day{width:32px}
+  .sticky-head-2 th{top:17px}
+}
 </style></head>
 <body>
 <header class="topbar">
@@ -225,4 +265,19 @@ async function init(){
   render();
 }
 init();
-</script></body></html>
+
+async function doLogout() {
+  await fetch('/api/logout', { method: 'POST' }).catch(()=>{});
+  window.location.href = '/login';
+}
+fetch('/api/me').then(r=>r.json()).then(d=>{
+  const el = document.getElementById('footerUser');
+  if(el && d.username) el.textContent = d.username;
+}).catch(()=>{});
+</script>
+
+<footer style="border-top:0.5px solid #d1d5db;background:#f8fafc;padding:5px 16px;display:flex;align-items:center;justify-content:space-between">
+  <span style="font-size:11px;color:#9ca3af">Přihlášen jako <strong id="footerUser" style="color:#6b7280">admin</strong></span>
+  <span onclick="doLogout()" style="font-size:11px;color:#9ca3af;cursor:pointer;text-decoration:underline;text-underline-offset:2px">Odhlásit</span>
+</footer>
+</body></html>
