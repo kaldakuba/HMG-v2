@@ -741,6 +741,7 @@ app.get('/api/backup/last', requireAuth, requireAdmin, async (req, res) => {
 
 
 // ── Start ──
+console.log('=== HMG v2.3 PostgreSQL + Auth ===');
 initDb()
   .then(() => { app.listen(PORT, () => console.log(`Server běží na portu ${PORT}`)); if(process.env.GMAIL_USER) scheduleBackup(); })
   .catch(err => { console.error('DB init error:', err); process.exit(1); });

@@ -1,7 +1,7 @@
 {
   "name": "harmonogram-vyroby",
-  "version": "2.0.0",
-  "description": "Harmonogram výroby - webová aplikace",
+  "version": "2.3.0",
+  "description": "Harmonogram v\u00fdroby - webov\u00e1 aplikace",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
