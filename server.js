@@ -537,6 +537,10 @@ app.post('/api/backup/run', requireAuth, requireAdmin, async (req, res) => {
   sendBackup().then(() => res.json({ ok: true })).catch(e => res.status(500).json({ error: e.message }));
 });
 
+app.get('/settings', requireAuth, requireAdmin, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'settings.html'));
+});
+
 // ── Fallback ──
 app.get('*', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -546,9 +550,6 @@ app.get('*', requireAuth, (req, res) => {
 // ════════════════════════════════════════════
 // STRÁNKA NASTAVENÍ
 // ════════════════════════════════════════════
-app.get('/settings', requireAuth, requireAdmin, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'settings.html'));
-});
 
 // ── Správa uživatelů ──
 app.get('/api/users', requireAuth, requireAdmin, async (req, res) => {
