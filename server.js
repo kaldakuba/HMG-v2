@@ -1,5 +1,6 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const nodemailer = require('nodemailer');
 const path = require('path');
 const crypto = require('crypto');
 const cookieParser = require('cookie-parser');
@@ -461,6 +462,78 @@ app.use((err, req, res, next) => {
   res.status(500).send('Interní chyba serveru');
 });
 
+
+// ── Emailová záloha ──
+async function sendBackup() {
+  try {
+    const [weeks, inputs, companies, settings] = await Promise.all([
+      pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start'),
+      pool.query('SELECT rows_json FROM inputs WHERE id=1'),
+      pool.query('SELECT data_json FROM companies WHERE id=1'),
+      pool.query('SELECT key,value FROM settings')
+    ]);
+
+    const settingsObj = {};
+    settings.rows.forEach(r => settingsObj[r.key] = r.value);
+
+    const backup = {
+      version: 2,
+      created: new Date().toISOString(),
+      weeks: weeks.rows.map(r => ({ start: r.week_start, rows: JSON.parse(r.rows_json) })),
+      inputs: inputs.rows[0] ? JSON.parse(inputs.rows[0].rows_json) : [],
+      companies: companies.rows[0] ? JSON.parse(companies.rows[0].data_json) : [],
+      settings: settingsObj
+    };
+
+    const json = JSON.stringify(backup, null, 2);
+    const date = new Date().toISOString().slice(0, 10);
+    const filename = `hmg_zaloha_${date}.json`;
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD
+      }
+    });
+
+    await transporter.sendMail({
+      from: `"HMG Záloha" <${process.env.GMAIL_USER}>`,
+      to: process.env.BACKUP_EMAIL,
+      subject: `HMG záloha ${date} — ${backup.weeks.length} týdnů`,
+      text: `Automatická záloha dat harmonogramu výroby.\n\nObsah:\n- Týdnů: ${backup.weeks.length}\n- Receptur: ${backup.inputs.length}\n- Datum: ${date}`,
+      attachments: [{
+        filename,
+        content: json,
+        contentType: 'application/json'
+      }]
+    });
+
+    console.log(`Záloha odeslána: ${filename}`);
+  } catch (err) {
+    console.error('Chyba zálohy:', err.message);
+  }
+}
+
+// Spustit zálohu každý den v 18:00 (UTC+2 = 16:00 UTC)
+function scheduleBackup() {
+  const now = new Date();
+  const next = new Date();
+  next.setUTCHours(16, 0, 0, 0);
+  if (next <= now) next.setDate(next.getDate() + 1);
+  const msUntil = next - now;
+  setTimeout(() => {
+    sendBackup();
+    setInterval(sendBackup, 24 * 60 * 60 * 1000);
+  }, msUntil);
+  console.log(`Záloha naplánována za ${Math.round(msUntil/60000)} minut`);
+}
+
+// Manuální spuštění zálohy (jen pro admina)
+app.post('/api/backup/run', requireAuth, requireAdmin, async (req, res) => {
+  sendBackup().then(() => res.json({ ok: true })).catch(e => res.status(500).json({ error: e.message }));
+});
+
 // ── Fallback ──
 app.get('*', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -468,5 +541,5 @@ app.get('*', requireAuth, (req, res) => {
 
 // ── Start ──
 initDb()
-  .then(() => app.listen(PORT, () => console.log(`Server běží na portu ${PORT}`)))
+  .then(() => { app.listen(PORT, () => console.log(`Server běží na portu ${PORT}`)); if(process.env.GMAIL_USER) scheduleBackup(); })
   .catch(err => { console.error('DB init error:', err); process.exit(1); });
