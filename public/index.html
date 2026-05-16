@@ -1,17 +1,6 @@
 <!doctype html>
 <html lang="cs">
 <head>
-<script>
-// Okamžitá kontrola role - hmg_share nesmí vidět týdenní
-(async function(){
-  try {
-    const r = await fetch('/api/me');
-    if (!r.ok) { window.location.href='/login'; return; }
-    const d = await r.json();
-    if (d.role === 'hmg_share') { window.location.href='/month'; return; }
-  } catch(e) { window.location.href='/login'; }
-})();
-</script>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.3,maximum-scale=5,user-scalable=yes">
 <title>HARMONOGRAM VÝROBY</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -66,8 +55,6 @@ input[type=checkbox]:checked::after{content:"";position:absolute;left:4px;top:1p
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#f1f5f9}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 .saving-indicator{position:fixed;bottom:16px;right:16px;background:#1e293b;color:#fff;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;opacity:0;transition:opacity .3s;z-index:9999;pointer-events:none}
 .saving-indicator.show{opacity:1}
-body.read-only-mode .editable,body.read-only-mode .day-input,body.read-only-mode .select-cell{pointer-events:none;cursor:default}
-body.read-only-mode .controls{display:none!important}
 
 /* ═══════════════════════════════════════════════════
    MOBILNÍ READ-ONLY MÓD — třída .mobile-ro na <body>
@@ -299,18 +286,7 @@ function renderMixes(){
 async function exportWeeks(){
   const r=await fetch('/api/export');const payload=await r.json();
   let css='table{border-collapse:collapse;font-family:Arial;font-size:10pt;margin-bottom:18px}th,td{border:1px solid #222;padding:4px;text-align:center}th{font-weight:bold;background:#f2f2f2}.blue-day{background:#ddebf7}.gray-day{background:#d9d9d9}.sum-head{background:#fce4d6;font-weight:bold}.cap-value{background:#ffe600;font-weight:bold}.hours-row td{background:#d9d9d9;font-weight:bold}';
-  let html='<html><head>
-<script>
-// Okamžitá kontrola role - hmg_share nesmí vidět týdenní
-(async function(){
-  try {
-    const r = await fetch('/api/me');
-    if (!r.ok) { window.location.href='/login'; return; }
-    const d = await r.json();
-    if (d.role === 'hmg_share') { window.location.href='/month'; return; }
-  } catch(e) { window.location.href='/login'; }
-})();
-</script><meta charset="UTF-8"><style>'+css+'</style></head><body><!--HMG_WEEK_DATA:'+btoa(unescape(encodeURIComponent(JSON.stringify(payload))))+'--><h1>HARMONOGRAM VÝROBY - export týdnů</h1>';
+  let html='<html><head><meta charset="UTF-8"><style>'+css+'</style></head><body><!--HMG_WEEK_DATA:'+btoa(unescape(encodeURIComponent(JSON.stringify(payload))))+'--><h1>HARMONOGRAM VÝROBY - export týdnů</h1>';
   payload.weeks.forEach(w=>{html+=weekTableHtml(w.start,w.rows)});
   html+='</body></html>';
   downloadBlob(new Blob(['\ufeff'+html],{type:'application/vnd.ms-excel;charset=utf-8'}),'HMG_export_tydny.xls');
@@ -411,28 +387,6 @@ function renderMobile(){
   tfoot.innerHTML=`<tr class="hours-row"><td colspan="4" style="text-align:left;padding-left:6px">hod. výroby:</td>${dayKeys.map(k=>`<td>${fmtNum(daySum(rows,k)/rate,1)}</td>`).join('')}<td>${fmtNum(total/rate,1)}</td></tr>`;
 }
 
-
-// ── Role kontrola pro operator ──
-async function checkRole() {
-  try {
-    const me = await fetch('/api/me').then(r=>r.json());
-    const role = me.role;
-    const sb = document.getElementById('settingsBtn');
-    if (sb && role === 'admin') sb.style.display = '';
-    const el = document.getElementById('footerUser');
-    if (el && me.username) el.textContent = me.username;
-    
-    if (role === 'operator') {
-      // Operator - read only, může vidět spotřebu a směsi, může exportovat
-      // Skrýt editační tlačítka
-      document.querySelectorAll('.btn.green, .btn.red, .controls .btn:not(.export)').forEach(b => {
-        if (!b.classList.contains('export') && !b.textContent.includes('Export')) b.style.display = 'none';
-      });
-      // Zakázat editaci buněk
-      document.body.classList.add('read-only-mode');
-    }
-  } catch(e) {}
-}
 // ── INIT ──
 async function init(){
   // Načti nastavení
@@ -448,19 +402,6 @@ async function init(){
   // Načti týden
   await loadWeek(_weekStart);
   if(IS_MOBILE) renderMobile(); else render();
-  if(!IS_MOBILE) checkRole();
 }
 init();
-
-async function doLogout(){
-  await fetch('/api/logout',{method:'POST'}).catch(()=>{});
-  window.location.href='/login';
-}
-
-fetch('/api/me').then(r=>r.json()).then(d=>{
-  const el=document.getElementById('footerUser');
-  if(el&&d.username)el.textContent=d.username;
-  const sb=document.getElementById('settingsBtn');
-  if(sb&&d.role==='admin')sb.style.display='';
-}).catch(()=>{});
 </script></body></html>
