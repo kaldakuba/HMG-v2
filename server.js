@@ -196,6 +196,8 @@ app.post('/api/login', loginLimiter, async (req, res) => {
     req.session.userId = user.id;
     req.session.username = user.username;
     req.session.role = user.role;
+    req.session.userAgent = req.headers['user-agent'] || '';
+    req.session.loginIp = req.ip || '';
     await pool.query('UPDATE users SET last_seen = NOW() WHERE id = $1', [user.id]);
     res.json({ ok: true, role: user.role });
   } catch (err) {
@@ -510,6 +512,7 @@ async function sendBackup() {
     });
 
     console.log(`Záloha odeslána: ${filename}`);
+    await pool.query("INSERT INTO settings (key,value) VALUES ('last_backup',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value", [new Date().toISOString()]);
   } catch (err) {
     console.error('Chyba zálohy:', err.message);
   }
@@ -538,6 +541,127 @@ app.post('/api/backup/run', requireAuth, requireAdmin, async (req, res) => {
 app.get('*', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
+
+// ════════════════════════════════════════════
+// STRÁNKA NASTAVENÍ
+// ════════════════════════════════════════════
+app.get('/settings', requireAuth, requireAdmin, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'settings.html'));
+});
+
+// ── Správa uživatelů ──
+app.get('/api/users', requireAuth, requireAdmin, async (req, res) => {
+  const r = await pool.query(`
+    SELECT u.id, u.username, u.role, u.created_at, u.last_seen,
+      (SELECT COUNT(*) FROM session s WHERE s.sess->>'userId' = u.id::text AND s.expire > NOW()) as session_count
+    FROM users u ORDER BY u.created_at
+  `);
+  res.json(r.rows);
+});
+
+app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { username, password, role } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'Vyplňte jméno a heslo' });
+    if (!['admin','viewer'].includes(role)) return res.status(400).json({ error: 'Neplatná role' });
+    if (username.length < 3 || username.length > 50) return res.status(400).json({ error: 'Jméno 3-50 znaků' });
+    if (password.length < 6) return res.status(400).json({ error: 'Heslo min. 6 znaků' });
+    const hash = await bcrypt.hash(password, 12);
+    const r = await pool.query(
+      'INSERT INTO users (username, password_hash, role) VALUES ($1,$2,$3) RETURNING id,username,role',
+      [username.trim(), hash, role]
+    );
+    res.json({ ok: true, user: r.rows[0] });
+  } catch (err) {
+    if (err.code === '23505') return res.status(400).json({ error: 'Uživatel již existuje' });
+    throw err;
+  }
+});
+
+app.put('/api/users/:id/password', requireAuth, requireAdmin, async (req, res) => {
+  const { password } = req.body;
+  if (!password || password.length < 6) return res.status(400).json({ error: 'Heslo min. 6 znaků' });
+  const hash = await bcrypt.hash(password, 12);
+  await pool.query('UPDATE users SET password_hash=$1 WHERE id=$2', [hash, req.params.id]);
+  res.json({ ok: true });
+});
+
+app.delete('/api/users/:id', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (id === req.session.userId) return res.status(400).json({ error: 'Nemůžeš smazat sám sebe' });
+  await pool.query("DELETE FROM session WHERE sess->>'userId' = $1", [String(id)]);
+  await pool.query('DELETE FROM users WHERE id=$1', [id]);
+  res.json({ ok: true });
+});
+
+// ── Správa sessions ──
+app.get('/api/sessions', requireAuth, requireAdmin, async (req, res) => {
+  const r = await pool.query(`
+    SELECT s.sid,
+      s.sess->>'userId' as user_id,
+      u.username,
+      s.sess->>'userAgent' as user_agent,
+      s.sess->>'loginIp' as ip,
+      s.expire,
+      (s.sid = $1) as is_current
+    FROM session s
+    LEFT JOIN users u ON u.id::text = s.sess->>'userId'
+    WHERE s.expire > NOW()
+    ORDER BY u.username, s.expire DESC
+  `, [req.sessionID]);
+  res.json(r.rows);
+});
+
+app.delete('/api/sessions/:sid', requireAuth, requireAdmin, async (req, res) => {
+  if (req.params.sid === req.sessionID) return res.status(400).json({ error: 'Nemůžeš odhlásit aktuální session' });
+  await pool.query('DELETE FROM session WHERE sid=$1', [req.params.sid]);
+  res.json({ ok: true });
+});
+
+app.delete('/api/sessions/user/:id', requireAuth, requireAdmin, async (req, res) => {
+  await pool.query("DELETE FROM session WHERE sess->>'userId'=$1 AND sid!=$2", [String(req.params.id), req.sessionID]);
+  res.json({ ok: true });
+});
+
+// ── Sdílení měsíčního přehledu ──
+app.get('/api/share-tokens', requireAuth, requireAdmin, async (req, res) => {
+  const r = await pool.query("SELECT key, value FROM settings WHERE key LIKE 'share_%'");
+  res.json(r.rows.map(r => ({ token: r.key.replace('share_',''), expires: r.value })));
+});
+
+app.post('/api/share-tokens', requireAuth, requireAdmin, async (req, res) => {
+  const days = parseInt(req.body.days) || 30;
+  const token = crypto.randomBytes(32).toString('hex');
+  const expires = new Date();
+  expires.setDate(expires.getDate() + days);
+  await pool.query(
+    'INSERT INTO settings (key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value',
+    [`share_${token}`, expires.toISOString()]
+  );
+  res.json({ ok: true, token, expires: expires.toISOString() });
+});
+
+app.delete('/api/share-tokens/:token', requireAuth, requireAdmin, async (req, res) => {
+  await pool.query('DELETE FROM settings WHERE key=$1', [`share_${req.params.token}`]);
+  res.json({ ok: true });
+});
+
+// Veřejný přístup přes share token
+app.get('/share/:token', async (req, res) => {
+  const r = await pool.query('SELECT value FROM settings WHERE key=$1', [`share_${req.params.token}`]);
+  if (!r.rows[0] || new Date(r.rows[0].value) < new Date()) {
+    return res.status(410).send('<h2>Odkaz vypršel nebo neexistuje.</h2>');
+  }
+  res.sendFile(path.join(__dirname, 'public', 'month.html'));
+});
+
+// ── Záloha - poslední datum ──
+app.get('/api/backup/last', requireAuth, requireAdmin, async (req, res) => {
+  const r = await pool.query("SELECT value FROM settings WHERE key='last_backup'");
+  res.json({ last: r.rows[0] ? r.rows[0].value : null });
+});
+
 
 // ── Start ──
 initDb()
