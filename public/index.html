@@ -288,11 +288,7 @@ async function exportWeeks(){
   let css='table{border-collapse:collapse;font-family:Arial;font-size:10pt;margin-bottom:18px}th,td{border:1px solid #222;padding:4px;text-align:center}th{font-weight:bold;background:#f2f2f2}.blue-day{background:#ddebf7}.gray-day{background:#d9d9d9}.sum-head{background:#fce4d6;font-weight:bold}.cap-value{background:#ffe600;font-weight:bold}.hours-row td{background:#d9d9d9;font-weight:bold}';
   let html='<html><head><meta charset="UTF-8"><style>'+css+'</style></head><body><!--HMG_WEEK_DATA:'+btoa(unescape(encodeURIComponent(JSON.stringify(payload))))+'--><h1>HARMONOGRAM VÝROBY - export týdnů</h1>';
   payload.weeks.forEach(w=>{html+=weekTableHtml(w.start,w.rows)});
-  html+='<footer style="border-top:0.5px solid #d1d5db;background:#f8fafc;padding:5px 16px;display:flex;align-items:center;justify-content:space-between">
-  <span style="font-size:11px;color:#9ca3af">Přihlášen jako <strong id="footerUser" style="color:#6b7280">admin</strong></span>
-  <span onclick="doLogout()" style="font-size:11px;color:#9ca3af;cursor:pointer;text-decoration:underline;text-underline-offset:2px">Odhlásit</span>
-</footer>
-</body></html>';
+  html+='</body></html>';
   downloadBlob(new Blob(['\ufeff'+html],{type:'application/vnd.ms-excel;charset=utf-8'}),'HMG_export_tydny.xls');
 }
 function weekTableHtml(start,rows){
@@ -413,14 +409,11 @@ async function doLogout(){
   await fetch('/api/logout',{method:'POST'}).catch(()=>{});
   window.location.href='/login';
 }
+
 fetch('/api/me').then(r=>r.json()).then(d=>{
   const el=document.getElementById('footerUser');
   if(el&&d.username)el.textContent=d.username;
   const sb=document.getElementById('settingsBtn');
   if(sb&&d.role==='admin')sb.style.display='';
 }).catch(()=>{});
-</script><footer style="border-top:0.5px solid #d1d5db;background:#f8fafc;padding:5px 16px;display:flex;align-items:center;justify-content:space-between">
-  <span style="font-size:11px;color:#9ca3af">Přihlášen jako <strong id="footerUser" style="color:#6b7280">admin</strong></span>
-  <span onclick="doLogout()" style="font-size:11px;color:#9ca3af;cursor:pointer;text-decoration:underline;text-underline-offset:2px">Odhlásit</span>
-</footer>
-</body></html>
+</script></body></html>
