@@ -221,24 +221,11 @@ loadFromDB();
      SEKCE: SDÍLENÍ MĚSÍČNÍHO PŘEHLEDU
 ═══════════════════════════════════════════════ -->
 <style>
-.viewers-section{margin-top:18px;background:#fff;border:1px solid #a0aabb;border-radius:8px;overflow:hidden}
-.viewers-header{background:#1a1a2e;color:#fff;padding:10px 16px;font-size:14px;font-weight:700;letter-spacing:.5px}
-.viewers-body{padding:14px 16px}
-.invite-row{display:flex;gap:8px;margin-bottom:14px;align-items:center}
 .invite-row input{flex:1;height:36px;border:1px solid #a0aabb;border-radius:6px;padding:2px 12px;font-family:'Inter',sans-serif;font-size:13px;color:#111}
 .invite-row input:focus{outline:2px solid #3b82f6;border-color:#3b82f6}
-.btn-invite{background:#16a34a;color:#fff;border:none;border-radius:6px;padding:0 18px;height:36px;font-family:'Inter',sans-serif;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap}
 .btn-invite:hover{filter:brightness(1.1)}
-.link-box{background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:none}
-.link-box .link-label{font-size:11px;font-weight:700;color:#15803d;margin-bottom:5px;letter-spacing:.3px}
-.link-box .link-url{font-family:monospace;font-size:12px;color:#111;word-break:break-all;background:#fff;border:1px solid #86efac;border-radius:4px;padding:6px 10px;display:block;margin-bottom:8px}
-.btn-copy{background:#2563eb;color:#fff;border:none;border-radius:5px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer}
-.btn-copy:hover{filter:brightness(1.1)}
+.link-box .link-box .btn-copy:hover{filter:brightness(1.1)}
 .btn-copy.copied{background:#16a34a}
-.viewers-table{width:100%;border-collapse:collapse;font-size:13px}
-.viewers-table th{background:#f5f7fa;border:1px solid #a0aabb;padding:6px 10px;font-weight:700;color:#374151;text-align:left;font-size:12px}
-.viewers-table td{border:1px solid #e5e7eb;padding:7px 10px;vertical-align:middle}
-.viewers-table tr:hover td{background:#f8fafc}
 .badge-active{background:#d9ead3;color:#14532d;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700}
 .badge-pending{background:#fef9c3;color:#854d0e;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700}
 .badge-revoked{background:#fee2e2;color:#991b1b;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700}
@@ -248,123 +235,23 @@ loadFromDB();
 .vbtn.red:hover{background:#fee2e2}
 .vbtn.green{border-color:#86efac;color:#15803d}
 .vbtn.green:hover{background:#d9ead3}
-.no-viewers{text-align:center;color:#6b7280;font-size:13px;padding:20px}
 </style>
-
-<div class="viewers-section">
-  <div class="viewers-header">&#128274; Sdílení měsíčního přehledu</div>
-  <div class="viewers-body">
-    <div class="invite-row">
-      <input type="email" id="viewerEmail" placeholder="email sledujícího (např. jan.novak@firma.cz)">
-      <button class="btn-invite" onclick="inviteViewer()">Vygenerovat odkaz</button>
-    </div>
     <div class="link-box" id="linkBox">
       <div class="link-label">PŘÍSTUPOVÝ ODKAZ – PLATNÝ POUZE PRO JEDNO POUŽITÍ</div>
       <span class="link-url" id="linkUrl"></span>
       <button class="btn-copy" id="copyBtn" onclick="copyLink()">&#128203; Kopírovat odkaz</button>
       <span style="font-size:11px;color:#6b7280;margin-left:10px">Zkopírujte a pošlete ručně. Po prvním kliknutí odkaz expiruje.</span>
     </div>
-    <table class="viewers-table" id="viewersTable">
-      <thead>
-        <tr>
-          <th>Email</th>
-          <th>Stav</th>
-          <th>Přidán</th>
-          <th>Naposledy viděn</th>
-          <th>Akce</th>
-        </tr>
-      </thead>
-      <tbody id="viewersTbody">
-        <tr><td colspan="5" class="no-viewers">Zatím žádní sledující.</td></tr>
-      </tbody>
-    </table>
-  </div>
+</div>
 </div>
 
 <script>
-async function loadViewers(){
-  try{
-    const rows=await fetch('/api/viewers').then(r=>r.json());
-    const tbody=document.getElementById('viewersTbody');
-    if(!rows||!rows.length){tbody.innerHTML='<tr><td colspan="5" class="no-viewers">Zatím žádní sledující.</td></tr>';return;}
-    tbody.innerHTML=rows.map(v=>{
-      const statusBadge=v.status==='active'?'<span class="badge-active">aktivní</span>':v.status==='pending'?'<span class="badge-pending">čeká na přihlášení</span>':'<span class="badge-revoked">přístup odvolán</span>';
-      const created=v.created_at?v.created_at.slice(0,10):'–';
-      const seen=v.last_seen?v.last_seen.slice(0,16).replace('T',' '):'nikdy';
-      let actions='';
-      if(v.status==='active'||v.status==='pending'){
-        actions+=`<button class="vbtn red" onclick="revokeViewer(${v.id})">Odvolat</button> `;
-      } else {
-        actions+=`<button class="vbtn green" onclick="restoreViewer(${v.id})">Obnovit přístup</button> `;
-      }
-      actions+=`<button class="vbtn" onclick="deleteViewer(${v.id})">Smazat</button>`;
-      return `<tr><td><strong>${v.email}</strong></td><td>${statusBadge}</td><td>${created}</td><td>${seen}</td><td>${actions}</td></tr>`;
-    }).join('');
-  }catch(e){console.error('Chyba načítání viewers',e);}
-}
-
-async function inviteViewer(){
-  const email=document.getElementById('viewerEmail').value.trim();
-  if(!email||!email.includes('@')){alert('Zadejte platný email.');return;}
-  try{
-    const res=await fetch('/api/viewers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
-    const data=await res.json();
-    if(data.ok){
-      document.getElementById('linkUrl').textContent=data.link;
-      const box=document.getElementById('linkBox');
-      box.style.display='block';
-      box.scrollIntoView({behavior:'smooth',block:'nearest'});
-      document.getElementById('copyBtn').textContent='📋 Kopírovat odkaz';
-      document.getElementById('copyBtn').classList.remove('copied');
-      document.getElementById('viewerEmail').value='';
-      loadViewers();
-    } else {
-      alert('Chyba: '+(data.error||'Neznámá chyba'));
-    }
-  }catch(e){alert('Chyba spojení se serverem.');}
-}
-
-function copyLink(){
-  const url=document.getElementById('linkUrl').textContent;
-  navigator.clipboard.writeText(url).then(()=>{
-    const btn=document.getElementById('copyBtn');
-    btn.textContent='✅ Zkopírováno!';
-    btn.classList.add('copied');
-    setTimeout(()=>{btn.textContent='📋 Kopírovat odkaz';btn.classList.remove('copied');},3000);
-  });
-}
-
-async function revokeViewer(id){
-  if(!confirm('Odvolat přístup tomuto sledujícímu? Bude odhlášen.'))return;
-  await fetch('/api/viewers/'+id+'/revoke',{method:'POST'});
-  loadViewers();
-}
-
-async function restoreViewer(id){
-  const res=await fetch('/api/viewers/'+id+'/restore',{method:'POST'});
-  const data=await res.json();
-  if(data.ok){
-    document.getElementById('linkUrl').textContent=data.link;
-    const box=document.getElementById('linkBox');
-    box.style.display='block';
-    box.scrollIntoView({behavior:'smooth',block:'nearest'});
-    document.getElementById('copyBtn').textContent='📋 Kopírovat odkaz';
-    document.getElementById('copyBtn').classList.remove('copied');
-    loadViewers();
-  }
-}
-
-async function deleteViewer(id){
-  if(!confirm('Trvale smazat tohoto sledujícího?'))return;
-  await fetch('/api/viewers/'+id,{method:'DELETE'});
-  loadViewers();
-}
-
-// ── IMPORT Z EXCELU HMG ──
 
 
 
-loadViewers();
+
+
+
 
 fetch('/api/me').then(r=>r.json()).then(d=>{
   const sb = document.getElementById('settingsBtn');
