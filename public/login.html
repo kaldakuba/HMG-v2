@@ -46,12 +46,10 @@ async function doLogin() {
   btn.disabled = true;
   btn.textContent = 'Přihlašuji...';
   try {
-    const csrf = document.cookie.split(';').map(c=>c.trim()).find(c=>c.startsWith('csrf='));
-    const csrfToken = csrf ? csrf.split('=')[1] : '';
     const res = await fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password, _csrf: csrfToken })
+      body: JSON.stringify({ username, password })
     });
     const data = await res.json();
     if (res.ok && data.ok) {
