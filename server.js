@@ -565,6 +565,36 @@ app.get('/settings', requireAuth, requireAdmin, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'settings.html'));
 });
 
+
+app.get('/api/export-excel', requireAuth, async (req, res) => {
+  const [weeks, inputs] = await Promise.all([
+    pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start'),
+    pool.query('SELECT rows_json FROM inputs WHERE id=1')
+  ]);
+  const wb = XLSX.utils.book_new();
+  weeks.rows.forEach(w => {
+    const rows = JSON.parse(w.rows_json).map(r => ({
+      cislo: r.cislo||'', lokalita: r.lokalita||'', objednavka: r.objednavka||'',
+      smes: r.smes||'', itt: r.itt||'', ceta: r.ceta||'',
+      Po: r.d0||'', Ut: r.d1||'', St: r.d2||'', Ct: r.d3||'',
+      Pa: r.d4||'', So: r.d5||'', Ne: r.d6||''
+    }));
+    if (rows.length > 0) {
+      const ws = XLSX.utils.json_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, w.week_start.slice(5));
+    }
+  });
+  if (inputs.rows[0]) {
+    const wsInputs = XLSX.utils.json_to_sheet(JSON.parse(inputs.rows[0].rows_json));
+    XLSX.utils.book_append_sheet(wb, wsInputs, 'Receptury');
+  }
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const date = new Date().toISOString().slice(0,10);
+  res.setHeader('Content-Disposition', `attachment; filename="hmg_zaloha_${date}.xlsx"`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
 // ── Fallback ──
 app.get('*', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
