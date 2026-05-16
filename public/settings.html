@@ -27,7 +27,7 @@ tr:last-child td{border-bottom:none}
 tr:hover td{background:#fafafa}
 .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
 .badge.admin{background:#dbeafe;color:#1e40af}
-.badge.viewer{background:#f0fdf4;color:#15803d}
+.badge.viewer{background:#f0fdf4;color:#15803d}.badge.operator{background:#fef9c3;color:#854d0e}
 .form-row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px}
 .form-group{display:flex;flex-direction:column;gap:4px;flex:1;min-width:120px}
 label{font-size:12px;font-weight:600;color:#374151}
@@ -80,7 +80,8 @@ input:focus,select:focus{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,23
           <div class="form-group" style="max-width:120px">
             <label>Role</label>
             <select id="newRole">
-              <option value="viewer">Viewer</option>
+              <option value="operator">Operátor</option>
+              <option value="hmg_share">Sdílený HMG</option>
               <option value="admin">Admin</option>
             </select>
           </div>
@@ -136,6 +137,42 @@ input:focus,select:focus{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,23
       <div id="shareTokensList" style="margin-top:12px"></div>
     </div>
   </section>
+
+
+  <!-- IMPORT & OBNOVA DAT -->
+  <section class="card">
+    <div class="card-head">
+      <h2>📥 Import & obnova dat</h2>
+    </div>
+    <div class="card-body">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+        <div>
+          <button class="btn" style="background:#7c3aed" onclick="document.getElementById('settImportXlsx').click()">📥 Import z Excelu HMG</button>
+          <input id="settImportXlsx" type="file" accept=".xlsx" style="display:none" onchange="settImportFromExcel(event)">
+          <p class="info" style="margin-top:4px">Naimportuje týdny a receptury z Excel souboru HMG. Existující data nepřepíše.</p>
+        </div>
+        <div>
+          <button class="btn orange" onclick="document.getElementById('settImportWeek').click()">↑ Import dat HMG</button>
+          <input id="settImportWeek" type="file" accept=".xls,.html,.htm,.json,.txt" style="display:none" onchange="settImportWeekData(event)">
+          <p class="info" style="margin-top:4px">Import týdenních dat ze starého formátu HMG.</p>
+        </div>
+      </div>
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0">
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div>
+          <button class="btn" style="background:#0369a1" onclick="settZalohaDB()">⬇ Záloha Excel</button>
+          <p class="info" style="margin-top:4px">Stáhne zálohu všech dat jako Excel soubor (.xlsx).</p>
+        </div>
+        <div>
+          <button class="btn" style="background:#0369a1" onclick="document.getElementById('settObnovaFile').click()">↑ Obnovit ze zálohy</button>
+          <input id="settObnovaFile" type="file" accept=".json" style="display:none" onchange="settObnovitDB(event)">
+          <p class="info" style="margin-top:4px">Obnoví data ze záložního JSON souboru.</p>
+        </div>
+      </div>
+      <div id="importMsg" style="margin-top:10px"></div>
+    </div>
+  </section>
+
 
   <!-- ZÁLOHA -->
   <section class="card">
@@ -196,7 +233,7 @@ async function loadUsers() {
   tbody.innerHTML = users.map(u => `
     <tr>
       <td><strong>${esc(u.username)}</strong></td>
-      <td><span class="badge ${u.role}">${u.role}</span></td>
+      <td>${u.role==='admin'?'<span class="badge admin">admin</span>':u.role==='operator'?'<span class="badge" style="background:#fef9c3;color:#854d0e">operátor</span>':'<span class="badge" style="background:#ede9fe;color:#5b21b6">sdílený HMG</span>'}</td>
       <td>${fmtDate(u.last_seen)}</td>
       <td style="text-align:center">${u.session_count > 0 ? `<span style="color:#2563eb;font-weight:600">${u.session_count}</span>` : '0'}</td>
       <td style="display:flex;gap:4px;flex-wrap:wrap">
@@ -362,6 +399,88 @@ loadUsers();
 loadSessions();
 loadShareTokens();
 loadBackupInfo();
+
+// ── Import & obnova dat ──
+async function settImportFromExcel(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+  if (!confirm('Import přidá týdny a receptury z Excelu. Existující data nepřepíše. Pokračovat?')) return;
+  const msg = document.getElementById('importMsg');
+  msg.innerHTML = '<span style="color:#0369a1;font-weight:600">⏳ Importuji...</span>';
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch('/api/import-excel', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.ok) {
+      msg.innerHTML = `<span class="success">✅ Import dokončen: ${data.receptury} receptur, ${data.tydnu} týdnů</span>`;
+    } else {
+      msg.innerHTML = `<span class="error-msg">❌ ${data.error||'Chyba'}</span>`;
+    }
+  } catch(e) { msg.innerHTML = `<span class="error-msg">❌ ${e.message}</span>`; }
+}
+
+function settImportWeekData(ev) {
+  const f = ev.target.files[0]; if(!f) return;
+  const rd = new FileReader();
+  rd.onload = e => {
+    try {
+      const text = e.target.result;
+      const m = text.match(/HMG_WEEK_DATA:([A-Za-z0-9+/=]+)/);
+      if(!m) throw new Error("Soubor neobsahuje HMG_WEEK_DATA.");
+      const payload = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+      if(!payload.weeks||!Array.isArray(payload.weeks)) throw new Error("Neplatný formát.");
+      if(!confirm("Import načte "+payload.weeks.length+" týdnů. Pokračovat?")) return;
+      const msg = document.getElementById('importMsg');
+      msg.innerHTML = '<span style="color:#0369a1;font-weight:600">⏳ Importuji...</span>';
+      Promise.all(payload.weeks.map(w =>
+        fetch('/api/week/'+w.start, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({rows:w.rows})})
+      )).then(() => {
+        msg.innerHTML = `<span class="success">✅ Import hotov: ${payload.weeks.length} týdnů</span>`;
+      });
+    } catch(err) { alert("Import se nepovedl: "+err.message); }
+    finally { ev.target.value = ""; }
+  };
+  rd.readAsText(f, 'utf-8');
+}
+
+async function settZalohaDB() {
+  try {
+    const date = new Date().toISOString().slice(0,10);
+    const a = document.createElement('a');
+    a.href = '/api/export-excel';
+    a.download = 'hmg_zaloha_' + date + '.xlsx';
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>a.remove(), 500);
+    document.getElementById('importMsg').innerHTML = '<span class="success">✓ Záloha stažena jako Excel</span>';
+  } catch(e) { alert('Chyba zálohy: '+e.message); }
+}
+
+async function settObnovitDB(event) {
+  const file = event.target.files[0]; if(!file) return;
+  event.target.value = '';
+  if(!confirm('⚠️ Obnovení přepíše všechna data. Pokračovat?')) return;
+  const msg = document.getElementById('importMsg');
+  msg.innerHTML = '<span style="color:#0369a1;font-weight:600">⏳ Obnovuji data...</span>';
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if(!data.version) throw new Error('Neplatný formát zálohy');
+    const headers = {'Content-Type':'application/json'};
+    const reqs = [];
+    if(data.weeks&&data.weeks.length) data.weeks.forEach(w => reqs.push(fetch('/api/week/'+w.start,{method:'POST',headers,body:JSON.stringify({rows:w.rows})})));
+    if(data.inputs) reqs.push(fetch('/api/inputs',{method:'POST',headers,body:JSON.stringify({rows:data.inputs})}));
+    if(data.companies) reqs.push(fetch('/api/companies',{method:'POST',headers,body:JSON.stringify({companies:data.companies})}));
+    if(data.settings) reqs.push(fetch('/api/settings',{method:'POST',headers,body:JSON.stringify(data.settings)}));
+    await Promise.all(reqs);
+    msg.innerHTML = '<span class="success">✅ Data obnovena!</span>';
+    setTimeout(()=>location.reload(), 2000);
+  } catch(e) {
+    msg.innerHTML = `<span class="error-msg">❌ ${e.message}</span>`;
+  }
+}
+
 </script>
 </body>
 </html>

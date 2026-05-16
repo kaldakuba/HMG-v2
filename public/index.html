@@ -404,4 +404,5 @@ async function init(){
   if(IS_MOBILE) renderMobile(); else render();
 }
 init();
+fetch('/api/me').then(r=>r.json()).then(d=>{if(d.role==='hmg_share')window.location.replace('/month');}).catch(()=>{});
 </script></body></html>
