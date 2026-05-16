@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 const crypto = require('crypto');
 const cookieParser = require('cookie-parser');
@@ -11,6 +12,16 @@ const pgSession = require('connect-pg-simple')(session);
 
 const app = express();
 app.set('trust proxy', 1);
+
+// ── Rate limiting na login (5 pokusů / 5 minut) ──
+const loginLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 5,
+  skipSuccessfulRequests: true,
+  handler: (req, res) => {
+    res.status(429).json({ error: 'Příliš mnoho pokusů. Zkuste to za 5 minut.' });
+  }
+});
 const PORT = process.env.PORT || 3000;
 
 // ── PostgreSQL pool ──
@@ -123,6 +134,8 @@ function requireAdmin(req, res, next) {
 // ── Stránky ──
 app.get('/login', (req, res) => {
   if (req.session && req.session.userId) return res.redirect('/');
+  const csrfToken = crypto.randomBytes(24).toString('hex');
+  res.cookie('csrf', csrfToken, { httpOnly: false, sameSite: 'lax' });
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
@@ -143,10 +156,14 @@ app.get('/month-view', requireAuth, (req, res) => {
 });
 
 // ── Auth API ──
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', loginLimiter, async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, _csrf } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Vyplňte jméno a heslo' });
+    const csrfCookie = req.cookies['csrf'];
+    if (!_csrf || !csrfCookie || _csrf !== csrfCookie) {
+      return res.status(403).json({ error: 'Neplatný bezpečnostní token. Obnovte stránku.' });
+    }
     const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
     const user = result.rows[0];
     if (!user) return res.status(401).json({ error: 'Nesprávné jméno nebo heslo' });
