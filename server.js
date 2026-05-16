@@ -32,6 +32,29 @@ const pool = new Pool({
     : false
 });
 
+// ── Validace ──
+function isIsoDate(s) {
+  return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s));
+}
+function isIntOrEmpty(v) {
+  if (v === '' || v === null || v === undefined) return true;
+  return Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 99999;
+}
+function sanitizeStr(v, maxLen=255) {
+  if (v === null || v === undefined) return '';
+  return String(v).slice(0, maxLen).replace(/[<>]/g, '');
+}
+function validateRows(rows) {
+  if (!Array.isArray(rows)) return 'rows musí být pole';
+  for (const r of rows) {
+    if (typeof r !== 'object' || r === null) return 'každý řádek musí být objekt';
+    for (let i = 0; i <= 6; i++) {
+      if (!isIntOrEmpty(r[`d${i}`])) return `d${i} musí být celé číslo 0-99999`;
+    }
+  }
+  return null;
+}
+
 // ── Inicializace tabulek ──
 async function initDb() {
   await pool.query(`
@@ -199,10 +222,22 @@ app.get('/api/week/:start', requireAuth, async (req, res) => {
 
 app.post('/api/week/:start', requireAuth, requireAdmin, async (req, res) => {
   const { rows } = req.body;
+  if (!isIsoDate(req.params.start)) return res.status(400).json({ error: 'Neplatný formát data týdne' });
+  const rowErr = validateRows(rows);
+  if (rowErr) return res.status(400).json({ error: rowErr });
+  const safeRows = rows.map(r => ({
+    ...r,
+    cislo: sanitizeStr(r.cislo, 20),
+    lokalita: sanitizeStr(r.lokalita, 100),
+    objednavka: sanitizeStr(r.objednavka, 100),
+    smes: sanitizeStr(r.smes, 200),
+    itt: sanitizeStr(r.itt, 50),
+    ceta: sanitizeStr(r.ceta, 50),
+  }));
   await pool.query(
     `INSERT INTO week_data (week_start,rows_json,updated_at) VALUES($1,$2,NOW())
      ON CONFLICT(week_start) DO UPDATE SET rows_json=EXCLUDED.rows_json, updated_at=NOW()`,
-    [req.params.start, JSON.stringify(rows)]
+    [req.params.start, JSON.stringify(safeRows)]
   );
   res.json({ ok: true });
 });
@@ -248,6 +283,11 @@ app.get('/api/companies', requireAuth, async (req, res) => {
 
 app.post('/api/companies', requireAuth, requireAdmin, async (req, res) => {
   const { companies } = req.body;
+  if (!Array.isArray(companies) || companies.length > 20) return res.status(400).json({ error: 'companies musí být pole max 20 položek' });
+  for (const c of companies) {
+    if (!c.name || typeof c.name !== 'string') return res.status(400).json({ error: 'každá firma musí mít name' });
+    if (c.color && !/^#[0-9a-fA-F]{3,6}$/.test(c.color)) return res.status(400).json({ error: 'neplatný formát barvy' });
+  }
   await pool.query(
     `INSERT INTO companies (id,data_json,updated_at) VALUES(1,$1,NOW())
      ON CONFLICT(id) DO UPDATE SET data_json=EXCLUDED.data_json, updated_at=NOW()`,
@@ -264,7 +304,13 @@ app.get('/api/settings', requireAuth, async (req, res) => {
 });
 
 app.post('/api/settings', requireAuth, requireAdmin, async (req, res) => {
+  const allowed = ['hmg_max_daily', 'plant_rate'];
   for (const [k, v] of Object.entries(req.body)) {
+    if (!allowed.includes(k)) continue;
+    if (k === 'hmg_max_daily' || k === 'plant_rate') {
+      const n = parseInt(v, 10);
+      if (isNaN(n) || n <= 0 || n > 1000000) return res.status(400).json({ error: `${k} musí být kladné číslo` });
+    }
     await pool.query(
       `INSERT INTO settings (key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,
       [k, String(v)]
@@ -404,6 +450,15 @@ app.post('/api/import-excel', requireAuth, requireAdmin, upload.single('file'), 
     console.error('Import error:', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── Globální error handler ──
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  if (req.path.startsWith('/api/')) {
+    return res.status(500).json({ error: 'Interní chyba serveru' });
+  }
+  res.status(500).send('Interní chyba serveru');
 });
 
 // ── Fallback ──
