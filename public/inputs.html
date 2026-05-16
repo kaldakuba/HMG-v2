@@ -82,6 +82,7 @@ th{background:#f5f7fa;font-weight:700;font-size:12px;color:#374151;letter-spacin
   <div class="actions">
     <a class="btn week" href="/">Týdenní kalendář</a>
     <a class="btn week" href="/month">Měsíční přehled</a>
+    <a class="btn" style="background:#1e40af;display:none" href="/settings" id="settingsBtn">⚙ Nastavení</a>
   </div>
 </header>
 <main class="wrap"><section class="card">
@@ -486,6 +487,13 @@ async function obnovitDB(event) {
 }
 
 loadViewers();
+
+fetch('/api/me').then(r=>r.json()).then(d=>{
+  const sb = document.getElementById('settingsBtn');
+  if(sb && d.role==='admin') sb.style.display='';
+  const el = document.getElementById('footerUser');
+  if(el && d.username) el.textContent = d.username;
+}).catch(()=>{});
 
 fetch('/api/me').then(r=>r.json()).then(d=>{
   const sb = document.getElementById('settingsBtn');
