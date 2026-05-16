@@ -159,8 +159,8 @@ input:focus,select:focus{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,23
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0">
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <div>
-          <button class="btn" style="background:#0369a1" onclick="settZalohaDB()">⬇ Záloha DB</button>
-          <p class="info" style="margin-top:4px">Stáhne zálohu všech dat jako JSON soubor.</p>
+          <button class="btn" style="background:#0369a1" onclick="settZalohaDB()">⬇ Záloha Excel</button>
+          <p class="info" style="margin-top:4px">Stáhne zálohu všech dat jako Excel soubor (.xlsx).</p>
         </div>
         <div>
           <button class="btn" style="background:#0369a1" onclick="document.getElementById('settObnovaFile').click()">↑ Obnovit ze zálohy</button>
@@ -446,19 +446,13 @@ function settImportWeekData(ev) {
 
 async function settZalohaDB() {
   try {
-    const [weeks, inputs, companies, settings] = await Promise.all([
-      fetch('/api/weeks').then(r=>r.json()).catch(()=>[]),
-      fetch('/api/inputs').then(r=>r.json()).catch(()=>null),
-      fetch('/api/companies').then(r=>r.json()).catch(()=>null),
-      fetch('/api/settings').then(r=>r.json()).catch(()=>({}))
-    ]);
-    const zaloha = { version: 2, created: new Date().toISOString(), weeks, inputs, companies, settings };
-    const blob = new Blob([JSON.stringify(zaloha, null, 2)], {type:'application/json'});
+    const date = new Date().toISOString().slice(0,10);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'hmg_zaloha_' + new Date().toISOString().slice(0,10) + '.json';
+    a.href = '/api/export-excel';
+    a.download = 'hmg_zaloha_' + date + '.xlsx';
     document.body.appendChild(a); a.click();
-    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    setTimeout(()=>a.remove(), 500);
+    document.getElementById('importMsg').innerHTML = '<span class="success">✓ Záloha stažena jako Excel</span>';
   } catch(e) { alert('Chyba zálohy: '+e.message); }
 }
 
