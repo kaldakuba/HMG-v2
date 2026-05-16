@@ -190,26 +190,30 @@ function render(){
     const ds=daySum(id);
     const over=ds>0&&ds>=_maxDaily;
     const dc=dayClass(id);
+    const hideDay=_isViewer&&id<todayStr;
     let style=over?'background:#fee2e2;color:#991b1b;font-weight:800'
       :dc==='day-h'?'background:#86efac;color:#14532d;font-weight:800'
       :dc==='day-w'?'background:#d1d5db;color:#374151;font-weight:800'
       :'background:#dbeafe;color:#1e3a8a;font-weight:800';
-    h+='<th class="day" style="'+style+'">'+ds+'</th>';
+    if(hideDay)style+=';display:none';
+    h+='<th class="day" style="'+style+'">'+(hideDay?'':ds)+'</th>';
   }
   h+='</tr>';
   // Řádek datumů
   h+='<tr class="sticky-head-2"><th class="col-lok">lokalita</th><th class="col-obj">objednávka</th><th class="col-smes">Směs a průkazná zk. typu</th><th class="col-itt">ITT</th><th class="col-ceta">četa</th>';
+  const todayStr=new Date().toISOString().slice(0,10);
   for(let d=1;d<=days;d++){
     const id=iso(y,m,d);
     const dc=dayClass(id);
-    h+='<th class="day '+dc+'" style="font-size:11px">'+d+'.'+(m+1)+'.</th>';
+    const hideCol=_isViewer&&id<todayStr;
+    h+='<th class="day '+dc+'" style="font-size:11px'+(hideCol?';display:none':'')+'">'+(hideCol?'':d+'.'+(m+1)+'.')+'</th>';
   }
   h+='</tr></thead><tbody>';
 
   if(!rows.length){
     for(let i=0;i<20;i++){
       h+='<tr><td></td><td></td><td></td><td></td><td></td>';
-      for(let d=1;d<=days;d++)h+='<td class="'+dayClass(iso(y,m,d))+'"></td>';
+      for(let d=1;d<=days;d++){const id=iso(y,m,d);const hideD=_isViewer&&id<todayStr;h+='<td class="'+dayClass(id)+'" style="'+(hideD?'display:none':'')+'">'+'</td>';}
       h+='</tr>';
     }
   } else {
@@ -245,13 +249,16 @@ let _minMonth = ''; // viewer nemůže jít před tento měsíc
 async function checkViewerRole() {
   try {
     const me = await fetch('/api/me').then(r=>r.json());
-    _isViewer = (me.role === 'viewer');
+    _isViewer = (me.role === 'hmg_share');
     if (_isViewer) {
       // Nastavit minimální měsíc na aktuální
       _minMonth = defaultMonth();
       // Skrýt export tlačítko
       const exportBtn = document.querySelector('.btn.green');
       if (exportBtn) exportBtn.style.display = 'none';
+      // Skrýt tlačítko Týdenní kalendář
+      const weekBtn = document.querySelector('.btn.week');
+      if (weekBtn) weekBtn.style.display = 'none';
       // Skrýt tlačítko Předchozí pokud jsme na aktuálním měsíci
       updateNavButtons();
     }

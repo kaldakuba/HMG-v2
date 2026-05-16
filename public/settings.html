@@ -81,7 +81,7 @@ input:focus,select:focus{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,23
             <label>Role</label>
             <select id="newRole">
               <option value="operator">Operátor</option>
-              <option value="viewer">Viewer (jen měsíční)</option>
+              <option value="hmg_share">Sdílený HMG</option>
               <option value="admin">Admin</option>
             </select>
           </div>
@@ -233,7 +233,7 @@ async function loadUsers() {
   tbody.innerHTML = users.map(u => `
     <tr>
       <td><strong>${esc(u.username)}</strong></td>
-      <td>${u.role==='admin'?'<span class="badge admin">admin</span>':u.role==='operator'?'<span class="badge" style="background:#fef9c3;color:#854d0e">operátor</span>':'<span class="badge" style="background:#ede9fe;color:#5b21b6">viewer</span>'}</td>
+      <td>${u.role==='admin'?'<span class="badge admin">admin</span>':u.role==='operator'?'<span class="badge" style="background:#fef9c3;color:#854d0e">operátor</span>':'<span class="badge" style="background:#ede9fe;color:#5b21b6">sdílený HMG</span>'}</td>
       <td>${fmtDate(u.last_seen)}</td>
       <td style="text-align:center">${u.session_count > 0 ? `<span style="color:#2563eb;font-weight:600">${u.session_count}</span>` : '0'}</td>
       <td style="display:flex;gap:4px;flex-wrap:wrap">
