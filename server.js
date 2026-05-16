@@ -87,7 +87,7 @@ async function initDb() {
       id            SERIAL PRIMARY KEY,
       username      TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
-      role          TEXT NOT NULL DEFAULT 'hmg_share',
+      role          TEXT NOT NULL DEFAULT 'operator',
       created_at    TIMESTAMPTZ DEFAULT NOW(),
       last_seen     TIMESTAMPTZ
     );
