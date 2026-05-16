@@ -1,13 +1,13 @@
 <!doctype html>
 <html lang="cs">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.3,maximum-scale=5,user-scalable=yes">
 <title>HARMONOGRAM VÝROBY</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box}
-body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-size:110%}
-.topbar{background:#1a1a2e;color:#fff;min-height:64px;padding:0 16px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;position:sticky;top:0;z-index:100}
+body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-size:100%}
+.topbar{background:#1a1a2e;color:#fff;min-height:56px;padding:0 16px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;position:sticky;top:0;z-index:100}
 .topbar h1{margin:0;text-align:center;font-size:22px;font-weight:800;letter-spacing:2px;color:#fff}
 .top-left{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:#c8d0e0}
 .actions,.weeknav,.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -55,17 +55,55 @@ input[type=checkbox]:checked::after{content:"";position:absolute;left:4px;top:1p
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#f1f5f9}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 .saving-indicator{position:fixed;bottom:16px;right:16px;background:#1e293b;color:#fff;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;opacity:0;transition:opacity .3s;z-index:9999;pointer-events:none}
 .saving-indicator.show{opacity:1}
-@media(max-width:900px){
-  .topbar{display:flex;flex-direction:row;align-items:center;padding:0 8px;min-height:32px;height:32px;gap:6px}
-  .topbar h1{font-size:11px;font-weight:700;letter-spacing:.5px;white-space:nowrap;order:1}
-  .top-left{font-size:10px;order:2;color:#94a3b8;white-space:nowrap}
-  .actions{order:3;margin-left:auto;gap:3px;flex-wrap:nowrap}
-  .actions .btn{padding:2px 7px;font-size:10px;border-radius:3px}
-  .wrap{padding:4px}
-  .weekbar{padding:6px 8px;gap:4px}
-  .weekbar .btn{padding:3px 8px;font-size:11px}
-  table{font-size:11px}
-  th,td{height:28px;padding:1px 3px;font-size:11px}
+
+/* ═══════════════════════════════════════════════════
+   MOBILNÍ READ-ONLY MÓD — třída .mobile-ro na <body>
+   Přidána JS při načtení pokud window.innerWidth<=900
+   ═══════════════════════════════════════════════════ */
+/* Topbar - kompaktní, jen název týdne + navigace */
+body.mobile-ro .topbar{
+  display:flex;flex-direction:row;align-items:center;
+  padding:0 5px;min-height:26px;height:26px;gap:3px;
+}
+body.mobile-ro .topbar h1{font-size:9px;font-weight:700;letter-spacing:.1px;white-space:nowrap;margin:0;flex:1;text-align:center}
+body.mobile-ro .top-left{font-size:8px;color:#94a3b8;white-space:nowrap;overflow:hidden;max-width:90px;text-overflow:ellipsis;flex-shrink:0}
+body.mobile-ro #topWeekTitle{font-size:8px!important;font-weight:600!important}
+/* Skrýt vše nepotřebné v topbaru */
+body.mobile-ro .actions{display:none!important}
+/* Weekbar - jen navigace šipkami, nic jiného */
+body.mobile-ro .weekbar{padding:3px 4px;gap:2px;flex-wrap:nowrap;justify-content:center}
+body.mobile-ro .btn.top-orange{display:none!important}
+body.mobile-ro #calToggleBtn{display:none!important}
+body.mobile-ro .weeknav{gap:2px;flex-wrap:nowrap;justify-content:center;width:100%}
+body.mobile-ro .weeknav .btn{padding:2px 10px;font-size:9px;min-width:0!important;flex:1;text-align:center}
+/* Skrýt celý controls panel (přidání řádků, označit, zpět, export) */
+body.mobile-ro .controls{display:none!important}
+/* Skrýt panely spotřeby a směsí */
+body.mobile-ro #panelsRow{display:none!important}
+/* Skrýt saving indicator */
+body.mobile-ro .saving-indicator{display:none!important}
+/* Tabulka - kompaktní */
+body.mobile-ro .wrap{padding:1px 2px}
+body.mobile-ro .card{border-radius:3px}
+body.mobile-ro table{font-size:10px}
+body.mobile-ro th,body.mobile-ro td{height:20px;padding:0 2px;font-size:10px}
+body.mobile-ro th{height:21px;font-size:9px;letter-spacing:0}
+/* V read-only módu renderujeme text místo inputů - viz JS renderMobile() */
+body.mobile-ro .cap-label,.mobile-ro .sum-label{font-size:9px;padding-left:3px}
+body.mobile-ro .cap-value,.mobile-ro .sum-head{font-size:10px}
+body.mobile-ro .row-total{font-size:10px}
+body.mobile-ro .hours-row td{height:18px;font-size:9px}
+/* Landscape: výška < 500px */
+@media(max-height:500px){
+  body.mobile-ro .topbar{height:22px;min-height:22px}
+  body.mobile-ro .topbar h1{font-size:8px}
+  body.mobile-ro .top-left{display:none}
+  body.mobile-ro .wrap{padding:1px}
+  body.mobile-ro .weekbar{padding:2px 3px}
+  body.mobile-ro table{font-size:9px}
+  body.mobile-ro th,body.mobile-ro td{height:17px;padding:0 1px;font-size:9px}
+  body.mobile-ro th{height:18px;font-size:8px}
+  body.mobile-ro .hours-row td{height:15px;font-size:8px}
 }
 </style></head>
 <body>
@@ -198,9 +236,9 @@ function undoLast(){if(!undoStack.length){alert('Není co vrátit zpět.');retur
 async function shiftWeek(delta){
   const d=new Date(_weekStart);d.setDate(d.getDate()+delta*7);
   _weekStart=d.toISOString().slice(0,10);
-  await loadWeek(_weekStart);render();
+  await loadWeek(_weekStart);if(IS_MOBILE)renderMobile();else render();
 }
-async function currentWeek(){_weekStart=defaultMonday();await loadWeek(_weekStart);render();}
+async function currentWeek(){_weekStart=defaultMonday();await loadWeek(_weekStart);if(IS_MOBILE)renderMobile();else render();}
 
 function setPlantRate(v){
   _settings.hmg_plant_rate=v;
@@ -297,6 +335,58 @@ function renderMiniCal(){
   }
 }
 
+
+// ══════════════════════════════════════════════════════
+// MOBILNÍ READ-ONLY MÓD
+// Pokud šířka okna <= 900px, přepne do read-only zobrazení
+// ══════════════════════════════════════════════════════
+const IS_MOBILE = window.innerWidth <= 900;
+if(IS_MOBILE) document.body.classList.add('mobile-ro');
+
+function renderMobileHead(){
+  const start=_weekStart;const rows=_rows||[];const dates=dayKeys.map((_,i)=>isoDateFromStart(start,i));
+  const week=isoWeek(new Date(start));
+  const twt=document.getElementById('topWeekTitle');if(twt)twt.textContent='KT '+week+' | '+fmtTitleRange(start);
+  const total=dayKeys.reduce((s,k)=>s+daySum(rows,k),0);
+  const maxDaily=parseInt(_settings.hmg_max_daily||'1000');
+  // Řádek součtů + řádek datumů
+  thead.innerHTML=
+    `<tr><th class="sum-label" colspan="4" style="text-align:left;padding-left:6px">Součet t/den:</th>`+
+    dayKeys.map(k=>{const s=daySum(rows,k);const over=s>0&&s>=maxDaily;return`<th class="sum-head" style="${over?'background:#fee2e2!important;color:#991b1b!important;':''}">${s||''}</th>`}).join('')+
+    `<th class="sum-head">${fmtNum(total)}</th></tr>`+
+    `<tr><th>č.</th><th>lokalita</th><th>směs</th><th>četa</th>`+
+    dates.map((d,i)=>`<th class="${i>=5?'gray-day':'blue-day'}" style="${i>=5?'color:#6b7280':'color:#1d4ed8'}">${fmtShort(d)}</th>`).join('')+
+    `<th>Σ</th></tr>`;
+}
+
+function renderMobile(){
+  if(!_rows)return;
+  renderMobileHead();
+  const rows=_rows;
+  let html='';
+  rows.forEach((r)=>{
+    if(!r.cislo&&!r.lokalita&&!r.smes&&!r.ceta&&dayKeys.every(k=>!r[k]))return; // přeskočit prázdné řádky
+    const color=companyColor(r.ceta);
+    const bg=color?'background:'+color:'';
+    html+=`<tr style="${bg}">`;
+    html+=`<td style="font-weight:700;font-size:9px">${esc(r.cislo||'')}</td>`;
+    html+=`<td style="text-align:left;padding-left:3px">${esc(r.lokalita||'')}</td>`;
+    html+=`<td style="text-align:left;padding-left:3px">${esc(r.smes||'')}</td>`;
+    html+=`<td style="font-weight:600">${esc(r.ceta||'')}</td>`;
+    dayKeys.forEach((k,di)=>{
+      const v=r[k]?fmtNum(n(r[k]))||'':'';
+      html+=`<td class="${di>=5?'gray-day':'blue-day'}" style="font-weight:${v?'700':'400'}">${v}</td>`;
+    });
+    html+=`<td class="row-total">${fmtNum(rowSum(r))||''}</td>`;
+    html+=`</tr>`;
+  });
+  tbody.innerHTML=html;
+  // Řádek hodin v patičce - zjednodušený
+  const rate=n((document.getElementById('plantRate')||{}).value||'150')||150;
+  const total=dayKeys.reduce((s,k)=>s+daySum(rows,k),0);
+  tfoot.innerHTML=`<tr class="hours-row"><td colspan="4" style="text-align:left;padding-left:6px">hod. výroby:</td>${dayKeys.map(k=>`<td>${fmtNum(daySum(rows,k)/rate,1)}</td>`).join('')}<td>${fmtNum(total/rate,1)}</td></tr>`;
+}
+
 // ── INIT ──
 async function init(){
   // Načti nastavení
@@ -311,7 +401,22 @@ async function init(){
   if(companies)_companies=companies;
   // Načti týden
   await loadWeek(_weekStart);
-  render();
+  if(IS_MOBILE) renderMobile(); else render();
 }
 init();
-</script></body></html>
+
+// ── Odhlášení ──
+async function doLogout() {
+  await fetch('/api/logout', { method: 'POST' }).catch(()=>{});
+  window.location.href = '/login';
+}
+fetch('/api/me').then(r=>r.json()).then(d=>{
+  const el = document.getElementById('footerUser');
+  if(el && d.username) el.textContent = d.username;
+}).catch(()=>{});
+</script>
+<footer style="border-top:0.5px solid #d1d5db;background:#f8fafc;padding:5px 16px;display:flex;align-items:center;justify-content:space-between">
+  <span style="font-size:11px;color:#9ca3af">Přihlášen jako <strong id="footerUser" style="color:#6b7280">admin</strong></span>
+  <span onclick="doLogout()" style="font-size:11px;color:#9ca3af;cursor:pointer;text-decoration:underline;text-underline-offset:2px">Odhlásit</span>
+</footer>
+</body></html>
