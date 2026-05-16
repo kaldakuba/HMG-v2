@@ -487,9 +487,33 @@ async function sendBackup() {
       settings: settingsObj
     };
 
-    const json = JSON.stringify(backup, null, 2);
     const date = new Date().toISOString().slice(0, 10);
-    const filename = `hmg_zaloha_${date}.json`;
+    const filename = `hmg_zaloha_${date}.xlsx`;
+
+    // Sestavit Excel soubor
+    const wb = XLSX.utils.book_new();
+
+    // List 1: Týdny
+    backup.weeks.forEach(w => {
+      const rows = w.rows.map(r => ({
+        cislo: r.cislo||'', lokalita: r.lokalita||'', objednavka: r.objednavka||'',
+        smes: r.smes||'', itt: r.itt||'', ceta: r.ceta||'',
+        Po: r.d0||'', Ut: r.d1||'', St: r.d2||'', Ct: r.d3||'',
+        Pa: r.d4||'', So: r.d5||'', Ne: r.d6||''
+      }));
+      if (rows.length > 0) {
+        const ws = XLSX.utils.json_to_sheet(rows);
+        XLSX.utils.book_append_sheet(wb, ws, w.start.slice(5)); // MM-DD jako název listu
+      }
+    });
+
+    // List 2: Receptury
+    if (backup.inputs.length > 0) {
+      const wsInputs = XLSX.utils.json_to_sheet(backup.inputs);
+      XLSX.utils.book_append_sheet(wb, wsInputs, 'Receptury');
+    }
+
+    const xlsxBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
     const transporter = nodemailer.createTransport({
       service: 'gmail',
@@ -506,8 +530,8 @@ async function sendBackup() {
       text: `Automatická záloha dat harmonogramu výroby.\n\nObsah:\n- Týdnů: ${backup.weeks.length}\n- Receptur: ${backup.inputs.length}\n- Datum: ${date}`,
       attachments: [{
         filename,
-        content: json,
-        contentType: 'application/json'
+        content: xlsxBuffer,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       }]
     });
 
