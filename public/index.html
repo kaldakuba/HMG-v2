@@ -55,6 +55,8 @@ input[type=checkbox]:checked::after{content:"";position:absolute;left:4px;top:1p
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#f1f5f9}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 .saving-indicator{position:fixed;bottom:16px;right:16px;background:#1e293b;color:#fff;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;opacity:0;transition:opacity .3s;z-index:9999;pointer-events:none}
 .saving-indicator.show{opacity:1}
+body.read-only-mode .editable,body.read-only-mode .day-input,body.read-only-mode .select-cell{pointer-events:none;cursor:default}
+body.read-only-mode .controls{display:none!important}
 
 /* ═══════════════════════════════════════════════════
    MOBILNÍ READ-ONLY MÓD — třída .mobile-ro na <body>
@@ -387,6 +389,28 @@ function renderMobile(){
   tfoot.innerHTML=`<tr class="hours-row"><td colspan="4" style="text-align:left;padding-left:6px">hod. výroby:</td>${dayKeys.map(k=>`<td>${fmtNum(daySum(rows,k)/rate,1)}</td>`).join('')}<td>${fmtNum(total/rate,1)}</td></tr>`;
 }
 
+
+// ── Role kontrola pro operator ──
+async function checkRole() {
+  try {
+    const me = await fetch('/api/me').then(r=>r.json());
+    const role = me.role;
+    const sb = document.getElementById('settingsBtn');
+    if (sb && role === 'admin') sb.style.display = '';
+    const el = document.getElementById('footerUser');
+    if (el && me.username) el.textContent = me.username;
+    
+    if (role === 'operator') {
+      // Operator - read only, může vidět spotřebu a směsi, může exportovat
+      // Skrýt editační tlačítka
+      document.querySelectorAll('.btn.green, .btn.red, .controls .btn:not(.export)').forEach(b => {
+        if (!b.classList.contains('export') && !b.textContent.includes('Export')) b.style.display = 'none';
+      });
+      // Zakázat editaci buněk
+      document.body.classList.add('read-only-mode');
+    }
+  } catch(e) {}
+}
 // ── INIT ──
 async function init(){
   // Načti nastavení
@@ -402,6 +426,7 @@ async function init(){
   // Načti týden
   await loadWeek(_weekStart);
   if(IS_MOBILE) renderMobile(); else render();
+  if(!IS_MOBILE) checkRole();
 }
 init();
 
