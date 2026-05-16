@@ -155,6 +155,26 @@ function requireAdmin(req, res, next) {
   res.redirect('/');
 }
 
+// Operator + Admin mohou číst data
+function requireOperator(req, res, next) {
+  const role = req.session && req.session.role;
+  if (role === 'admin' || role === 'operator') return next();
+  if (req.path.startsWith('/api/')) {
+    return res.status(403).json({ error: 'Nedostatečná oprávnění' });
+  }
+  res.redirect('/');
+}
+
+// Viewer může jen měsíční přehled
+function requireViewer(req, res, next) {
+  const role = req.session && req.session.role;
+  if (role === 'admin' || role === 'operator' || role === 'viewer') return next();
+  if (req.path.startsWith('/api/')) {
+    return res.status(403).json({ error: 'Nedostatečná oprávnění' });
+  }
+  res.redirect('/login');
+}
+
 // ── Stránky ──
 app.get('/login', (req, res) => {
   if (req.session && req.session.userId) return res.redirect('/');
@@ -164,10 +184,12 @@ app.get('/login', (req, res) => {
 });
 
 app.get('/', requireAuth, (req, res) => {
+  // Viewer vidí jen měsíční přehled
+  if (req.session.role === 'viewer') return res.redirect('/month');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.get('/month', requireAuth, (req, res) => {
+app.get('/month', requireAuth, requireViewer, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'month.html'));
 });
 
@@ -214,7 +236,7 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/api/me', requireAuth, (req, res) => {
-  res.json({ username: req.session.username, role: req.session.role });
+  res.json({ username: req.session.username, role: req.session.role, userId: req.session.userId });
 });
 
 // ── Data API (chráněno přihlášením) ──
@@ -322,7 +344,7 @@ app.post('/api/settings', requireAuth, requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/export', requireAuth, async (req, res) => {
+app.get('/api/export', requireAuth, requireOperator, async (req, res) => {
   const r = await pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start');
   res.json({
     version: 2, type: 'HMG_WEEK_DATA',
@@ -566,7 +588,7 @@ app.get('/settings', requireAuth, requireAdmin, (req, res) => {
 });
 
 
-app.get('/api/export-excel', requireAuth, async (req, res) => {
+app.get('/api/export-excel', requireAuth, requireOperator, async (req, res) => {
   const [weeks, inputs] = await Promise.all([
     pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start'),
     pool.query('SELECT rows_json FROM inputs WHERE id=1')
@@ -619,7 +641,7 @@ app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { username, password, role } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Vyplňte jméno a heslo' });
-    if (!['admin','viewer'].includes(role)) return res.status(400).json({ error: 'Neplatná role' });
+    if (!['admin','operator','viewer'].includes(role)) return res.status(400).json({ error: 'Neplatná role' });
     if (username.length < 3 || username.length > 50) return res.status(400).json({ error: 'Jméno 3-50 znaků' });
     if (password.length < 6) return res.status(400).json({ error: 'Heslo min. 6 znaků' });
     const hash = await bcrypt.hash(password, 12);
