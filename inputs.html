@@ -1,0 +1,268 @@
+<!doctype html><html lang="cs"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VSTUPY</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-size:110%}
+.topbar{background:#1a1a2e;color:#fff;min-height:64px;padding:0 16px;display:flex;align-items:center;justify-content:space-between;gap:16px;position:sticky;top:0;z-index:100}
+.topbar h1{margin:0;font-size:22px;font-weight:800;letter-spacing:2px;color:#fff}
+.top-left{font-size:18px;font-weight:700;color:#c8d0e0}
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{border-radius:6px;border:none;color:#fff;text-decoration:none;font-family:'Inter',sans-serif;font-weight:700;cursor:pointer;padding:7px 14px;font-size:13px;white-space:nowrap;transition:filter .15s}
+.btn:hover{filter:brightness(1.1)}
+.btn.week,.btn.blue{background:#2563eb}.btn.month{background:#64748b}.btn.green{background:#16a34a}.btn.red{background:#dc2626}.btn.orange{background:#ea580c}.btn.graybtn{background:#64748b}
+.wrap{padding:10px 12px}
+.card{background:#fff;border:1px solid #a0aabb;border-radius:8px;overflow:hidden;width:100%}
+.toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid #a0aabb;background:#fff}
+.toolbar-left{display:flex;gap:6px;align-items:center}
+.toolbar-right{margin-left:auto;display:flex;gap:6px;align-items:center}
+.file-hidden{display:none}
+.table-wrap{overflow-x:auto;background:#fff;width:100%}
+table{border-collapse:collapse;width:100%;min-width:1720px;font-size:13px;table-layout:fixed}
+th,td{border:1px solid #a0aabb;padding:3px 5px;height:30px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
+th{background:#f5f7fa;font-weight:700;font-size:12px;color:#374151;letter-spacing:.2px}
+.col-num{width:3.2%}.col-smes{width:18.6%}.col-itt{width:8.5%}.col-frakce{width:3.65%}.col-pojivo{width:5.35%}.col-2030{width:3.65%}.col-prach{width:3.65%}.col-vapenec{width:4.75%}.col-addbit{width:3.85%}.col-scel{width:3.65%}.col-ra{width:5.55%}.col-celkem{width:4.3%}
+.gray{background:#f3f4f6!important}.green-cell{background:#f0fdf4!important}
+.sum-bad{background:#fee2e2!important;color:#991b1b!important;font-weight:700!important}
+.sum-ok{background:#f0fdf4!important;color:#15803d!important;font-weight:700!important}
+.thick-top td{border-top:3px solid #a0aabb}
+.selected-row td{background:#eff6ff!important;outline:2px solid #3b82f6;outline-offset:-2px}
+
+/* FORM CARD */
+.form-card{margin:0;background:#f8fafc;border-top:1px solid #a0aabb;padding:14px 12px}
+.form-card h2{margin:0 0 10px;font-size:15px;font-weight:700;color:#374151}
+.total-row{width:100%;min-width:1720px;display:flex;justify-content:center;margin-bottom:10px}
+.total-field{width:150px}
+.total-field label,.field label,.company-form label{display:block;font-size:10px;font-weight:700;margin-bottom:2px;color:#6b7280;text-transform:uppercase;letter-spacing:.3px}
+.total-field input{width:100%;height:32px;border:1.5px solid #a0aabb;border-radius:5px;font-family:'Inter',sans-serif;font-size:14px;font-weight:700;text-align:center;background:#fff}
+.total-ok{background:#f0fdf4!important;border-color:#86efac!important;color:#15803d!important}
+.total-bad{background:#fee2e2!important;border-color:#fca5a5!important;color:#991b1b!important}
+.input-error{background:#fee2e2!important;border:1.5px solid #f87171!important}
+#inputGrid{display:grid;grid-template-columns:3.2% 18.6% 8.5% 3.65% 3.65% 3.65% 3.65% 3.65% 3.65% 5.35% 5.35% 5.35% 3.65% 3.65% 4.75% 3.85% 3.65% 5.55% 5.55%;min-width:1720px;gap:0}
+.field{padding:0 2px}
+.field input{width:100%;height:28px;border:1px solid #a0aabb;border-radius:4px;text-align:center;font-family:'Inter',sans-serif;font-size:12px;background:#fff}
+.field input:focus{outline:2px solid #3b82f6;border-color:#3b82f6}
+.form-actions{margin-top:10px;display:flex;gap:8px}
+
+/* SETTINGS */
+.settings-card{margin:10px 12px;background:#f8fafc;border:1px solid #a0aabb;border-radius:8px;padding:12px 14px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.settings-field{display:flex;align-items:center;gap:8px}
+.settings-field label{font-size:13px;font-weight:700;color:#374151;white-space:nowrap}
+.settings-field input{width:100px;height:34px;border:1px solid #a0aabb;border-radius:5px;padding:2px 8px;font-family:'Inter',sans-serif;font-size:13px;font-weight:700;text-align:center;background:#fff}
+.settings-field input:focus{outline:2px solid #3b82f6;border-color:#3b82f6}
+
+/* COMPANIES */
+.company-panel{margin:10px 12px 12px;display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+.legend-wrap{min-width:200px}
+.legend-wrap .hint{font-size:11px;color:#6b7280;margin-top:6px;max-width:220px;line-height:1.4}
+.legend-row{height:30px;border:1px solid #a0aabb;text-align:center;line-height:28px;font-size:13px;font-weight:600;cursor:pointer;border-radius:4px;margin-bottom:3px;transition:filter .1s}
+.legend-row:hover{filter:brightness(.95)}
+.company-form{border:1px solid #a0aabb;border-radius:8px;background:#f8fafc;padding:12px 14px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+.company-form input{height:32px;border:1px solid #a0aabb;border-radius:5px;padding:2px 8px;font-family:'Inter',sans-serif;font-size:13px;background:#fff}
+.company-form input:focus{outline:2px solid #3b82f6}
+.company-form input[type=color]{width:46px;padding:1px 3px;cursor:pointer}
+.company-form-field{display:flex;flex-direction:column;gap:2px}
+.company-form-field label{font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.3px}
+#selectedInfo{font-size:12px;font-weight:700;color:#374151}
+
+/* IMPORT/EXPORT BAR */
+.import-bar{padding:10px 12px;border-top:1px solid #a0aabb;background:#f8fafc;display:flex;align-items:center;gap:8px}
+
+/* EDIT MODE */
+.edit-mode td{cursor:pointer}
+.edit-mode td.editable-cell{background:#fffbeb!important;outline:1px solid #f59e0b}
+.edit-input{width:100%;height:24px;border:1px solid #f59e0b;background:#fffbeb;text-align:center;font:inherit;font-family:'Inter',sans-serif;font-size:12px;padding:0 2px;border-radius:3px}
+
+::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#f1f5f9}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+@media(max-width:900px){.topbar{padding:10px;min-height:auto}.topbar h1{font-size:16px}.wrap{padding:6px}}
+</style></head>
+<body>
+<header class="topbar">
+  <div class="top-left">Vstupy směsí</div>
+  <h1>VSTUPY</h1>
+  <div class="actions">
+    <a class="btn week" href="/">Týdenní kalendář</a>
+    <a class="btn week" href="/month">Měsíční přehled</a>
+    <a class="btn" style="background:#1e40af;display:none" href="/settings" id="settingsBtn">⚙ Nastavení</a>
+  </div>
+</header>
+<main class="wrap"><section class="card">
+
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <button class="btn orange" onclick="document.getElementById('importFile').click()">↑ Import směsí</button>
+
+      <input id="importFile" class="file-hidden" type="file" accept=".xls,.html,.htm,.csv" onchange="importExcel(event)">
+      <button class="btn blue" onclick="exportExcel()">⬇ Export směsí</button>
+    </div>
+    <div class="toolbar-right">
+      <button class="btn green" id="editBtn" onclick="toggleEdit()">Editovat recepturu</button>
+      <button class="btn red" onclick="deleteSelectedRow()">Smazat označený</button>
+      <button class="btn graybtn" onclick="undoLast()">↩ Zpět</button>
+      <span id="selectedInfo">Není označen žádný řádek</span>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table id="mixTable">
+      <colgroup><col class="col-num"><col class="col-smes"><col class="col-itt"><col class="col-frakce"><col class="col-frakce"><col class="col-frakce"><col class="col-frakce"><col class="col-frakce"><col class="col-frakce"><col class="col-pojivo"><col class="col-pojivo"><col class="col-pojivo"><col class="col-2030"><col class="col-prach"><col class="col-vapenec"><col class="col-addbit"><col class="col-scel"><col class="col-ra"><col class="col-ra"><col class="col-celkem"></colgroup>
+      <thead><tr id="headRow"></tr></thead>
+      <tbody id="mixBody"></tbody>
+    </table>
+  </div>
+
+  <div class="form-card">
+    <h2>Přidat směs</h2>
+    <div class="total-row"><div class="total-field"><label>Celkem</label><input id="in_celkem" readonly value="0"></div></div>
+    <div id="inputGrid"></div>
+    <div class="form-actions">
+      <button class="btn green" onclick="addMix()">+ Přidat směs</button>
+      <button class="btn graybtn" onclick="clearForm()">Vyčistit formulář</button>
+    </div>
+  </div>
+
+</section>
+
+<div class="settings-card">
+  <div class="settings-field">
+    <label>Výkon obalovny t/h:</label>
+    <input id="plantRateInput" type="number" step="1" value="150">
+  </div>
+  <div class="settings-field">
+    <label>Denní kapacita plynu (m³):</label>
+    <input id="gasCapacityInput" type="number" step="100" value="10000" style="width:120px">
+  </div>
+  <div class="settings-field">
+    <label>Max. denní výkon (t):</label>
+    <input id="maxDailyInput" type="number" step="10" value="1000">
+  </div>
+  <button class="btn green" onclick="saveSettings()">Uložit nastavení</button>
+  <span id="settingsSaved" style="font-size:13px;color:#16a34a;font-weight:700;display:none">✓ Uloženo</span>
+</div>
+
+<div class="company-panel">
+  <div class="legend-wrap">
+    <div id="legend"></div>
+    <div class="hint">Správa firem je pouze legenda. Směsi ani řádky tabulky nejsou s firmou nijak propojené.</div>
+  </div>
+  <div class="company-form">
+    <div class="company-form-field"><label>Firma</label><input id="companyName" placeholder="Název firmy" style="width:160px"></div>
+    <div class="company-form-field"><label>Barva</label><input id="companyColor" type="color" value="#fff2a8"></div>
+    <button class="btn green" onclick="saveCompany()">Uložit firmu</button>
+    <button class="btn red" onclick="deleteSelectedCompany()">Smazat vybranou</button>
+  </div>
+</div>
+
+</main>
+<script>
+const cols=['cislo','smes','zt','c04','c24','c48','c811','c1116','c1622','b5070','b255560','b458065','b2030','prach','vapenec','addbit','scel','ra16','ra22','celkem'];
+const headers=['číslo','Směs','ITT','0/4','2/4','4/8','8/11','11/16','16/22','50/70','25/55-60','45/80-65','20/30','prach','vápenec','addbit','S-CEL','16RA 0/11','22RA 0/16','celkem'];
+const formCols=cols.filter(c=>c!=='celkem');
+const sumCols=['c04','c24','c48','c811','c1116','c1622','b5070','b255560','b458065','b2030','prach','vapenec','addbit','scel','ra16','ra22'];
+const labels=Object.fromEntries(cols.map((c,i)=>[c,headers[i]]));
+const base=[['1','ACO 11+ 50/70','1-2025-Ho','27,0','7,0','30,0','17,0','','','5,3','','','2,0','2,0','0,2','','15,0','',''],['2','ACL 16+ 50/70','2-2025-Ho','25,0','8,0','13,0','13,0','21,0','','3,6','','','','2,0','2,0','0,2','','15,0','',''],['3','ACP 16+ 50/70','3-2025-Ho','24,0','7,0','14,0','14,0','22,0','','3,3','','','','2,0','2,0','0,2','','15,0','',''],['4','ACP 22+ 50/70','4-2025-Ho','28,5','8,0','12,0','8,0','','26,0','3,7','','','','1,0','1,5','0,2','','','15,0',''],['5','ACO 11+ 25/55-60','5-2025-Ho','27,0','7,0','30,0','17,0','','','','5,3','','','2,0','2,0','0,2','','15,0','',''],['10','ACO 8 50/70 (Bez R)','10-2025-Ho','48,8','8,0','36,0','','','','6,3','','','','3,0','5,0','0,2','','','',''],['15','SMA 11S 45/80-65','15-2025-Ho','16,0','9,0','25,0','41,7','','','','','6,8','','3,0','5,0','0,2','0,3','','',''],['20','SMA 16S 45/80-65','20-2025-Ho','16,9','','16,9','18,8','33,8','','','','6,0','','','7,5','0,2','0,3','','',''],['','Laková','LAK','','','','','','','','','','','','','','','','','']].map(a=>Object.fromEntries(cols.map((c,i)=>[c,a[i]||''])));
+let selectedIndex=null;let undoStack=[];
+function loadRows(){return window._inputRows||base}
+function saveRows(r){window._inputRows=r;fetch('/api/inputs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:r})}).catch(()=>{})}
+// loadFromDB nahrazeno initInputs()
+function fmt(v){if(!v&&v!==0)return'';let n=Math.round(v*10)/10;return Number.isInteger(n)?String(n):String(n).replace('.',',');}
+function parseNumber(v){let n=parseFloat(String(v||'').trim().replace(/\s/g,'').replace(',','.'));return isNaN(n)?0:n}
+function formatNumber(n){let r=Math.round(n*10)/10;return Number.isInteger(r)?String(r):String(r).replace('.',',')}
+function rowTotal(r){let t=0;sumCols.forEach(c=>t+=parseNumber(r[c]));return Math.round(t*10)/10}
+function rowTotalOk(r){return Math.abs(rowTotal(r)-100)<0.05}
+function renderHead(){document.getElementById('headRow').innerHTML=headers.map((h,i)=>`<th class="${i>=9&&i<=12?'gray':i===17||i===18?'green-cell':''}">${h}</th>`).join('')}
+function render(){renderHead();const b=document.getElementById('mixBody');b.innerHTML='';loadRows().forEach((r,idx)=>{r.celkem=formatNumber(rowTotal(r));const tr=document.createElement('tr');if(idx===selectedIndex)tr.classList.add('selected-row');if(['10','15','20','22'].includes(String(r.cislo||'')))tr.classList.add('thick-top');tr.onclick=()=>selectRow(idx);cols.forEach((c,i)=>{const td=document.createElement('td');td.textContent=(c==='celkem')?formatNumber(rowTotal(r)):(r[c]||'');if(i>=9&&i<=12)td.classList.add('gray');if(i===17||i===18)td.classList.add('green-cell');if(c==='celkem')td.classList.add(rowTotalOk(r)?'sum-ok':'sum-bad');tr.appendChild(td)});b.appendChild(tr)});updateSelectedInfo()}
+function selectRow(idx){selectedIndex=idx;render()}
+function updateSelectedInfo(){selectedInfo.textContent=selectedIndex===null?'Není označen žádný řádek':'Označen řádek: '+(selectedIndex+1)}
+function snapshot(){undoStack.push(JSON.stringify(loadRows()));if(undoStack.length>20)undoStack.shift()}
+function deleteSelectedRow(){if(selectedIndex===null){alert('Nejdřív klikni na řádek tabulky, který chceš smazat.');return}const rows=loadRows();const r=rows[selectedIndex];if(!confirm('Smazat označený řádek: '+((r&&r.smes)||'bez názvu')+'?'))return;snapshot();rows.splice(selectedIndex,1);saveRows(rows);selectedIndex=null;render()}
+function undoLast(){if(!undoStack.length){alert('Není co vrátit zpět.');return}saveRows(JSON.parse(undoStack.pop()));selectedIndex=null;render()}
+function updateTotal(){let total=0;sumCols.forEach(c=>total+=parseNumber(document.getElementById('in_'+c)?.value));in_celkem.value=formatNumber(total);in_celkem.classList.toggle('total-ok',Math.abs(total-100)<0.05);in_celkem.classList.toggle('total-bad',Math.abs(total-100)>=0.05)}
+function isTotalOk(){return Math.abs(parseNumber(in_celkem.value)-100)<0.05}
+function markRequired(){['in_smes','in_zt'].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.toggle('input-error',!e.value.trim())})}
+function buildForm(){const g=document.getElementById('inputGrid');g.innerHTML='';formCols.forEach(c=>{const d=document.createElement('div');d.className='field';d.innerHTML=`<label>${labels[c]}</label>`;const i=document.createElement('input');i.id='in_'+c;if(sumCols.includes(c))i.addEventListener('input',updateTotal);if(['smes','zt'].includes(c))i.addEventListener('input',markRequired);d.appendChild(i);g.appendChild(d)});updateTotal()}
+function addMix(){updateTotal();markRequired();if(!in_smes.value.trim()||!in_zt.value.trim()){alert('Nelze uložit. Musí být vyplněná Směs a ITT.');return}if(!isTotalOk()){alert('Nelze uložit. Součet v poli celkem musí být přesně 100.');return}snapshot();const r={};cols.forEach(c=>r[c]=(document.getElementById('in_'+c)?.value||'').trim());r.celkem=formatNumber(rowTotal(r));if(!r.cislo)r.cislo=String(loadRows().filter(x=>x.cislo).length+1);const rows=loadRows();rows.push(r);saveRows(rows);clearForm();render();}
+function clearForm(){formCols.forEach(c=>{const e=document.getElementById('in_'+c);if(e){e.value='';e.classList.remove('input-error')}});updateTotal()}
+function exportExcel(){const rows=loadRows();let css='table{border-collapse:collapse;font-family:Arial;font-size:10pt}th,td{border:1px solid #111;padding:4px 6px;text-align:center}th{background:#f2f2f2}.gray{background:#e7e7e7}.green{background:#d9ead3}.bad{background:#f4cccc;color:#990000;font-weight:bold}.thick td{border-top:3px solid #000}';let s='<html><head><meta charset="UTF-8"><style>'+css+'</style></head><body><table><thead><tr>';headers.forEach((h,i)=>s+=`<th class="${i>=9&&i<=12?'gray':i===17||i===18?'green':''}">${esc(h)}</th>`);s+='</tr></thead><tbody>';rows.forEach(r=>{s+=`<tr class="${['10','15','20','22'].includes(String(r.cislo||''))?'thick':''}">`;cols.forEach((c,i)=>{let val=(c==='celkem')?formatNumber(rowTotal(r)):(r[c]||'');let cls=i>=9&&i<=12?'gray':i===17||i===18?'green':(c==='celkem'&&!rowTotalOk(r))?'bad':'';s+=`<td class="${cls}">${esc(val)}</td>`});s+='</tr>'});s+='</tbody></table></body></html>';downloadBlob(new Blob(['\ufeff'+s],{type:'application/vnd.ms-excel;charset=utf-8'}),'vstupy_smesi.xls')}
+function esc(v){return String(v).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))}
+function downloadBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
+function importExcel(ev){const f=ev.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=e=>{try{const t=e.target.result;let data=f.name.toLowerCase().endsWith('.csv')?parseCsv(t):parseHtmlTable(t);if(!data.length){alert('V souboru nebyla nalezena tabulka.');return}if(!confirm('Import přepíše aktuální tabulku. Pokračovat?'))return;snapshot();data.forEach(r=>r.celkem=formatNumber(rowTotal(r)));saveRows(data);selectedIndex=null;render();alert('Import hotov. Načteno řádků: '+data.length)}catch(err){alert('Import se nepovedl: '+err.message)}finally{ev.target.value=''}};rd.readAsText(f,'utf-8')}
+function parseHtmlTable(t){const doc=new DOMParser().parseFromString(t,'text/html');const trs=[...(doc.querySelector('table')||document.createElement('table')).querySelectorAll('tr')];return trs.slice(1).map(tr=>{const cells=[...tr.querySelectorAll('td,th')].map(td=>td.textContent.trim());const o={};cols.forEach((c,i)=>o[c]=cells[i]||'');o.celkem=formatNumber(rowTotal(o));return o}).filter(o=>Object.values(o).some(v=>v))}
+function parseCsv(t){return t.split(/\r?\n/).filter(l=>l.trim()).slice(1).map(line=>{const cells=line.split(';').length>1?line.split(';'):line.split(',');const o={};cols.forEach((c,i)=>o[c]=(cells[i]||'').trim());o.celkem=formatNumber(rowTotal(o));return o}).filter(o=>Object.values(o).some(v=>v))}
+function saveSettings(){const data={hmg_plant_rate:document.getElementById('plantRateInput').value||'150',hmg_gas_capacity:document.getElementById('gasCapacityInput').value||'10000',hmg_max_daily:document.getElementById('maxDailyInput').value||'1000'};fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(()=>{const s=document.getElementById('settingsSaved');s.style.display='inline';setTimeout(()=>s.style.display='none',2000)}).catch(()=>{});}
+// settings načteny v initInputs()
+const defaultCompanies=[{name:'Colas',color:'#fff2a8'},{name:'Firesta',color:'#d9ead3'},{name:'Mi Roads',color:'#ff7f86'}];
+function loadCompanies(){return window._companies||defaultCompanies}
+function saveCompanies(c){window._companies=c;fetch('/api/companies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({companies:c})}).catch(()=>{})}
+function renderLegend(){legend.innerHTML='';loadCompanies().forEach(c=>{const d=document.createElement('div');d.className='legend-row';d.style.backgroundColor=c.color;d.style.color='#374151';d.textContent=c.name;d.onclick=()=>{companyName.value=c.name;companyColor.value=c.color};legend.appendChild(d)})}
+function saveCompany(){const name=companyName.value.trim(),color=companyColor.value;if(!name){alert('Zadej název firmy.');return}let c=loadCompanies();let f=c.find(x=>x.name.toLowerCase()===name.toLowerCase());if(f){f.name=name;f.color=color}else c.push({name,color});saveCompanies(c);renderLegend()}
+function deleteSelectedCompany(){const name=companyName.value.trim();if(!name){alert('Vyber nebo zadej firmu ke smazání.');return}saveCompanies(loadCompanies().filter(c=>c.name!==name));companyName.value='';renderLegend()}
+async function initInputs(){
+  const rows=await fetch('/api/inputs').then(r=>r.json()).catch(()=>null);
+  if(rows)window._inputRows=rows;
+  const companies=await fetch('/api/companies').then(r=>r.json()).catch(()=>null);
+  if(companies)window._companies=companies;
+  const settings=await fetch('/api/settings').then(r=>r.json()).catch(()=>({}));
+  if(settings.hmg_plant_rate)document.getElementById('plantRateInput').value=settings.hmg_plant_rate;
+  if(settings.hmg_gas_capacity)document.getElementById('gasCapacityInput').value=settings.hmg_gas_capacity;
+  if(settings.hmg_max_daily)document.getElementById('maxDailyInput').value=settings.hmg_max_daily;
+  buildForm();renderLegend();render();
+}
+initInputs();
+let _editMode=false;
+function toggleEdit(){_editMode=!_editMode;const btn=document.getElementById('editBtn');const tbody=document.getElementById('mixBody');if(_editMode){btn.textContent='Uložit změny';btn.className='btn orange';tbody.classList.add('edit-mode');renderEditable();}else{btn.textContent='Editovat recepturu';btn.className='btn green';tbody.classList.remove('edit-mode');saveEdits();render();}}
+function calcRowTotal(tr){let sum=0;tr.querySelectorAll('.edit-input[data-col]').forEach(inp=>{if(inp.getAttribute('data-col')!=='celkem'){sum+=parseNumber(inp.value);}});return Math.round(sum*10)/10;}
+function updateCelkem(tr){const total=calcRowTotal(tr);const ok=Math.abs(total-100)<0.05;const td=tr.querySelector('.celkem-td');if(td){td.textContent=formatNumber(total);td.style.background=ok?'#f0fdf4':'#fee2e2';td.style.color=ok?'#15803d':'#991b1b';td.style.fontWeight='700';}}
+function renderEditable(){const rows=loadRows();const b=document.getElementById('mixBody');b.innerHTML='';rows.forEach((r,idx)=>{const tr=document.createElement('tr');if(idx===selectedIndex)tr.classList.add('selected-row');if(['10','15','20','22'].includes(String(r.cislo||'')))tr.classList.add('thick-top');tr.onclick=()=>selectRow(idx);cols.forEach((c,i)=>{const td=document.createElement('td');if(c==='celkem'){td.classList.add('celkem-td');const total=rowTotal(r);const ok=rowTotalOk(r);td.textContent=formatNumber(total);td.style.background=ok?'#f0fdf4':'#fee2e2';td.style.color=ok?'#15803d':'#991b1b';td.style.fontWeight='700';}else if(c!=='celkem'){td.classList.add('editable-cell');const inp=document.createElement('input');inp.className='edit-input';inp.value=r[c]||'';inp.setAttribute('data-row',idx);inp.setAttribute('data-col',c);inp.onclick=e=>e.stopPropagation();if(i>=3)inp.addEventListener('input',()=>updateCelkem(tr));td.appendChild(inp);}else{td.textContent=r[c]||'';}if(i>=9&&i<=12)td.classList.add('gray');if(i===17||i===18)td.classList.add('green-cell');tr.appendChild(td);});b.appendChild(tr);});}
+function saveEdits(){snapshot();const rows=loadRows();document.querySelectorAll('.edit-input').forEach(inp=>{const idx=parseInt(inp.getAttribute('data-row'));const col=inp.getAttribute('data-col');if(rows[idx])rows[idx][col]=inp.value;});rows.forEach(r=>r.celkem=formatNumber(rowTotal(r)));saveRows(rows);}
+loadFromDB();
+</script>
+
+<!-- ══════════════════════════════════════════════
+     SEKCE: SDÍLENÍ MĚSÍČNÍHO PŘEHLEDU
+═══════════════════════════════════════════════ -->
+<style>
+.invite-row input{flex:1;height:36px;border:1px solid #a0aabb;border-radius:6px;padding:2px 12px;font-family:'Inter',sans-serif;font-size:13px;color:#111}
+.invite-row input:focus{outline:2px solid #3b82f6;border-color:#3b82f6}
+.btn-invite:hover{filter:brightness(1.1)}
+.btn-copy.copied{background:#16a34a}
+.badge-active{background:#d9ead3;color:#14532d;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700}
+.badge-pending{background:#fef9c3;color:#854d0e;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700}
+.badge-revoked{background:#fee2e2;color:#991b1b;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700}
+.vbtn{border:1px solid #a0aabb;background:#fff;border-radius:5px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;color:#374151}
+.vbtn:hover{background:#f0f2f5}
+.vbtn.red{border-color:#fca5a5;color:#991b1b}
+.vbtn.red:hover{background:#fee2e2}
+.vbtn.green{border-color:#86efac;color:#15803d}
+.vbtn.green:hover{background:#d9ead3}
+</style>
+
+
+<script>
+
+
+
+
+
+
+
+fetch('/api/me').then(r=>r.json()).then(d=>{
+  const sb = document.getElementById('settingsBtn');
+  if(sb && d.role==='admin') sb.style.display='';
+  const el = document.getElementById('footerUser');
+  if(el && d.username) el.textContent = d.username;
+}).catch(()=>{});
+
+fetch('/api/me').then(r=>r.json()).then(d=>{
+  const sb = document.getElementById('settingsBtn');
+  if(sb && d.role==='admin') sb.style.display='';
+  const el = document.getElementById('footerUser');
+  if(el && d.username) el.textContent = d.username;
+}).catch(()=>{});
+
+async function doLogout(){
+  await fetch('/api/logout',{method:'POST'}).catch(()=>{});
+  window.location.href='/login';
+}
+</script>
+
+</body></html>

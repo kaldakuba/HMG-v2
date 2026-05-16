@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Přihlášení – Harmonogram výroby</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',Arial,sans-serif;background:#f0f2f5;min-height:100vh;display:flex;align-items:center;justify-content:center;color:#111}
+.card{background:#fff;border:1px solid #a0aabb;border-radius:12px;padding:40px 36px;width:100%;max-width:420px;text-align:center}
+.logo{font-size:13px;font-weight:700;color:#6b7280;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px}
+h1{font-size:22px;font-weight:800;letter-spacing:1px;color:#1a1a2e;margin-bottom:6px}
+.sub{font-size:14px;color:#6b7280;margin-bottom:32px;line-height:1.5}
+.err{background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:14px 16px;font-size:13px;color:#991b1b;font-weight:600;margin-bottom:20px}
+.info{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 16px;font-size:13px;color:#1e40af;line-height:1.6}
+.info strong{display:block;font-weight:700;margin-bottom:4px}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">Harmonogram výroby</div>
+  <h1>Přístup zamítnut</h1>
+  <div class="sub">Tato stránka je přístupná pouze na pozvání.</div>
+  <div id="errBox" style="display:none"></div>
+  <div class="info">
+    <strong>Jak získat přístup?</strong>
+    Požádejte správce o zaslání přístupového odkazu na váš email.<br>
+    Odkaz lze použít pouze jednou a je vázán na vaše zařízení.
+  </div>
+</div>
+<script>
+const p = new URLSearchParams(location.search);
+const err = p.get('err');
+const box = document.getElementById('errBox');
+if(err === 'used') {
+  box.style.display = 'block';
+  box.className = 'err';
+  box.textContent = 'Tento přístupový odkaz byl již použit. Požádejte správce o nový odkaz.';
+} else if(err === 'invalid') {
+  box.style.display = 'block';
+  box.className = 'err';
+  box.textContent = 'Přístupový odkaz je neplatný nebo vypršel.';
+}
+</script>
+</body>
+</html>
