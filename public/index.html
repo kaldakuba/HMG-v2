@@ -1,6 +1,17 @@
 <!doctype html>
 <html lang="cs">
 <head>
+<script>
+// Okamžitá kontrola role - hmg_share nesmí vidět týdenní
+(async function(){
+  try {
+    const r = await fetch('/api/me');
+    if (!r.ok) { window.location.href='/login'; return; }
+    const d = await r.json();
+    if (d.role === 'hmg_share') { window.location.href='/month'; return; }
+  } catch(e) { window.location.href='/login'; }
+})();
+</script>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.3,maximum-scale=5,user-scalable=yes">
 <title>HARMONOGRAM VÝROBY</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -288,7 +299,18 @@ function renderMixes(){
 async function exportWeeks(){
   const r=await fetch('/api/export');const payload=await r.json();
   let css='table{border-collapse:collapse;font-family:Arial;font-size:10pt;margin-bottom:18px}th,td{border:1px solid #222;padding:4px;text-align:center}th{font-weight:bold;background:#f2f2f2}.blue-day{background:#ddebf7}.gray-day{background:#d9d9d9}.sum-head{background:#fce4d6;font-weight:bold}.cap-value{background:#ffe600;font-weight:bold}.hours-row td{background:#d9d9d9;font-weight:bold}';
-  let html='<html><head><meta charset="UTF-8"><style>'+css+'</style></head><body><!--HMG_WEEK_DATA:'+btoa(unescape(encodeURIComponent(JSON.stringify(payload))))+'--><h1>HARMONOGRAM VÝROBY - export týdnů</h1>';
+  let html='<html><head>
+<script>
+// Okamžitá kontrola role - hmg_share nesmí vidět týdenní
+(async function(){
+  try {
+    const r = await fetch('/api/me');
+    if (!r.ok) { window.location.href='/login'; return; }
+    const d = await r.json();
+    if (d.role === 'hmg_share') { window.location.href='/month'; return; }
+  } catch(e) { window.location.href='/login'; }
+})();
+</script><meta charset="UTF-8"><style>'+css+'</style></head><body><!--HMG_WEEK_DATA:'+btoa(unescape(encodeURIComponent(JSON.stringify(payload))))+'--><h1>HARMONOGRAM VÝROBY - export týdnů</h1>';
   payload.weeks.forEach(w=>{html+=weekTableHtml(w.start,w.rows)});
   html+='</body></html>';
   downloadBlob(new Blob(['\ufeff'+html],{type:'application/vnd.ms-excel;charset=utf-8'}),'HMG_export_tydny.xls');
