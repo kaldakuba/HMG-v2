@@ -87,7 +87,7 @@ async function initDb() {
       id            SERIAL PRIMARY KEY,
       username      TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
-      role          TEXT NOT NULL DEFAULT 'viewer',
+      role          TEXT NOT NULL DEFAULT 'hmg_share',
       created_at    TIMESTAMPTZ DEFAULT NOW(),
       last_seen     TIMESTAMPTZ
     );
@@ -168,7 +168,7 @@ function requireOperator(req, res, next) {
 // Viewer může jen měsíční přehled
 function requireViewer(req, res, next) {
   const role = req.session && req.session.role;
-  if (role === 'admin' || role === 'operator' || role === 'viewer') return next();
+  if (role === 'admin' || role === 'operator' || role === 'hmg_share') return next();
   if (req.path.startsWith('/api/')) {
     return res.status(403).json({ error: 'Nedostatečná oprávnění' });
   }
@@ -185,7 +185,7 @@ app.get('/login', (req, res) => {
 
 app.get('/', requireAuth, (req, res) => {
   // Viewer vidí jen měsíční přehled
-  if (req.session.role === 'viewer') return res.redirect('/month');
+  if (req.session.role === 'hmg_share') return res.redirect('/month');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
@@ -641,7 +641,7 @@ app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { username, password, role } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Vyplňte jméno a heslo' });
-    if (!['admin','operator','viewer'].includes(role)) return res.status(400).json({ error: 'Neplatná role' });
+    if (!['admin','operator','hmg_share'].includes(role)) return res.status(400).json({ error: 'Neplatná role' });
     if (username.length < 3 || username.length > 50) return res.status(400).json({ error: 'Jméno 3-50 znaků' });
     if (password.length < 6) return res.status(400).json({ error: 'Heslo min. 6 znaků' });
     const hash = await bcrypt.hash(password, 12);
