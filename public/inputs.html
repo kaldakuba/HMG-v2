@@ -90,8 +90,7 @@ th{background:#f5f7fa;font-weight:700;font-size:12px;color:#374151;letter-spacin
   <div class="toolbar">
     <div class="toolbar-left">
       <button class="btn orange" onclick="document.getElementById('importFile').click()">↑ Import směsí</button>
-      <button class="btn" style="background:#7c3aed;color:#fff;" onclick="document.getElementById('importXlsxFile').click()">📥 Import z Excelu HMG</button>
-      <input id="importXlsxFile" class="file-hidden" type="file" accept=".xlsx" onchange="importFromExcel(event)">
+
       <input id="importFile" class="file-hidden" type="file" accept=".xls,.html,.htm,.csv" onchange="importExcel(event)">
       <button class="btn blue" onclick="exportExcel()">⬇ Export směsí</button>
     </div>
@@ -122,14 +121,6 @@ th{background:#f5f7fa;font-weight:700;font-size:12px;color:#374151;letter-spacin
   </div>
 
 </section>
-
-<div class="import-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-  <button class="btn orange" onclick="document.getElementById('importWeekFile').click()">↑ Import dat HMG</button>
-  <input id="importWeekFile" class="file-hidden" type="file" accept=".xls,.html,.htm,.json,.txt" onchange="importWeekData(event)">
-  <button class="btn" style="background:#0369a1;color:#fff" onclick="zalohaDB()">⬇ Záloha DB</button>
-  <button class="btn" style="background:#0369a1;color:#fff" onclick="document.getElementById('obnovenieFile').click()">↑ Obnovit ze zálohy</button>
-  <input id="obnovenieFile" class="file-hidden" type="file" accept=".json" onchange="obnovitDB(event)">
-</div>
 
 <div class="settings-card">
   <div class="settings-field">
@@ -197,7 +188,6 @@ function downloadBlob(blob,name){const a=document.createElement('a');a.href=URL.
 function importExcel(ev){const f=ev.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=e=>{try{const t=e.target.result;let data=f.name.toLowerCase().endsWith('.csv')?parseCsv(t):parseHtmlTable(t);if(!data.length){alert('V souboru nebyla nalezena tabulka.');return}if(!confirm('Import přepíše aktuální tabulku. Pokračovat?'))return;snapshot();data.forEach(r=>r.celkem=formatNumber(rowTotal(r)));saveRows(data);selectedIndex=null;render();alert('Import hotov. Načteno řádků: '+data.length)}catch(err){alert('Import se nepovedl: '+err.message)}finally{ev.target.value=''}};rd.readAsText(f,'utf-8')}
 function parseHtmlTable(t){const doc=new DOMParser().parseFromString(t,'text/html');const trs=[...(doc.querySelector('table')||document.createElement('table')).querySelectorAll('tr')];return trs.slice(1).map(tr=>{const cells=[...tr.querySelectorAll('td,th')].map(td=>td.textContent.trim());const o={};cols.forEach((c,i)=>o[c]=cells[i]||'');o.celkem=formatNumber(rowTotal(o));return o}).filter(o=>Object.values(o).some(v=>v))}
 function parseCsv(t){return t.split(/\r?\n/).filter(l=>l.trim()).slice(1).map(line=>{const cells=line.split(';').length>1?line.split(';'):line.split(',');const o={};cols.forEach((c,i)=>o[c]=(cells[i]||'').trim());o.celkem=formatNumber(rowTotal(o));return o}).filter(o=>Object.values(o).some(v=>v))}
-function importWeekData(ev){const f=ev.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=e=>{try{const text=e.target.result;const m=text.match(/HMG_WEEK_DATA:([A-Za-z0-9+/=]+)/);if(!m)throw new Error("Soubor neobsahuje HMG_WEEK_DATA.");const payload=JSON.parse(decodeURIComponent(escape(atob(m[1]))));if(!payload.weeks||!Array.isArray(payload.weeks))throw new Error("Neplatný formát.");if(!confirm("Import načte "+payload.weeks.length+" týdnů. Pokračovat?"))return;payload.weeks.forEach(w=>{if(w.start&&Array.isArray(w.rows)){localStorage.setItem("hmg_week_rows_"+w.start,JSON.stringify(w.rows.map(r=>({...r,checked:false}))));}});alert("Import hotov. Načteno týdnů: "+payload.weeks.length);}catch(err){alert("Import se nepovedl: "+err.message);}finally{ev.target.value="";}};rd.readAsText(f,"utf-8");}
 function saveSettings(){const data={hmg_plant_rate:document.getElementById('plantRateInput').value||'150',hmg_gas_capacity:document.getElementById('gasCapacityInput').value||'10000',hmg_max_daily:document.getElementById('maxDailyInput').value||'1000'};fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(()=>{const s=document.getElementById('settingsSaved');s.style.display='inline';setTimeout(()=>s.style.display='none',2000)}).catch(()=>{});}
 // settings načteny v initInputs()
 const defaultCompanies=[{name:'Colas',color:'#fff2a8'},{name:'Firesta',color:'#d9ead3'},{name:'Mi Roads',color:'#ff7f86'}];
@@ -371,120 +361,8 @@ async function deleteViewer(id){
 }
 
 // ── IMPORT Z EXCELU HMG ──
-async function importFromExcel(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  event.target.value = '';
-  
-  const confirmed = confirm(
-    '⚠️ Import přepíše:\n' +
-    '• Všechny receptury směsí\n' +
-    '• Všechna data výroby ve všech týdnech a měsíčním přehledu\n\n' +
-    'Pokračovat?'
-  );
-  if (!confirmed) return;
 
-  const statusEl = document.createElement('div');
-  statusEl.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#1a1a2e;color:#fff;padding:14px 24px;border-radius:8px;z-index:9999;font-weight:700;font-size:14px;box-shadow:0 4px 20px rgba(0,0,0,.3)';
-  statusEl.textContent = '⏳ Importuji data z Excelu...';
-  document.body.appendChild(statusEl);
 
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    const res = await fetch('/api/import-excel', {
-      method: 'POST',
-      body: formData
-    });
-    const data = await res.json();
-    
-    if (data.ok) {
-      statusEl.style.background = '#16a34a';
-      statusEl.textContent = `✅ Import dokončen: ${data.receptury} receptur, ${data.zaznamu} záznamů ve ${data.tydnu} týdnech (${data.dnu} dní)`;
-      setTimeout(() => statusEl.remove(), 5000);
-      await initInputs(); // obnov tabulku směsí
-    } else {
-      statusEl.style.background = '#dc2626';
-      statusEl.textContent = '❌ Chyba: ' + (data.error || 'Neznámá chyba');
-      setTimeout(() => statusEl.remove(), 6000);
-    }
-  } catch (err) {
-    statusEl.style.background = '#dc2626';
-    statusEl.textContent = '❌ Chyba spojení: ' + err.message;
-    setTimeout(() => statusEl.remove(), 6000);
-  }
-}
-
-// ── ZÁLOHA / OBNOVENÍ DB ──
-async function zalohaDB() {
-  try {
-    const [weeks, inputs, companies, settings, viewers] = await Promise.all([
-      fetch('/api/weeks').then(r=>r.json()).catch(()=>[]),
-      fetch('/api/inputs').then(r=>r.json()).catch(()=>null),
-      fetch('/api/companies').then(r=>r.json()).catch(()=>null),
-      fetch('/api/settings').then(r=>r.json()).catch(()=>({})),
-      fetch('/api/viewers').then(r=>r.json()).catch(()=>[])
-    ]);
-    const zaloha = { version: 1, created: new Date().toISOString(), weeks, inputs, companies, settings, viewers };
-    const blob = new Blob([JSON.stringify(zaloha, null, 2)], {type: 'application/json'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'hmg_zaloha_' + new Date().toISOString().slice(0,10) + '.json';
-    document.body.appendChild(a); a.click();
-    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-  } catch(e) { alert('Chyba zálohy: ' + e.message); }
-}
-
-async function obnovitDB(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  event.target.value = '';
-  if (!confirm('⚠️ Obnovení přepíše všechna data v aplikaci (týdny, receptury, firmy, nastavení).\n\nPokračovat?')) return;
-
-  const statusEl = document.createElement('div');
-  statusEl.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#0369a1;color:#fff;padding:14px 24px;border-radius:8px;z-index:9999;font-weight:700;font-size:14px;box-shadow:0 4px 20px rgba(0,0,0,.3)';
-  statusEl.textContent = '⏳ Obnovuji data...';
-  document.body.appendChild(statusEl);
-
-  try {
-    const text = await file.text();
-    const data = JSON.parse(text);
-    if (!data.version) throw new Error('Neplatný formát zálohy');
-
-    const headers = {'Content-Type': 'application/json'};
-    const reqs = [];
-
-    // Týdny
-    if (data.weeks && data.weeks.length) {
-      for (const w of data.weeks) {
-        reqs.push(fetch('/api/week/' + w.start, {method:'POST', headers, body: JSON.stringify({rows: w.rows})}));
-      }
-    }
-    // Receptury
-    if (data.inputs) {
-      reqs.push(fetch('/api/inputs', {method:'POST', headers, body: JSON.stringify({rows: data.inputs})}));
-    }
-    // Firmy
-    if (data.companies) {
-      reqs.push(fetch('/api/companies', {method:'POST', headers, body: JSON.stringify({companies: data.companies})}));
-    }
-    // Nastavení
-    if (data.settings) {
-      reqs.push(fetch('/api/settings', {method:'POST', headers, body: JSON.stringify(data.settings)}));
-    }
-
-    await Promise.all(reqs);
-
-    statusEl.style.background = '#16a34a';
-    statusEl.textContent = '✅ Data obnovena! Stránka se znovu načte...';
-    setTimeout(() => { statusEl.remove(); location.reload(); }, 2000);
-  } catch(e) {
-    statusEl.style.background = '#dc2626';
-    statusEl.textContent = '❌ Chyba: ' + e.message;
-    setTimeout(() => statusEl.remove(), 5000);
-  }
-}
 
 loadViewers();
 
