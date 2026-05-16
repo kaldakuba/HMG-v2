@@ -430,13 +430,13 @@ app.post('/api/import-excel', requireAuth, requireAdmin, upload.single('file'), 
 
     if (receptury.length > 0) {
       await pool.query(
-        `INSERT INTO inputs (id,rows_json,updated_at) VALUES(1,$1,NOW()) ON CONFLICT(id) DO UPDATE SET rows_json=EXCLUDED.rows_json,updated_at=NOW()`,
+        `INSERT INTO inputs (id,rows_json,updated_at) VALUES(1,$1,NOW()) ON CONFLICT(id) DO NOTHING`,
         [JSON.stringify(receptury)]
       );
     }
     for (const [ws, rows] of Object.entries(weekMap)) {
       await pool.query(
-        `INSERT INTO week_data (week_start,rows_json,updated_at) VALUES($1,$2,NOW()) ON CONFLICT(week_start) DO UPDATE SET rows_json=EXCLUDED.rows_json,updated_at=NOW()`,
+        `INSERT INTO week_data (week_start,rows_json,updated_at) VALUES($1,$2,NOW()) ON CONFLICT(week_start) DO NOTHING`,
         [ws, JSON.stringify(rows)]
       );
     }
