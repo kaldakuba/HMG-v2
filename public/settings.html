@@ -397,5 +397,7 @@ fetch('/api/me').then(r=>r.json()).then(d=>{
 
 loadUsers();
 </script>
+
+<div style="text-align:center;padding:16px"><button onclick="fetch('/api/logout',{method:'POST'}).then(()=>window.location.href='/login')" style="background:none;border:0.5px solid #e5e7eb;border-radius:6px;color:#d1d5db;font-size:12px;font-family:Inter,sans-serif;padding:6px 16px;cursor:pointer">Odhlásit se</button></div>
 </body>
 </html>
