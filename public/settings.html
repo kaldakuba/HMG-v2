@@ -2,202 +2,275 @@
 <html lang="cs">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.5,maximum-scale=3,user-scalable=yes">
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.5,maximum-scale=3">
 <title>Nastavení – Harmonogram výroby</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;font-size:100%;-webkit-font-smoothing:antialiased}
-.topbar{background:#1a1a2e;color:#fff;min-height:56px;padding:0 16px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100}
-.topbar h1{font-size:20px;font-weight:800;letter-spacing:2px;color:#fff;flex:1;text-align:center}
-.btn{border-radius:6px;border:none;color:#fff;font-family:'Inter',sans-serif;font-weight:700;cursor:pointer;padding:7px 14px;font-size:13px;white-space:nowrap;transition:filter .15s;text-decoration:none;display:inline-block}
+body{font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;font-size:100%;min-height:100vh;display:flex;flex-direction:column}
+.topbar{background:#1a1a2e;color:#fff;height:52px;padding:0 20px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100;flex-shrink:0}
+.topbar h1{font-size:16px;font-weight:700;letter-spacing:1px;color:#fff;flex:1;text-align:center}
+.btn-back{background:rgba(255,255,255,.1);border:none;color:#c8d0e0;font-family:'Inter',sans-serif;font-size:12px;font-weight:500;cursor:pointer;padding:5px 12px;border-radius:6px;text-decoration:none;display:inline-flex;align-items:center;gap:5px}
+.btn-back:hover{background:rgba(255,255,255,.18)}
+.layout{display:flex;flex:1;max-width:1100px;margin:0 auto;width:100%;padding:20px 16px;gap:20px}
+.sidenav{width:180px;flex-shrink:0}
+.sidenav-inner{background:#fff;border:0.5px solid #d1d5db;border-radius:10px;overflow:hidden;position:sticky;top:72px}
+.nav-label{font-size:10px;font-weight:600;color:#9ca3af;letter-spacing:.8px;text-transform:uppercase;padding:12px 14px 6px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:9px 14px;cursor:pointer;transition:background .1s;color:#374151;font-size:13px;border-left:2px solid transparent}
+.nav-item:hover{background:#f9fafb}
+.nav-item.active{background:#eff6ff;color:#1d4ed8;border-left-color:#2563eb;font-weight:500}
+.nav-item i{font-size:16px;flex-shrink:0}
+.nav-item .badge{margin-left:auto;font-size:10px;background:#e5e7eb;color:#6b7280;padding:1px 6px;border-radius:20px;font-weight:500}
+.nav-item.active .badge{background:#dbeafe;color:#1d4ed8}
+.content{flex:1;min-width:0}
+.section{display:none}
+.section.active{display:block}
+.card{background:#fff;border:0.5px solid #d1d5db;border-radius:10px;overflow:hidden;margin-bottom:16px}
+.card-head{padding:14px 18px;border-bottom:0.5px solid #e5e7eb;display:flex;align-items:center;gap:10px}
+.card-head-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.card-head h2{font-size:14px;font-weight:600;color:#111;flex:1}
+.card-head .sub{font-size:12px;color:#6b7280;margin-top:1px}
+.card-body{padding:16px 18px}
+.btn{border-radius:6px;border:none;color:#fff;font-family:'Inter',sans-serif;font-weight:600;cursor:pointer;padding:7px 14px;font-size:12px;white-space:nowrap;transition:filter .15s;display:inline-flex;align-items:center;gap:5px}
 .btn:hover{filter:brightness(1.1)}
-.btn.back{background:#64748b}.btn.green{background:#16a34a}.btn.red{background:#dc2626}.btn.blue{background:#2563eb}.btn.gray{background:#94a3b8}.btn.orange{background:#ea580c}
-.btn.sm{padding:4px 10px;font-size:12px}
-.btn:disabled{background:#94a3b8;cursor:not-allowed;filter:none}
-.wrap{padding:16px;max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
-.card{background:#fff;border:1px solid #a0aabb;border-radius:8px;overflow:hidden}
-.card-head{padding:12px 16px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;background:#f8fafc}
-.card-head h2{font-size:14px;font-weight:700;color:#1a1a2e}
-.card-body{padding:16px}
-table{width:100%;border-collapse:collapse;font-size:13px}
-th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #f1f5f9}
-th{font-weight:700;font-size:12px;color:#6b7280;background:#f8fafc}
-tr:last-child td{border-bottom:none}
-tr:hover td{background:#fafafa}
-.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
-.badge.admin{background:#dbeafe;color:#1e40af}
-.badge.viewer{background:#f0fdf4;color:#15803d}.badge.operator{background:#fef9c3;color:#854d0e}
-.form-row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px}
-.form-group{display:flex;flex-direction:column;gap:4px;flex:1;min-width:120px}
-label{font-size:12px;font-weight:600;color:#374151}
-input[type=text],input[type=password],select{height:36px;border:1px solid #a0aabb;border-radius:6px;padding:0 10px;font-family:'Inter',sans-serif;font-size:13px;color:#111;background:#fff;outline:none}
+.btn.sm{padding:4px 10px;font-size:11px}
+.btn.green{background:#16a34a}.btn.red{background:#dc2626}.btn.blue{background:#2563eb}.btn.gray{background:#6b7280}.btn.purple{background:#7c3aed}.btn.teal{background:#0f766e}.btn.orange{background:#ea580c}
+.btn:disabled{opacity:.5;cursor:not-allowed;filter:none}
+label{display:block;font-size:11px;font-weight:600;color:#374151;margin-bottom:4px;letter-spacing:.2px}
+input[type=text],input[type=password],select{height:36px;border:0.5px solid #d1d5db;border-radius:6px;padding:0 10px;font-family:'Inter',sans-serif;font-size:13px;color:#111;background:#fff;outline:none;width:100%}
 input:focus,select:focus{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,235,.1)}
-.token-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;font-family:monospace;font-size:12px;word-break:break-all;color:#374151;margin-top:8px}
-.token-url{font-size:11px;color:#6b7280;margin-top:4px;word-break:break-all}
-.info{font-size:12px;color:#6b7280;margin-top:4px}
-.danger{color:#dc2626}
-.success{color:#16a34a;font-size:12px;font-weight:600}
-.error-msg{color:#dc2626;font-size:12px;font-weight:600}
-.ua{font-size:11px;color:#6b7280;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.current-badge{font-size:10px;background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:10px;font-weight:600}
-.last-backup{font-size:12px;color:#6b7280}
-@media(max-width:600px){
-  .topbar{min-height:36px;padding:0 8px}.topbar h1{font-size:13px}
-  .wrap{padding:8px;gap:10px}
-  .form-row{flex-direction:column}
-  table{font-size:12px}
-  th,td{padding:6px 8px}
+.form-row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px}
+.form-group{display:flex;flex-direction:column;gap:4px;flex:1;min-width:110px}
+.user-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:0.5px solid #f3f4f6}
+.user-row:last-child{border-bottom:none}
+.avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0}
+.role-badge{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:500;white-space:nowrap}
+.role-badge.admin{background:#dbeafe;color:#1e40af}
+.role-badge.operator{background:#fef9c3;color:#854d0e}
+.role-badge.hmg_share{background:#ede9fe;color:#5b21b6}
+.session-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:0.5px solid #f3f4f6}
+.session-row:last-child{border-bottom:none}
+.device-icon{width:30px;height:30px;border-radius:6px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.token-card{border:0.5px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-top:10px}
+.token-url{font-size:11px;color:#6b7280;word-break:break-all;margin-top:4px;font-family:monospace}
+.info{font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5}
+.msg-ok{font-size:12px;color:#16a34a;font-weight:500;margin-top:8px}
+.msg-err{font-size:12px;color:#dc2626;font-weight:500;margin-top:8px}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px}
+.stat{background:#f9fafb;border:0.5px solid #e5e7eb;border-radius:8px;padding:12px;text-align:center}
+.stat-val{font-size:22px;font-weight:600;color:#111}
+.stat-label{font-size:11px;color:#6b7280;margin-top:2px}
+.add-form{background:#f9fafb;border:0.5px solid #e5e7eb;border-radius:8px;padding:14px;margin-bottom:14px;display:none}
+hr{border:none;border-top:0.5px solid #e5e7eb;margin:14px 0}
+@media(max-width:700px){
+  .layout{flex-direction:column;padding:10px 8px;gap:10px}
+  .sidenav{width:100%}
+  .sidenav-inner{position:static;display:flex;overflow-x:auto}
+  .nav-label{display:none}
+  .nav-item{padding:8px 12px;border-left:none;border-bottom:2px solid transparent;white-space:nowrap}
+  .nav-item.active{border-left:none;border-bottom-color:#2563eb}
 }
 </style>
 </head>
 <body>
+
 <header class="topbar">
-  <a class="btn back" href="/">← Zpět</a>
+  <a class="btn-back" href="/inputs"><i class="ti ti-arrow-left" style="font-size:14px"></i> Zpět</a>
   <h1>NASTAVENÍ</h1>
-  <span style="width:80px"></span>
+  <span style="width:60px"></span>
 </header>
 
-<main class="wrap">
+<div class="layout">
 
-  <!-- SPRÁVA UŽIVATELŮ -->
-  <section class="card">
-    <div class="card-head">
-      <h2>👤 Uživatelé</h2>
-      <button class="btn green sm" onclick="showAddUser()">+ Přidat uživatele</button>
+  <nav class="sidenav" role="navigation" aria-label="Sekce nastavení">
+    <div class="sidenav-inner">
+      <div class="nav-label">Menu</div>
+      <div class="nav-item active" onclick="showSection('users')" id="nav-users">
+        <i class="ti ti-users" aria-hidden="true"></i> Uživatelé
+        <span class="badge" id="badge-users">—</span>
+      </div>
+      <div class="nav-item" onclick="showSection('sessions')" id="nav-sessions">
+        <i class="ti ti-lock" aria-hidden="true"></i> Přihlášení
+        <span class="badge" id="badge-sessions">—</span>
+      </div>
+      <div class="nav-item" onclick="showSection('share')" id="nav-share">
+        <i class="ti ti-link" aria-hidden="true"></i> Sdílení
+        <span class="badge" id="badge-share">—</span>
+      </div>
+      <div class="nav-item" onclick="showSection('data')" id="nav-data">
+        <i class="ti ti-database" aria-hidden="true"></i> Data
+      </div>
+      <div class="nav-item" onclick="showSection('backup')" id="nav-backup">
+        <i class="ti ti-device-floppy" aria-hidden="true"></i> Zálohy
+      </div>
     </div>
-    <div class="card-body">
-      <div id="addUserForm" style="display:none;margin-bottom:16px;padding:12px;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0">
-        <div class="form-row">
-          <div class="form-group">
-            <label>Uživatelské jméno</label>
-            <input type="text" id="newUsername" placeholder="jmeno.prijmeni" autocomplete="off">
+  </nav>
+
+  <main class="content">
+
+    <!-- UŽIVATELÉ -->
+    <div class="section active" id="sec-users">
+      <div id="statsUsers" class="stat-grid" style="display:none">
+        <div class="stat"><div class="stat-val" id="statTotal">—</div><div class="stat-label">Uživatelů celkem</div></div>
+        <div class="stat"><div class="stat-val" id="statAdmins">—</div><div class="stat-label">Adminů</div></div>
+        <div class="stat"><div class="stat-val" id="statOperators">—</div><div class="stat-label">Operátorů</div></div>
+        <div class="stat"><div class="stat-val" id="statShare">—</div><div class="stat-label">Sdílený HMG</div></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-icon" style="background:#dbeafe"><i class="ti ti-users" style="font-size:18px;color:#1e40af" aria-hidden="true"></i></div>
+          <div><div class="card-head h2">Správa uživatelů</div></div>
+          <button class="btn green sm" onclick="toggleAddUser()" style="margin-left:auto">+ Přidat</button>
+        </div>
+        <div class="card-body">
+          <div class="add-form" id="addUserForm">
+            <div class="form-row">
+              <div class="form-group"><label>Uživatelské jméno</label><input type="text" id="newUsername" placeholder="jmeno.prijmeni" autocomplete="off"></div>
+              <div class="form-group"><label>Heslo</label><input type="password" id="newPassword" placeholder="min. 6 znaků" autocomplete="new-password"></div>
+              <div class="form-group" style="max-width:130px"><label>Role</label>
+                <select id="newRole">
+                  <option value="operator">Operátor</option>
+                  <option value="hmg_share">Sdílený HMG</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div style="display:flex;gap:6px;align-items:flex-end;padding-bottom:1px">
+                <button class="btn green sm" onclick="addUser()">Přidat</button>
+                <button class="btn gray sm" onclick="toggleAddUser()">Zrušit</button>
+              </div>
+            </div>
+            <div id="addUserMsg"></div>
           </div>
-          <div class="form-group">
-            <label>Heslo</label>
-            <input type="password" id="newPassword" placeholder="min. 6 znaků" autocomplete="new-password">
+          <div id="usersBody"><div style="text-align:center;color:#9ca3af;padding:20px;font-size:13px">Načítám...</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PŘIHLÁŠENÍ -->
+    <div class="section" id="sec-sessions">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-icon" style="background:#d1fae5"><i class="ti ti-lock" style="font-size:18px;color:#065f46" aria-hidden="true"></i></div>
+          <div><div class="card-head h2">Aktivní přihlášení</div><div class="card-head sub">Všechna aktuálně přihlášená zařízení</div></div>
+          <button class="btn gray sm" onclick="loadSessions()" style="margin-left:auto"><i class="ti ti-refresh" style="font-size:13px" aria-hidden="true"></i> Obnovit</button>
+        </div>
+        <div class="card-body">
+          <div id="sessionsBody"><div style="text-align:center;color:#9ca3af;padding:20px;font-size:13px">Načítám...</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SDÍLENÍ -->
+    <div class="section" id="sec-share">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-icon" style="background:#ede9fe"><i class="ti ti-link" style="font-size:18px;color:#5b21b6" aria-hidden="true"></i></div>
+          <div><div class="card-head h2">Sdílení měsíčního přehledu</div><div class="card-head sub">Odkaz nevyžaduje přihlášení</div></div>
+        </div>
+        <div class="card-body">
+          <div class="form-row" style="margin-bottom:8px">
+            <div class="form-group" style="max-width:160px">
+              <label>Platnost odkazu</label>
+              <select id="shareDays">
+                <option value="7">7 dní</option>
+                <option value="30" selected>30 dní</option>
+                <option value="90">90 dní</option>
+                <option value="365">1 rok</option>
+              </select>
+            </div>
+            <div style="display:flex;align-items:flex-end">
+              <button class="btn blue" onclick="createShareToken()"><i class="ti ti-plus" style="font-size:13px" aria-hidden="true"></i> Vygenerovat</button>
+            </div>
           </div>
-          <div class="form-group" style="max-width:120px">
-            <label>Role</label>
-            <select id="newRole">
-              <option value="operator">Operátor</option>
-              <option value="hmg_share">Sdílený HMG</option>
-              <option value="admin">Admin</option>
-            </select>
+          <div id="shareTokensList"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DATA -->
+    <div class="section" id="sec-data">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-icon" style="background:#fef9c3"><i class="ti ti-table-import" style="font-size:18px;color:#854d0e" aria-hidden="true"></i></div>
+          <div><div class="card-head h2">Import dat</div></div>
+        </div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px">
+            <div style="border:0.5px solid #e5e7eb;border-radius:8px;padding:14px">
+              <div style="font-size:13px;font-weight:500;color:#111;margin-bottom:4px">Import z Excelu HMG</div>
+              <div class="info" style="margin-bottom:10px">Naimportuje týdny a receptury. Existující data nepřepíše.</div>
+              <button class="btn purple" onclick="document.getElementById('settImportXlsx').click()"><i class="ti ti-file-spreadsheet" style="font-size:13px" aria-hidden="true"></i> Vybrat Excel</button>
+              <input id="settImportXlsx" type="file" accept=".xlsx" style="display:none" onchange="settImportFromExcel(event)">
+            </div>
+            <div style="border:0.5px solid #e5e7eb;border-radius:8px;padding:14px">
+              <div style="font-size:13px;font-weight:500;color:#111;margin-bottom:4px">Import dat HMG</div>
+              <div class="info" style="margin-bottom:10px">Import týdenních dat ze starého formátu HMG.</div>
+              <button class="btn orange" onclick="document.getElementById('settImportWeek').click()"><i class="ti ti-upload" style="font-size:13px" aria-hidden="true"></i> Vybrat soubor</button>
+              <input id="settImportWeek" type="file" accept=".xls,.html,.htm,.json,.txt" style="display:none" onchange="settImportWeekData(event)">
+            </div>
           </div>
-          <div style="display:flex;gap:6px;align-items:flex-end">
-            <button class="btn green sm" onclick="addUser()">Přidat</button>
-            <button class="btn gray sm" onclick="hideAddUser()">Zrušit</button>
+          <hr>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div style="border:0.5px solid #e5e7eb;border-radius:8px;padding:14px">
+              <div style="font-size:13px;font-weight:500;color:#111;margin-bottom:4px">Záloha Excel</div>
+              <div class="info" style="margin-bottom:10px">Stáhne zálohu všech dat jako .xlsx soubor.</div>
+              <button class="btn teal" onclick="settZalohaDB()"><i class="ti ti-download" style="font-size:13px" aria-hidden="true"></i> Stáhnout</button>
+            </div>
+            <div style="border:0.5px solid #e5e7eb;border-radius:8px;padding:14px">
+              <div style="font-size:13px;font-weight:500;color:#111;margin-bottom:4px">Obnovit ze zálohy</div>
+              <div class="info" style="margin-bottom:10px">Obnoví data ze záložního JSON souboru.</div>
+              <button class="btn gray" onclick="document.getElementById('settObnovaFile').click()"><i class="ti ti-upload" style="font-size:13px" aria-hidden="true"></i> Vybrat zálohu</button>
+              <input id="settObnovaFile" type="file" accept=".json" style="display:none" onchange="settObnovitDB(event)">
+            </div>
           </div>
-        </div>
-        <div id="addUserMsg"></div>
-      </div>
-      <table id="usersTable">
-        <thead><tr><th>Uživatel</th><th>Role</th><th>Poslední přihlášení</th><th>Sessions</th><th>Akce</th></tr></thead>
-        <tbody id="usersBody"><tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:20px">Načítám...</td></tr></tbody>
-      </table>
-    </div>
-  </section>
-
-  <!-- AKTIVNÍ SESSIONS -->
-  <section class="card">
-    <div class="card-head">
-      <h2>🔐 Aktivní přihlášení</h2>
-      <button class="btn gray sm" onclick="loadSessions()">↻ Obnovit</button>
-    </div>
-    <div class="card-body">
-      <table>
-        <thead><tr><th>Uživatel</th><th>Zařízení</th><th>IP</th><th>Vyprší</th><th>Akce</th></tr></thead>
-        <tbody id="sessionsBody"><tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:20px">Načítám...</td></tr></tbody>
-      </table>
-    </div>
-  </section>
-
-  <!-- SDÍLENÍ MĚSÍČNÍHO PŘEHLEDU -->
-  <section class="card">
-    <div class="card-head">
-      <h2>🔗 Sdílení měsíčního přehledu</h2>
-    </div>
-    <div class="card-body">
-      <p class="info" style="margin-bottom:12px">Vygeneruj odkaz pro čtení měsíčního přehledu. Odkaz nevyžaduje přihlášení — stačí jej zkopírovat a odeslat. Platnost lze nastavit a odkaz kdykoli zneplatnit.</p>
-      <div class="form-row" style="margin-bottom:0">
-        <div class="form-group" style="max-width:160px">
-          <label>Platnost odkazu</label>
-          <select id="shareDays">
-            <option value="7">7 dní</option>
-            <option value="30" selected>30 dní</option>
-            <option value="90">90 dní</option>
-            <option value="365">1 rok</option>
-          </select>
-        </div>
-        <div style="display:flex;align-items:flex-end">
-          <button class="btn blue sm" onclick="createShareToken()">Vygenerovat odkaz</button>
+          <div id="importMsg" style="margin-top:10px"></div>
         </div>
       </div>
-      <div id="shareTokensList" style="margin-top:12px"></div>
     </div>
-  </section>
 
-
-  <!-- IMPORT & OBNOVA DAT -->
-  <section class="card">
-    <div class="card-head">
-      <h2>📥 Import & obnova dat</h2>
-    </div>
-    <div class="card-body">
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
-        <div>
-          <button class="btn" style="background:#7c3aed" onclick="document.getElementById('settImportXlsx').click()">📥 Import z Excelu HMG</button>
-          <input id="settImportXlsx" type="file" accept=".xlsx" style="display:none" onchange="settImportFromExcel(event)">
-          <p class="info" style="margin-top:4px">Naimportuje týdny a receptury z Excel souboru HMG. Existující data nepřepíše.</p>
+    <!-- ZÁLOHY -->
+    <div class="section" id="sec-backup">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-icon" style="background:#dcfce7"><i class="ti ti-device-floppy" style="font-size:18px;color:#15803d" aria-hidden="true"></i></div>
+          <div><div class="card-head h2">Automatická záloha</div><div class="card-head sub">Každý den v 18:00 na email</div></div>
         </div>
-        <div>
-          <button class="btn orange" onclick="document.getElementById('settImportWeek').click()">↑ Import dat HMG</button>
-          <input id="settImportWeek" type="file" accept=".xls,.html,.htm,.json,.txt" style="display:none" onchange="settImportWeekData(event)">
-          <p class="info" style="margin-top:4px">Import týdenních dat ze starého formátu HMG.</p>
-        </div>
-      </div>
-      <hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0">
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <div>
-          <button class="btn" style="background:#0369a1" onclick="settZalohaDB()">⬇ Záloha Excel</button>
-          <p class="info" style="margin-top:4px">Stáhne zálohu všech dat jako Excel soubor (.xlsx).</p>
-        </div>
-        <div>
-          <button class="btn" style="background:#0369a1" onclick="document.getElementById('settObnovaFile').click()">↑ Obnovit ze zálohy</button>
-          <input id="settObnovaFile" type="file" accept=".json" style="display:none" onchange="settObnovitDB(event)">
-          <p class="info" style="margin-top:4px">Obnoví data ze záložního JSON souboru.</p>
+        <div class="card-body">
+          <div style="display:flex;align-items:center;gap:12px;padding:14px;background:#f9fafb;border-radius:8px;border:0.5px solid #e5e7eb;margin-bottom:14px">
+            <i class="ti ti-mail" style="font-size:22px;color:#6b7280" aria-hidden="true"></i>
+            <div>
+              <div style="font-size:13px;font-weight:500;color:#111">Email záloha</div>
+              <div style="font-size:12px;color:#6b7280" id="lastBackup">Načítám...</div>
+            </div>
+            <div style="margin-left:auto">
+              <span style="font-size:11px;padding:3px 10px;border-radius:20px;background:#dcfce7;color:#15803d;font-weight:500">Aktivní</span>
+            </div>
+          </div>
+          <button class="btn green" onclick="runBackup()" id="backupBtn"><i class="ti ti-player-play" style="font-size:13px" aria-hidden="true"></i> Spustit zálohu teď</button>
+          <div id="backupMsg" style="margin-top:10px"></div>
         </div>
       </div>
-      <div id="importMsg" style="margin-top:10px"></div>
     </div>
-  </section>
 
+  </main>
+</div>
 
-  <!-- ZÁLOHA -->
-  <section class="card">
-    <div class="card-head">
-      <h2>💾 Záloha dat</h2>
-    </div>
-    <div class="card-body">
-      <p class="info" style="margin-bottom:12px">Automatická záloha se odesílá každý den v <strong>18:00</strong> na <strong id="backupEmail">...</strong></p>
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <button class="btn green sm" onclick="runBackup()" id="backupBtn">▶ Spustit zálohu teď</button>
-        <span class="last-backup" id="lastBackup">Poslední záloha: načítám...</span>
-      </div>
-      <div id="backupMsg" style="margin-top:8px"></div>
-    </div>
-  </section>
-
-</main>
-
-<footer style="border-top:0.5px solid #d1d5db;background:#f8fafc;padding:5px 16px;display:flex;align-items:center;justify-content:space-between;max-width:100%">
+<footer style="border-top:0.5px solid #d1d5db;background:#f8fafc;padding:5px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
   <span style="font-size:11px;color:#9ca3af">Přihlášen jako <strong id="footerUser" style="color:#6b7280">admin</strong></span>
   <span onclick="doLogout()" style="font-size:11px;color:#9ca3af;cursor:pointer;text-decoration:underline;text-underline-offset:2px">Odhlásit</span>
 </footer>
 
 <script>
-// ── Utils ──
+function showSection(name) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('sec-' + name).classList.add('active');
+  document.getElementById('nav-' + name).classList.add('active');
+  if (name === 'sessions') loadSessions();
+  if (name === 'share') loadShareTokens();
+  if (name === 'backup') loadBackupInfo();
+}
+
 function fmtDate(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -205,49 +278,70 @@ function fmtDate(iso) {
 }
 function parseUA(ua) {
   if (!ua) return '—';
-  let browser = 'Prohlížeč', os = '';
-  if (/Chrome/.test(ua) && !/Edg/.test(ua)) browser = 'Chrome';
-  else if (/Firefox/.test(ua)) browser = 'Firefox';
-  else if (/Safari/.test(ua) && !/Chrome/.test(ua)) browser = 'Safari';
-  else if (/Edg/.test(ua)) browser = 'Edge';
+  let b = 'Prohlížeč', os = '';
+  if (/Chrome/.test(ua) && !/Edg/.test(ua)) b = 'Chrome';
+  else if (/Firefox/.test(ua)) b = 'Firefox';
+  else if (/Safari/.test(ua) && !/Chrome/.test(ua)) b = 'Safari';
+  else if (/Edg/.test(ua)) b = 'Edge';
   if (/iPhone|iPad/.test(ua)) os = 'iOS';
   else if (/Android/.test(ua)) os = 'Android';
   else if (/Windows/.test(ua)) os = 'Windows';
   else if (/Mac/.test(ua)) os = 'Mac';
   else if (/Linux/.test(ua)) os = 'Linux';
-  return browser + (os ? ' / ' + os : '');
+  return b + (os ? ' / ' + os : '');
 }
+function esc(v) { return String(v||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 async function api(method, url, body) {
-  const r = await fetch(url, {
-    method, headers: {'Content-Type':'application/json'},
-    body: body ? JSON.stringify(body) : undefined
-  });
+  const r = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: body ? JSON.stringify(body) : undefined });
   return r.json();
 }
-
-// ── Uživatelé ──
-async function loadUsers() {
-  const users = await api('GET', '/api/users');
-  const tbody = document.getElementById('usersBody');
-  if (!users.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:16px">Žádní uživatelé</td></tr>'; return; }
-  tbody.innerHTML = users.map(u => `
-    <tr>
-      <td><strong>${esc(u.username)}</strong></td>
-      <td>${u.role==='admin'?'<span class="badge admin">admin</span>':u.role==='operator'?'<span class="badge" style="background:#fef9c3;color:#854d0e">operátor</span>':'<span class="badge" style="background:#ede9fe;color:#5b21b6">sdílený HMG</span>'}</td>
-      <td>${fmtDate(u.last_seen)}</td>
-      <td style="text-align:center">${u.session_count > 0 ? `<span style="color:#2563eb;font-weight:600">${u.session_count}</span>` : '0'}</td>
-      <td style="display:flex;gap:4px;flex-wrap:wrap">
-        <button class="btn gray sm" onclick="resetPassword(${u.id},'${esc(u.username)}')">🔑 Heslo</button>
-        <button class="btn" style="background:#7c3aed;padding:4px 10px;font-size:12px" onclick="changeRole(${u.id},'${esc(u.username)}','${u.role}')">Role</button>
-        <button class="btn red sm" onclick="deleteUser(${u.id},'${esc(u.username)}')">Smazat</button>
-      </td>
-    </tr>
-  `).join('');
+function initials(name) { return name.split(/[._-]/).map(p=>p[0]||'').join('').toUpperCase().slice(0,2) || name[0].toUpperCase(); }
+function avatarColor(role) {
+  if (role==='admin') return {bg:'#1a1a2e',color:'#fff'};
+  if (role==='operator') return {bg:'#fef9c3',color:'#854d0e'};
+  return {bg:'#ede9fe',color:'#5b21b6'};
+}
+function roleBadge(role) {
+  if (role==='admin') return '<span class="role-badge admin">admin</span>';
+  if (role==='operator') return '<span class="role-badge operator">operátor</span>';
+  return '<span class="role-badge hmg_share">sdílený HMG</span>';
 }
 
-function showAddUser() { document.getElementById('addUserForm').style.display='block'; document.getElementById('newUsername').focus(); }
-function hideAddUser() { document.getElementById('addUserForm').style.display='none'; document.getElementById('addUserMsg').innerHTML=''; }
+async function loadUsers() {
+  const users = await api('GET', '/api/users');
+  const admins = users.filter(u=>u.role==='admin').length;
+  const ops = users.filter(u=>u.role==='operator').length;
+  const sh = users.filter(u=>u.role==='hmg_share').length;
+  document.getElementById('statTotal').textContent = users.length;
+  document.getElementById('statAdmins').textContent = admins;
+  document.getElementById('statOperators').textContent = ops;
+  document.getElementById('statShare').textContent = sh;
+  document.getElementById('statsUsers').style.display = '';
+  document.getElementById('badge-users').textContent = users.length;
+  if (!users.length) { document.getElementById('usersBody').innerHTML = '<div style="text-align:center;color:#9ca3af;padding:20px;font-size:13px">Žádní uživatelé</div>'; return; }
+  document.getElementById('usersBody').innerHTML = users.map(u => {
+    const av = avatarColor(u.role);
+    return `<div class="user-row">
+      <div class="avatar" style="background:${av.bg};color:${av.color}">${initials(u.username)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:500;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(u.username)}</div>
+        <div style="font-size:11px;color:#9ca3af">${fmtDate(u.last_seen)||'Nepřihlášen'} · ${u.session_count||0} session</div>
+      </div>
+      ${roleBadge(u.role)}
+      <div style="display:flex;gap:4px;flex-shrink:0">
+        <button class="btn gray sm" title="Změnit heslo" onclick="resetPassword(${u.id},'${esc(u.username)}')"><i class="ti ti-key" style="font-size:12px" aria-hidden="true"></i></button>
+        <button class="btn sm" style="background:#7c3aed" title="Změnit roli" onclick="changeRole(${u.id},'${esc(u.username)}','${u.role}')"><i class="ti ti-user-cog" style="font-size:12px" aria-hidden="true"></i></button>
+        <button class="btn red sm" title="Smazat" onclick="deleteUser(${u.id},'${esc(u.username)}')"><i class="ti ti-trash" style="font-size:12px" aria-hidden="true"></i></button>
+      </div>
+    </div>`;
+  }).join('');
+}
 
+function toggleAddUser() {
+  const f = document.getElementById('addUserForm');
+  f.style.display = f.style.display === 'none' || !f.style.display ? 'block' : 'none';
+  if (f.style.display === 'block') document.getElementById('newUsername').focus();
+}
 async function addUser() {
   const username = document.getElementById('newUsername').value.trim();
   const password = document.getElementById('newPassword').value;
@@ -255,243 +349,145 @@ async function addUser() {
   const msg = document.getElementById('addUserMsg');
   const r = await api('POST', '/api/users', {username, password, role});
   if (r.ok) {
-    msg.innerHTML = '<span class="success">✓ Uživatel přidán</span>';
+    msg.innerHTML = '<span class="msg-ok">✓ Uživatel přidán</span>';
     document.getElementById('newUsername').value = '';
     document.getElementById('newPassword').value = '';
-    setTimeout(() => { hideAddUser(); loadUsers(); }, 1000);
-  } else {
-    msg.innerHTML = `<span class="error-msg">✗ ${esc(r.error)}</span>`;
-  }
+    setTimeout(() => { toggleAddUser(); msg.innerHTML=''; loadUsers(); }, 1000);
+  } else { msg.innerHTML = `<span class="msg-err">✗ ${esc(r.error)}</span>`; }
 }
-
 async function changeRole(id, name, currentRole) {
-  const roles = ['operator', 'hmg_share', 'admin'];
-  const labels = {'operator': 'Operátor', 'hmg_share': 'Sdílený HMG', 'admin': 'Admin'};
+  const labels = {operator:'Operátor',hmg_share:'Sdílený HMG',admin:'Admin'};
   const newRole = prompt(`Změnit roli uživatele "${name}"\nAktuální: ${labels[currentRole]}\n\nZadej novou roli:\n- operator\n- hmg_share\n- admin`);
-  if (!newRole || !roles.includes(newRole.trim())) { if(newRole !== null) alert('Neplatná role. Zadej: operator, hmg_share nebo admin'); return; }
+  if (!newRole) return;
   const r = await api('PUT', `/api/users/${id}/role`, {role: newRole.trim()});
-  if (r.ok) { alert(`Role změněna. Uživatel byl odhlášen a přihlásí se znovu.`); loadUsers(); loadSessions(); }
+  if (r.ok) { alert('Role změněna. Uživatel byl odhlášen.'); loadUsers(); loadSessions(); }
   else alert(r.error);
 }
-
 async function deleteUser(id, name) {
-  if (!confirm(`Smazat uživatele "${name}"? Budou odhlášeny všechny jeho sessions.`)) return;
+  if (!confirm(`Smazat uživatele "${name}"?`)) return;
   const r = await api('DELETE', `/api/users/${id}`);
-  if (r.ok) loadUsers();
-  else alert(r.error);
+  if (r.ok) loadUsers(); else alert(r.error);
 }
-
 async function resetPassword(id, name) {
   const pw = prompt(`Nové heslo pro "${name}" (min. 6 znaků):`);
   if (!pw) return;
   const r = await api('PUT', `/api/users/${id}/password`, {password: pw});
-  if (r.ok) alert('Heslo změněno.');
-  else alert(r.error);
+  if (r.ok) alert('Heslo změněno.'); else alert(r.error);
 }
 
-// ── Sessions ──
 async function loadSessions() {
   const sessions = await api('GET', '/api/sessions');
-  const tbody = document.getElementById('sessionsBody');
-  if (!sessions.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:16px">Žádné aktivní přihlášení</td></tr>'; return; }
-  tbody.innerHTML = sessions.map(s => `
-    <tr>
-      <td><strong>${esc(s.username||'?')}</strong></td>
-      <td><span class="ua" title="${esc(s.user_agent||'')}">${parseUA(s.user_agent)}</span></td>
-      <td style="font-size:11px;color:#6b7280">${s.ip||'—'}</td>
-      <td style="font-size:11px">${fmtDate(s.expire)}</td>
-      <td>
-        ${s.is_current
-          ? '<span class="current-badge">Aktuální</span>'
-          : `<button class="btn red sm" onclick="deleteSession('${s.sid}')">Odhlásit</button>`
-        }
-      </td>
-    </tr>
-  `).join('');
+  document.getElementById('badge-sessions').textContent = sessions.length;
+  if (!sessions.length) { document.getElementById('sessionsBody').innerHTML = '<div style="text-align:center;color:#9ca3af;padding:20px;font-size:13px">Žádné aktivní přihlášení</div>'; return; }
+  document.getElementById('sessionsBody').innerHTML = sessions.map(s => `
+    <div class="session-row">
+      <div class="device-icon"><i class="ti ti-${/mobile|Android|iPhone/.test(s.user_agent||'')?'device-mobile':'device-laptop'}" style="font-size:16px;color:#6b7280" aria-hidden="true"></i></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:500;color:#111">${esc(s.username||'?')}</div>
+        <div style="font-size:11px;color:#9ca3af">${parseUA(s.user_agent)} · Vyprší ${fmtDate(s.expire)}</div>
+      </div>
+      ${s.is_current
+        ? '<span style="font-size:10px;padding:2px 8px;border-radius:20px;background:#dbeafe;color:#1e40af;font-weight:500">Aktuální</span>'
+        : `<button class="btn red sm" onclick="deleteSession('${s.sid}')">Odhlásit</button>`}
+    </div>`).join('');
 }
-
 async function deleteSession(sid) {
   if (!confirm('Odhlásit tuto session?')) return;
   const r = await api('DELETE', `/api/sessions/${sid}`);
-  if (r.ok) loadSessions();
-  else alert(r.error);
+  if (r.ok) loadSessions(); else alert(r.error);
 }
 
-// ── Sdílení ──
 async function loadShareTokens() {
   const tokens = await api('GET', '/api/share-tokens');
+  document.getElementById('badge-share').textContent = tokens.filter(t => new Date(t.expires) > new Date()).length || 0;
   const el = document.getElementById('shareTokensList');
-  if (!tokens.length) { el.innerHTML = '<p class="info">Žádné aktivní sdílené odkazy.</p>'; return; }
+  if (!tokens.length) { el.innerHTML = '<div style="color:#9ca3af;font-size:13px;margin-top:8px">Žádné aktivní sdílené odkazy.</div>'; return; }
   el.innerHTML = tokens.map(t => {
     const url = `${location.origin}/share/${t.token}`;
     const expired = new Date(t.expires) < new Date();
-    return `
-      <div style="border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;margin-top:8px;background:${expired?'#fef2f2':'#f8fafc'}">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
-          <div>
-            <span style="font-size:12px;color:#6b7280">Platný do: <strong>${fmtDate(t.expires)}</strong></span>
-            ${expired ? '<span style="font-size:11px;color:#dc2626;margin-left:8px">● Vypršel</span>' : '<span style="font-size:11px;color:#16a34a;margin-left:8px">● Aktivní</span>'}
-          </div>
-          <div style="display:flex;gap:6px">
-            <button class="btn gray sm" onclick="copyUrl('${url}')">📋 Kopírovat</button>
-            <button class="btn red sm" onclick="deleteToken('${t.token}')">Smazat</button>
-          </div>
+    return `<div class="token-card" style="border-color:${expired?'#fca5a5':'#e5e7eb'}">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <div>
+          <span style="font-size:11px;padding:2px 8px;border-radius:20px;background:${expired?'#fee2e2':'#dcfce7'};color:${expired?'#991b1b':'#15803d'};font-weight:500">${expired?'Vypršel':'Aktivní'}</span>
+          <span style="font-size:12px;color:#6b7280;margin-left:8px">do ${fmtDate(t.expires)}</span>
         </div>
-        <div class="token-url">${url}</div>
+        <div style="display:flex;gap:6px">
+          <button class="btn gray sm" onclick="copyUrl('${url}')"><i class="ti ti-copy" style="font-size:12px" aria-hidden="true"></i> Kopírovat</button>
+          <button class="btn red sm" onclick="deleteToken('${t.token}')"><i class="ti ti-trash" style="font-size:12px" aria-hidden="true"></i></button>
+        </div>
       </div>
-    `;
+      <div class="token-url">${url}</div>
+    </div>`;
   }).join('');
 }
-
 async function createShareToken() {
   const days = document.getElementById('shareDays').value;
   const r = await api('POST', '/api/share-tokens', {days});
-  if (r.ok) {
-    loadShareTokens();
-    const url = `${location.origin}/share/${r.token}`;
-    if (navigator.clipboard) navigator.clipboard.writeText(url).then(() => alert('Odkaz zkopírován:\n' + url));
-    else alert('Odkaz vygenerován:\n' + url);
-  }
+  if (r.ok) { loadShareTokens(); const url=`${location.origin}/share/${r.token}`; if(navigator.clipboard)navigator.clipboard.writeText(url).then(()=>alert('Odkaz zkopírován:\n'+url)); else alert('Vygenerováno:\n'+url); }
 }
-
 async function deleteToken(token) {
-  if (!confirm('Smazat sdílený odkaz? Přístup bude okamžitě zrušen.')) return;
+  if (!confirm('Smazat sdílený odkaz?')) return;
   await api('DELETE', `/api/share-tokens/${token}`);
   loadShareTokens();
 }
+function copyUrl(url) { if(navigator.clipboard)navigator.clipboard.writeText(url).then(()=>alert('Zkopírováno!')); else{const t=document.createElement('textarea');t.value=url;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove();alert('Zkopírováno!');} }
 
-function copyUrl(url) {
-  if (navigator.clipboard) navigator.clipboard.writeText(url).then(() => alert('Zkopírováno!'));
-  else { const t = document.createElement('textarea'); t.value=url; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); alert('Zkopírováno!'); }
+async function settImportFromExcel(event) {
+  const file=event.target.files[0]; if(!file)return; event.target.value='';
+  if(!confirm('Import přidá data z Excelu. Existující data nepřepíše. Pokračovat?'))return;
+  const msg=document.getElementById('importMsg');
+  msg.innerHTML='<span style="color:#0369a1;font-weight:500">⏳ Importuji...</span>';
+  try{const fd=new FormData();fd.append('file',file);const res=await fetch('/api/import-excel',{method:'POST',body:fd});const d=await res.json();
+    if(d.ok)msg.innerHTML=`<span class="msg-ok">✅ Hotovo: ${d.receptury} receptur, ${d.tydnu} týdnů</span>`;
+    else msg.innerHTML=`<span class="msg-err">✗ ${d.error}</span>`;
+  }catch(e){msg.innerHTML=`<span class="msg-err">✗ ${e.message}</span>`;}
+}
+function settImportWeekData(ev) {
+  const f=ev.target.files[0];if(!f)return;
+  const rd=new FileReader();
+  rd.onload=e=>{try{const text=e.target.result;const m=text.match(/HMG_WEEK_DATA:([A-Za-z0-9+/=]+)/);if(!m)throw new Error("Soubor neobsahuje HMG_WEEK_DATA.");const payload=JSON.parse(decodeURIComponent(escape(atob(m[1]))));if(!confirm("Import načte "+payload.weeks.length+" týdnů. Pokračovat?"))return;const msg=document.getElementById('importMsg');msg.innerHTML='<span style="color:#0369a1">⏳ Importuji...</span>';Promise.all(payload.weeks.map(w=>fetch('/api/week/'+w.start,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:w.rows})}))).then(()=>{msg.innerHTML=`<span class="msg-ok">✅ Import hotov: ${payload.weeks.length} týdnů</span>`;});}catch(err){alert("Import se nepovedl: "+err.message);}finally{ev.target.value="";}};
+  rd.readAsText(f,'utf-8');
+}
+async function settZalohaDB() {
+  const date=new Date().toISOString().slice(0,10);
+  const a=document.createElement('a');a.href='/api/export-excel';a.download='hmg_zaloha_'+date+'.xlsx';document.body.appendChild(a);a.click();setTimeout(()=>a.remove(),500);
+  document.getElementById('importMsg').innerHTML='<span class="msg-ok">✓ Záloha stažena</span>';
+}
+async function settObnovitDB(event) {
+  const file=event.target.files[0];if(!file)return;event.target.value='';
+  if(!confirm('⚠️ Obnovení přepíše všechna data. Pokračovat?'))return;
+  const msg=document.getElementById('importMsg');msg.innerHTML='<span style="color:#0369a1">⏳ Obnovuji...</span>';
+  try{const text=await file.text();const data=JSON.parse(text);if(!data.version)throw new Error('Neplatný formát zálohy');
+    const h={'Content-Type':'application/json'};const reqs=[];
+    if(data.weeks&&data.weeks.length)data.weeks.forEach(w=>reqs.push(fetch('/api/week/'+w.start,{method:'POST',headers:h,body:JSON.stringify({rows:w.rows})})));
+    if(data.inputs)reqs.push(fetch('/api/inputs',{method:'POST',headers:h,body:JSON.stringify({rows:data.inputs})}));
+    if(data.companies)reqs.push(fetch('/api/companies',{method:'POST',headers:h,body:JSON.stringify({companies:data.companies})}));
+    if(data.settings)reqs.push(fetch('/api/settings',{method:'POST',headers:h,body:JSON.stringify(data.settings)}));
+    await Promise.all(reqs);msg.innerHTML='<span class="msg-ok">✅ Data obnovena!</span>';setTimeout(()=>location.reload(),2000);
+  }catch(e){msg.innerHTML=`<span class="msg-err">✗ ${e.message}</span>`;}
 }
 
-// ── Záloha ──
 async function loadBackupInfo() {
-  const r = await api('GET', '/api/backup/last');
-  document.getElementById('lastBackup').textContent = r.last ? `Poslední záloha: ${fmtDate(r.last)}` : 'Záloha zatím neproběhla';
-  const emailEl = document.getElementById('backupEmail');
-  if (emailEl) emailEl.textContent = '(email z nastavení)';
+  const r=await api('GET','/api/backup/last');
+  document.getElementById('lastBackup').textContent=r.last?`Poslední záloha: ${fmtDate(r.last)}`:'Záloha zatím neproběhla';
 }
-
 async function runBackup() {
-  const btn = document.getElementById('backupBtn');
-  const msg = document.getElementById('backupMsg');
-  btn.disabled = true;
-  btn.textContent = 'Odesílám...';
-  msg.innerHTML = '';
-  const r = await api('POST', '/api/backup/run');
-  if (r.ok) {
-    msg.innerHTML = '<span class="success">✓ Záloha odeslána na email</span>';
-    loadBackupInfo();
-  } else {
-    msg.innerHTML = `<span class="error-msg">✗ ${esc(r.error||'Chyba')}</span>`;
-  }
-  btn.disabled = false;
-  btn.textContent = '▶ Spustit zálohu teď';
+  const btn=document.getElementById('backupBtn');const msg=document.getElementById('backupMsg');
+  btn.disabled=true;btn.innerHTML='<i class="ti ti-loader" style="font-size:13px"></i> Odesílám...';msg.innerHTML='';
+  const r=await api('POST','/api/backup/run');
+  if(r.ok){msg.innerHTML='<span class="msg-ok">✓ Záloha odeslána na email</span>';loadBackupInfo();}
+  else msg.innerHTML=`<span class="msg-err">✗ ${r.error||'Chyba'}</span>`;
+  btn.disabled=false;btn.innerHTML='<i class="ti ti-player-play" style="font-size:13px"></i> Spustit zálohu teď';
 }
 
-// ── Odhlášení ──
-async function doLogout() {
-  await fetch('/api/logout', {method:'POST'}).catch(()=>{});
-  window.location.href = '/login';
-}
+async function doLogout() { await fetch('/api/logout',{method:'POST'}).catch(()=>{}); window.location.href='/login'; }
 
-function esc(v) {
-  return String(v||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-}
-
-// ── Init ──
 fetch('/api/me').then(r=>r.json()).then(d=>{
-  const el = document.getElementById('footerUser');
-  if(el && d.username) el.textContent = d.username;
+  const el=document.getElementById('footerUser');
+  if(el&&d.username)el.textContent=d.username;
 }).catch(()=>{});
 
 loadUsers();
-loadSessions();
-loadShareTokens();
-loadBackupInfo();
-
-// ── Import & obnova dat ──
-async function settImportFromExcel(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  event.target.value = '';
-  if (!confirm('Import přidá týdny a receptury z Excelu. Existující data nepřepíše. Pokračovat?')) return;
-  const msg = document.getElementById('importMsg');
-  msg.innerHTML = '<span style="color:#0369a1;font-weight:600">⏳ Importuji...</span>';
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
-    const res = await fetch('/api/import-excel', { method: 'POST', body: formData });
-    const data = await res.json();
-    if (data.ok) {
-      msg.innerHTML = `<span class="success">✅ Import dokončen: ${data.receptury} receptur, ${data.tydnu} týdnů</span>`;
-    } else {
-      msg.innerHTML = `<span class="error-msg">❌ ${data.error||'Chyba'}</span>`;
-    }
-  } catch(e) { msg.innerHTML = `<span class="error-msg">❌ ${e.message}</span>`; }
-}
-
-function settImportWeekData(ev) {
-  const f = ev.target.files[0]; if(!f) return;
-  const rd = new FileReader();
-  rd.onload = e => {
-    try {
-      const text = e.target.result;
-      const m = text.match(/HMG_WEEK_DATA:([A-Za-z0-9+/=]+)/);
-      if(!m) throw new Error("Soubor neobsahuje HMG_WEEK_DATA.");
-      const payload = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
-      if(!payload.weeks||!Array.isArray(payload.weeks)) throw new Error("Neplatný formát.");
-      if(!confirm("Import načte "+payload.weeks.length+" týdnů. Pokračovat?")) return;
-      const msg = document.getElementById('importMsg');
-      msg.innerHTML = '<span style="color:#0369a1;font-weight:600">⏳ Importuji...</span>';
-      Promise.all(payload.weeks.map(w =>
-        fetch('/api/week/'+w.start, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({rows:w.rows})})
-      )).then(() => {
-        msg.innerHTML = `<span class="success">✅ Import hotov: ${payload.weeks.length} týdnů</span>`;
-      });
-    } catch(err) { alert("Import se nepovedl: "+err.message); }
-    finally { ev.target.value = ""; }
-  };
-  rd.readAsText(f, 'utf-8');
-}
-
-async function settZalohaDB() {
-  try {
-    const date = new Date().toISOString().slice(0,10);
-    const a = document.createElement('a');
-    a.href = '/api/export-excel';
-    a.download = 'hmg_zaloha_' + date + '.xlsx';
-    document.body.appendChild(a); a.click();
-    setTimeout(()=>a.remove(), 500);
-    document.getElementById('importMsg').innerHTML = '<span class="success">✓ Záloha stažena jako Excel</span>';
-  } catch(e) { alert('Chyba zálohy: '+e.message); }
-}
-
-async function settObnovitDB(event) {
-  const file = event.target.files[0]; if(!file) return;
-  event.target.value = '';
-  if(!confirm('⚠️ Obnovení přepíše všechna data. Pokračovat?')) return;
-  const msg = document.getElementById('importMsg');
-  msg.innerHTML = '<span style="color:#0369a1;font-weight:600">⏳ Obnovuji data...</span>';
-  try {
-    const text = await file.text();
-    const data = JSON.parse(text);
-    if(!data.version) throw new Error('Neplatný formát zálohy');
-    const headers = {'Content-Type':'application/json'};
-    const reqs = [];
-    if(data.weeks&&data.weeks.length) data.weeks.forEach(w => reqs.push(fetch('/api/week/'+w.start,{method:'POST',headers,body:JSON.stringify({rows:w.rows})})));
-    if(data.inputs) reqs.push(fetch('/api/inputs',{method:'POST',headers,body:JSON.stringify({rows:data.inputs})}));
-    if(data.companies) reqs.push(fetch('/api/companies',{method:'POST',headers,body:JSON.stringify({companies:data.companies})}));
-    if(data.settings) reqs.push(fetch('/api/settings',{method:'POST',headers,body:JSON.stringify(data.settings)}));
-    await Promise.all(reqs);
-    msg.innerHTML = '<span class="success">✅ Data obnovena!</span>';
-    setTimeout(()=>location.reload(), 2000);
-  } catch(e) {
-    msg.innerHTML = `<span class="error-msg">❌ ${e.message}</span>`;
-  }
-}
-
 </script>
 </body>
 </html>
