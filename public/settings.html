@@ -259,6 +259,9 @@ async function api(method, url, body) {
   if (r.status === 401) { window.location.href = '/login'; return {}; }
   const ct = r.headers.get('content-type') || '';
   if (!ct.includes('application/json')) { window.location.href = '/login'; return {}; }
+  if (r.status === 401) { window.location.href = '/login'; return {}; }
+  const ct = r.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) { window.location.href = '/login'; return {}; }
   return r.json();
 }
 function initials(name) { return name.split(/[._-]/).map(p=>p[0]||'').join('').toUpperCase().slice(0,2) || name[0].toUpperCase(); }
@@ -422,6 +425,17 @@ async function confirmDelete(type) {
   } else {
     msg.innerHTML = '<span style="color:#dc2626;font-size:13px">Chyba: ' + (r.error || 'Nespravne heslo nebo chyba serveru.') + '</span>';
   }
+}
+
+async function settImportFromExcel(event) {
+  const file=event.target.files[0]; if(!file)return; event.target.value='';
+  if(!confirm('Import přidá data z Excelu. Existující data nepřepíše. Pokračovat?'))return;
+  const msg=document.getElementById('importMsg');
+  msg.innerHTML='<span style="color:#0369a1;font-weight:500">⏳ Importuji...</span>';
+  try{const fd=new FormData();fd.append('file',file);const res=await fetch('/api/import-excel',{method:'POST',body:fd});const d=await res.json();
+    if(d.ok)msg.innerHTML=`<span class="msg-ok">✅ Hotovo: ${d.receptury} receptur, ${d.tydnu} týdnů</span>`;
+    else msg.innerHTML=`<span class="msg-err">✗ ${d.error}</span>`;
+  }catch(e){msg.innerHTML=`<span class="msg-err">✗ ${e.message}</span>`;}
 }
 
 loadUsers();
