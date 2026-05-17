@@ -120,7 +120,7 @@ app.use(cookieParser());
 // ── Sessions ──
 app.use(session({
   store: new pgSession({ pool, tableName: 'session' }),
-  secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
+  secret: process.env.SESSION_SECRET || (() => { console.warn('⚠️  SESSION_SECRET není nastaven! Sessions budou smazány při každém restartu. Nastavte SESSION_SECRET v Railway Variables.'); return crypto.randomBytes(32).toString('hex'); })(),
   resave: false,
   saveUninitialized: false,
   cookie: {
