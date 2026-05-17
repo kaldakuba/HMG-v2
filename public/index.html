@@ -387,6 +387,29 @@ function renderMobile(){
   tfoot.innerHTML=`<tr class="hours-row"><td colspan="4" style="text-align:left;padding-left:6px">hod. výroby:</td>${dayKeys.map(k=>`<td>${fmtNum(daySum(rows,k)/rate,1)}</td>`).join('')}<td>${fmtNum(total/rate,1)}</td></tr>`;
 }
 
+
+// ── Operátor read-only ──
+async function checkOperatorRole() {
+  try {
+    const me = await fetch('/api/me').then(r=>r.json());
+    const role = me.role;
+    // Zobrazit Nastavení jen adminovi
+    const sb = document.getElementById('settingsBtn');
+    if (sb && role === 'admin') sb.style.display = '';
+    const el = document.getElementById('footerUser');
+    if (el && me.username) el.textContent = me.username;
+    if (role === 'operator') {
+      // Skrýt editační tlačítka
+      document.querySelectorAll('.btn.green, .btn.red').forEach(b => {
+        if (!b.textContent.includes('Export')) b.style.display = 'none';
+      });
+      const ctrl = document.querySelector('.controls');
+      if (ctrl) ctrl.style.display = 'none';
+      document.body.classList.add('read-only-mode');
+    }
+  } catch(e) {}
+}
+
 // ── INIT ──
 async function init(){
   // Načti nastavení
@@ -402,6 +425,7 @@ async function init(){
   // Načti týden
   await loadWeek(_weekStart);
   if(IS_MOBILE) renderMobile(); else render();
+  if(!IS_MOBILE) checkOperatorRole();
 }
 init();
 fetch('/api/me').then(r=>r.json()).then(d=>{if(d.role==='hmg_share')window.location.replace('/month');}).catch(()=>{});

@@ -119,7 +119,7 @@ input:focus,select:focus{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,23
       <h2>🔗 Sdílení měsíčního přehledu</h2>
     </div>
     <div class="card-body">
-      <p class="info" style="margin-bottom:12px">Vygeneruj odkaz pro čtení měsíčního přehledu bez přihlášení. Odkaz lze sdílet s kýmkoliv.</p>
+      <p class="info" style="margin-bottom:12px">Vygeneruj odkaz pro čtení měsíčního přehledu. Odkaz nevyžaduje přihlášení — stačí jej zkopírovat a odeslat. Platnost lze nastavit a odkaz kdykoli zneplatnit.</p>
       <div class="form-row" style="margin-bottom:0">
         <div class="form-group" style="max-width:160px">
           <label>Platnost odkazu</label>
@@ -238,6 +238,7 @@ async function loadUsers() {
       <td style="text-align:center">${u.session_count > 0 ? `<span style="color:#2563eb;font-weight:600">${u.session_count}</span>` : '0'}</td>
       <td style="display:flex;gap:4px;flex-wrap:wrap">
         <button class="btn gray sm" onclick="resetPassword(${u.id},'${esc(u.username)}')">🔑 Heslo</button>
+        <button class="btn" style="background:#7c3aed;padding:4px 10px;font-size:12px" onclick="changeRole(${u.id},'${esc(u.username)}','${u.role}')">Role</button>
         <button class="btn red sm" onclick="deleteUser(${u.id},'${esc(u.username)}')">Smazat</button>
       </td>
     </tr>
@@ -261,6 +262,16 @@ async function addUser() {
   } else {
     msg.innerHTML = `<span class="error-msg">✗ ${esc(r.error)}</span>`;
   }
+}
+
+async function changeRole(id, name, currentRole) {
+  const roles = ['operator', 'hmg_share', 'admin'];
+  const labels = {'operator': 'Operátor', 'hmg_share': 'Sdílený HMG', 'admin': 'Admin'};
+  const newRole = prompt(`Změnit roli uživatele "${name}"\nAktuální: ${labels[currentRole]}\n\nZadej novou roli:\n- operator\n- hmg_share\n- admin`);
+  if (!newRole || !roles.includes(newRole.trim())) { if(newRole !== null) alert('Neplatná role. Zadej: operator, hmg_share nebo admin'); return; }
+  const r = await api('PUT', `/api/users/${id}/role`, {role: newRole.trim()});
+  if (r.ok) { alert(`Role změněna. Uživatel byl odhlášen a přihlásí se znovu.`); loadUsers(); loadSessions(); }
+  else alert(r.error);
 }
 
 async function deleteUser(id, name) {
