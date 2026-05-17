@@ -93,10 +93,6 @@ hr{border:none;border-top:0.5px solid #e5e7eb;margin:14px 0}
         <i class="ti ti-lock" aria-hidden="true"></i> Přihlášení
         <span class="badge" id="badge-sessions">—</span>
       </div>
-      <div class="nav-item" onclick="showSection('share')" id="nav-share">
-        <i class="ti ti-link" aria-hidden="true"></i> Sdílení
-        <span class="badge" id="badge-share">—</span>
-      </div>
       <div class="nav-item" onclick="showSection('data')" id="nav-data">
         <i class="ti ti-database" aria-hidden="true"></i> Data
       </div>
@@ -156,33 +152,6 @@ hr{border:none;border-top:0.5px solid #e5e7eb;margin:14px 0}
         </div>
         <div class="card-body">
           <div id="sessionsBody"><div style="text-align:center;color:#9ca3af;padding:20px;font-size:13px">Načítám...</div></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- SDÍLENÍ -->
-    <div class="section" id="sec-share">
-      <div class="card">
-        <div class="card-head">
-          <div class="card-head-icon" style="background:#ede9fe"><i class="ti ti-link" style="font-size:18px;color:#5b21b6" aria-hidden="true"></i></div>
-          <div><div class="card-head h2">Sdílení měsíčního přehledu</div><div class="card-head sub">Odkaz nevyžaduje přihlášení</div></div>
-        </div>
-        <div class="card-body">
-          <div class="form-row" style="margin-bottom:8px">
-            <div class="form-group" style="max-width:160px">
-              <label>Platnost odkazu</label>
-              <select id="shareDays">
-                <option value="7">7 dní</option>
-                <option value="30" selected>30 dní</option>
-                <option value="90">90 dní</option>
-                <option value="365">1 rok</option>
-              </select>
-            </div>
-            <div style="display:flex;align-items:flex-end">
-              <button class="btn blue" onclick="createShareToken()"><i class="ti ti-plus" style="font-size:13px" aria-hidden="true"></i> Vygenerovat</button>
-            </div>
-          </div>
-          <div id="shareTokensList"></div>
         </div>
       </div>
     </div>
@@ -267,7 +236,6 @@ function showSection(name) {
   document.getElementById('sec-' + name).classList.add('active');
   document.getElementById('nav-' + name).classList.add('active');
   if (name === 'sessions') loadSessions();
-  if (name === 'share') loadShareTokens();
   if (name === 'backup') loadBackupInfo();
 }
 
@@ -397,51 +365,6 @@ async function deleteSession(sid) {
   if (r.ok) loadSessions(); else alert(r.error);
 }
 
-async function loadShareTokens() {
-  const tokens = await api('GET', '/api/share-tokens');
-  document.getElementById('badge-share').textContent = tokens.filter(t => new Date(t.expires) > new Date()).length || 0;
-  const el = document.getElementById('shareTokensList');
-  if (!tokens.length) { el.innerHTML = '<div style="color:#9ca3af;font-size:13px;margin-top:8px">Žádné aktivní sdílené odkazy.</div>'; return; }
-  el.innerHTML = tokens.map(t => {
-    const url = `${location.origin}/share/${t.token}`;
-    const expired = new Date(t.expires) < new Date();
-    return `<div class="token-card" style="border-color:${expired?'#fca5a5':'#e5e7eb'}">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
-        <div>
-          <span style="font-size:11px;padding:2px 8px;border-radius:20px;background:${expired?'#fee2e2':'#dcfce7'};color:${expired?'#991b1b':'#15803d'};font-weight:500">${expired?'Vypršel':'Aktivní'}</span>
-          <span style="font-size:12px;color:#6b7280;margin-left:8px">do ${fmtDate(t.expires)}</span>
-        </div>
-        <div style="display:flex;gap:6px">
-          <button class="btn gray sm" onclick="copyUrl('${url}')"><i class="ti ti-copy" style="font-size:12px" aria-hidden="true"></i> Kopírovat</button>
-          <button class="btn red sm" onclick="deleteToken('${t.token}')"><i class="ti ti-trash" style="font-size:12px" aria-hidden="true"></i></button>
-        </div>
-      </div>
-      <div class="token-url">${url}</div>
-    </div>`;
-  }).join('');
-}
-async function createShareToken() {
-  const days = document.getElementById('shareDays').value;
-  const r = await api('POST', '/api/share-tokens', {days});
-  if (r.ok) { loadShareTokens(); const url=`${location.origin}/share/${r.token}`; if(navigator.clipboard)navigator.clipboard.writeText(url).then(()=>alert('Odkaz zkopírován:\n'+url)); else alert('Vygenerováno:\n'+url); }
-}
-async function deleteToken(token) {
-  if (!confirm('Smazat sdílený odkaz?')) return;
-  await api('DELETE', `/api/share-tokens/${token}`);
-  loadShareTokens();
-}
-function copyUrl(url) { if(navigator.clipboard)navigator.clipboard.writeText(url).then(()=>alert('Zkopírováno!')); else{const t=document.createElement('textarea');t.value=url;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove();alert('Zkopírováno!');} }
-
-async function settImportFromExcel(event) {
-  const file=event.target.files[0]; if(!file)return; event.target.value='';
-  if(!confirm('Import přidá data z Excelu. Existující data nepřepíše. Pokračovat?'))return;
-  const msg=document.getElementById('importMsg');
-  msg.innerHTML='<span style="color:#0369a1;font-weight:500">⏳ Importuji...</span>';
-  try{const fd=new FormData();fd.append('file',file);const res=await fetch('/api/import-excel',{method:'POST',body:fd});const d=await res.json();
-    if(d.ok)msg.innerHTML=`<span class="msg-ok">✅ Hotovo: ${d.receptury} receptur, ${d.tydnu} týdnů</span>`;
-    else msg.innerHTML=`<span class="msg-err">✗ ${d.error}</span>`;
-  }catch(e){msg.innerHTML=`<span class="msg-err">✗ ${e.message}</span>`;}
-}
 function settImportWeekData(ev) {
   const f=ev.target.files[0];if(!f)return;
   const rd=new FileReader();
