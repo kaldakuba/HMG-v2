@@ -295,14 +295,11 @@ async function loadUsers() {
           <button style="width:38px;height:34px;border:none;border-radius:6px;background:#e2e8f0;color:#334155;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0" onclick="resetPassword(${u.id},'${esc(u.username)}')"><i class="ti ti-key" style="font-size:16px" aria-hidden="true"></i></button>
           <span style="font-size:12px;color:#6b7280;white-space:nowrap">Změnit heslo</span>
         </div>
-        <div style="display:flex;align-items:center;gap:10px">
-          <button style="width:38px;height:34px;border:none;border-radius:6px;background:#ede9fe;color:#5b21b6;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0" onclick="changeRole(${u.id},'${esc(u.username)}','${u.role}')"><i class="ti ti-user-cog" style="font-size:16px" aria-hidden="true"></i></button>
-          <span style="font-size:12px;color:#6b7280;white-space:nowrap">Změnit roli</span>
-        </div>
+        ${u.role !== 'admin' ? `
         <div style="display:flex;align-items:center;gap:10px">
           <button style="width:38px;height:34px;border:none;border-radius:6px;background:#fee2e2;color:#991b1b;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0" onclick="deleteUser(${u.id},'${esc(u.username)}')"><i class="ti ti-trash" style="font-size:16px" aria-hidden="true"></i></button>
           <span style="font-size:12px;color:#6b7280;white-space:nowrap">Odebrat přístup</span>
-        </div>
+        </div>` : ''}
       </div>
     </div>`;
   }).join('');
