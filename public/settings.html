@@ -89,10 +89,6 @@ hr{border:none;border-top:0.5px solid #e5e7eb;margin:14px 0}
         <i class="ti ti-users" aria-hidden="true"></i> Uživatelé
         <span class="badge" id="badge-users">—</span>
       </div>
-      <div class="nav-item" onclick="showSection('access')" id="nav-access">
-        <i class="ti ti-share" aria-hidden="true"></i> Sdílení přístupu
-        <span class="badge" id="badge-access">—</span>
-      </div>
       <div class="nav-item" onclick="showSection('data')" id="nav-data">
         <i class="ti ti-database" aria-hidden="true"></i> Data
       </div>
@@ -138,20 +134,6 @@ hr{border:none;border-top:0.5px solid #e5e7eb;margin:14px 0}
             <div id="addUserMsg"></div>
           </div>
           <div id="usersBody"><div style="text-align:center;color:#9ca3af;padding:20px;font-size:13px">Načítám...</div></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- SDÍLENÍ PŘÍSTUPU -->
-    <div class="section" id="sec-access">
-      <div class="card">
-        <div class="card-head">
-          <div class="card-head-icon" style="background:#ede9fe"><i class="ti ti-share" style="font-size:18px;color:#5b21b6" aria-hidden="true"></i></div>
-          <div><div class="card-head h2">Sdílení přístupu</div><div class="card-head sub">Uživatelé s přístupem k měsíčnímu přehledu (role: sdílený HMG)</div></div>
-          <button class="btn gray sm" onclick="loadAccessUsers()" style="margin-left:auto"><i class="ti ti-refresh" style="font-size:13px" aria-hidden="true"></i> Obnovit</button>
-        </div>
-        <div class="card-body">
-          <div id="accessBody"><div style="text-align:center;color:#9ca3af;padding:20px;font-size:13px">Načítám...</div></div>
         </div>
       </div>
     </div>
@@ -235,7 +217,6 @@ function showSection(name) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('sec-' + name).classList.add('active');
   document.getElementById('nav-' + name).classList.add('active');
-  if (name === 'access') loadAccessUsers();
   if (name === 'backup') loadBackupInfo();
 }
 
@@ -328,7 +309,7 @@ async function changeRole(id, name, currentRole) {
   const newRole = prompt(`Změnit roli uživatele "${name}"\nAktuální: ${labels[currentRole]}\n\nZadej novou roli:\n- operator\n- hmg_share\n- admin`);
   if (!newRole) return;
   const r = await api('PUT', `/api/users/${id}/role`, {role: newRole.trim()});
-  if (r.ok) { alert('Role změněna. Uživatel byl odhlášen.'); loadUsers(); loadAccessUsers(); }
+  if (r.ok) { alert('Role změněna. Uživatel byl odhlášen.'); loadUsers(); }
   else alert(r.error);
 }
 async function deleteUser(id, name) {
@@ -343,31 +324,6 @@ async function resetPassword(id, name) {
   if (r.ok) alert('Heslo změněno.'); else alert(r.error);
 }
 
-async function loadAccessUsers() {
-  const users = await api('GET', '/api/users');
-  const shared = users.filter(u => u.role === 'hmg_share');
-  document.getElementById('badge-access').textContent = shared.length || 0;
-  const el = document.getElementById('accessBody');
-  if (!shared.length) {
-    el.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:20px;font-size:13px">Žádní uživatelé se sdíleným přístupem.<br><span style="font-size:12px">Přidejte uživatele s rolí <strong>Sdílený HMG</strong> v sekci Uživatelé.</span></div>';
-    return;
-  }
-  el.innerHTML = shared.map(u => {
-    const lastSeen = u.last_seen ? fmtDate(u.last_seen) : null;
-    const created = u.created_at ? fmtDate(u.created_at) : '—';
-    return `<div class="user-row">
-      <div class="avatar" style="background:#ede9fe;color:#5b21b6">${initials(u.username)}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:500;color:#111">${esc(u.username)}</div>
-        <div style="font-size:11px;color:#9ca3af">
-          Vytvořen: ${created}
-          ${lastSeen ? ` &nbsp;·&nbsp; Poslední přihlášení: ${lastSeen}` : ' &nbsp;·&nbsp; <span style="color:#dc2626">Zatím nepřihlášen</span>'}
-        </div>
-      </div>
-      <span class="role-badge hmg_share">sdílený HMG</span>
-    </div>`;
-  }).join('');
-}
 
 
 async function settImportFromExcel(event) {
