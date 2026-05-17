@@ -618,9 +618,6 @@ app.get('/api/export-excel', requireAuth, requireOperator, async (req, res) => {
 });
 
 // ── Fallback ──
-app.get('*', requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
 
 
 // ════════════════════════════════════════════
@@ -753,6 +750,10 @@ app.get('/api/backup/last', requireAuth, requireAdmin, async (req, res) => {
 
 // ── Start ──
 console.log('=== HMG v2.3 PostgreSQL + Auth ===');
+app.get('*', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 // ── Smazat data týdnů a měsíců ──
 app.delete('/api/admin/clear-weeks', requireAuth, requireAdmin, async (req, res) => {
   const { password } = req.body;
