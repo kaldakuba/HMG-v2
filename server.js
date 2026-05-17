@@ -778,7 +778,6 @@ app.delete('/api/admin/clear-inputs', requireAuth, requireAdmin, async (req, res
   res.json({ ok: true });
 });
 
-
 initDb()
   .then(() => { app.listen(PORT, () => console.log(`Server běží na portu ${PORT}`)); if(process.env.GMAIL_USER) scheduleBackup(); })
   .catch(err => { console.error('DB init error:', err); process.exit(1); });
