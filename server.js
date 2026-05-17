@@ -156,7 +156,7 @@ function requireAdmin(req, res, next) {
   if (req.path.startsWith('/api/')) {
     return res.status(403).json({ error: 'Nedostatečná oprávnění' });
   }
-  res.redirect('/login');
+  res.redirect('/');
 }
 
 // Operator + Admin mohou číst data
@@ -189,7 +189,7 @@ app.get('/login', (req, res) => {
 
 app.get('/', requireAuth, (req, res) => {
   // Viewer vidí jen měsíční přehled
-  if (req.session.role === 'hmg_share') return res.redirect('/month');
+  if (req.session.role === 'hmg_share') return res.redirect('/month-view');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
@@ -618,6 +618,9 @@ app.get('/api/export-excel', requireAuth, requireOperator, async (req, res) => {
 });
 
 // ── Fallback ──
+app.get('*', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 
 // ════════════════════════════════════════════
@@ -750,35 +753,6 @@ app.get('/api/backup/last', requireAuth, requireAdmin, async (req, res) => {
 
 // ── Start ──
 console.log('=== HMG v2.3 PostgreSQL + Auth ===');
-app.get('*', requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// ── Smazat data týdnů a měsíců ──
-app.delete('/api/admin/clear-weeks', requireAuth, requireAdmin, async (req, res) => {
-  const { password } = req.body;
-  if (!password) return res.status(400).json({ error: 'Heslo je povinne.' });
-  const user = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.session.userId]);
-  if (!user.rows[0]) return res.status(401).json({ error: 'Uzivatel nenalezen.' });
-  const ok = await bcrypt.compare(password, user.rows[0].password_hash);
-  if (!ok) return res.status(403).json({ error: 'Nespravne heslo.' });
-  await pool.query('DELETE FROM week_data');
-  await pool.query('DELETE FROM month_entries');
-  res.json({ ok: true });
-});
-
-// ── Smazat receptury ──
-app.delete('/api/admin/clear-inputs', requireAuth, requireAdmin, async (req, res) => {
-  const { password } = req.body;
-  if (!password) return res.status(400).json({ error: 'Heslo je povinne.' });
-  const user = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.session.userId]);
-  if (!user.rows[0]) return res.status(401).json({ error: 'Uzivatel nenalezen.' });
-  const ok = await bcrypt.compare(password, user.rows[0].password_hash);
-  if (!ok) return res.status(403).json({ error: 'Nespravne heslo.' });
-  await pool.query('DELETE FROM inputs');
-  res.json({ ok: true });
-});
-
 initDb()
   .then(() => { app.listen(PORT, () => console.log(`Server běží na portu ${PORT}`)); if(process.env.GMAIL_USER) scheduleBackup(); })
   .catch(err => { console.error('DB init error:', err); process.exit(1); });
