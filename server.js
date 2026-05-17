@@ -756,11 +756,11 @@ console.log('=== HMG v2.3 PostgreSQL + Auth ===');
 // ── Smazat data týdnů a měsíců ──
 app.delete('/api/admin/clear-weeks', requireAuth, requireAdmin, async (req, res) => {
   const { password } = req.body;
-  if (!password) return res.status(400).json({ error: 'Heslo je povinné.' });
+  if (!password) return res.status(400).json({ error: 'Heslo je povinne.' });
   const user = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.session.userId]);
-  if (!user.rows[0]) return res.status(401).json({ error: 'Uživatel nenalezen.' });
+  if (!user.rows[0]) return res.status(401).json({ error: 'Uzivatel nenalezen.' });
   const ok = await bcrypt.compare(password, user.rows[0].password_hash);
-  if (!ok) return res.status(403).json({ error: 'Nesprávné heslo.' });
+  if (!ok) return res.status(403).json({ error: 'Nespravne heslo.' });
   await pool.query('DELETE FROM week_data');
   await pool.query('DELETE FROM month_entries');
   res.json({ ok: true });
@@ -769,11 +769,11 @@ app.delete('/api/admin/clear-weeks', requireAuth, requireAdmin, async (req, res)
 // ── Smazat receptury ──
 app.delete('/api/admin/clear-inputs', requireAuth, requireAdmin, async (req, res) => {
   const { password } = req.body;
-  if (!password) return res.status(400).json({ error: 'Heslo je povinné.' });
+  if (!password) return res.status(400).json({ error: 'Heslo je povinne.' });
   const user = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.session.userId]);
-  if (!user.rows[0]) return res.status(401).json({ error: 'Uživatel nenalezen.' });
+  if (!user.rows[0]) return res.status(401).json({ error: 'Uzivatel nenalezen.' });
   const ok = await bcrypt.compare(password, user.rows[0].password_hash);
-  if (!ok) return res.status(403).json({ error: 'Nesprávné heslo.' });
+  if (!ok) return res.status(403).json({ error: 'Nespravne heslo.' });
   await pool.query('DELETE FROM inputs');
   res.json({ ok: true });
 });
