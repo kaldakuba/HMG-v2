@@ -307,6 +307,9 @@ function parseUA(ua) {
 function esc(v) { return String(v||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 async function api(method, url, body) {
   const r = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 401) { window.location.href = '/login'; return {}; }
+  const ct = r.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) { window.location.href = '/login'; return {}; }
   return r.json();
 }
 function initials(name) { return name.split(/[._-]/).map(p=>p[0]||'').join('').toUpperCase().slice(0,2) || name[0].toUpperCase(); }
@@ -322,7 +325,14 @@ function roleBadge(role) {
 }
 
 async function loadUsers() {
-  const users = await api('GET', '/api/users');
+  let users;
+  try {
+    users = await api('GET', '/api/users');
+    if (!Array.isArray(users)) throw new Error('bad response');
+  } catch(e) {
+    document.getElementById('usersBody').innerHTML = '<div style="text-align:center;color:#dc2626;padding:20px;font-size:13px">Chyba načítání uživatelů. Zkuste obnovit stránku.</div>';
+    return;
+  }
   const admins = users.filter(u=>u.role==='admin').length;
   const ops = users.filter(u=>u.role==='operator').length;
   const sh = users.filter(u=>u.role==='hmg_share').length;
