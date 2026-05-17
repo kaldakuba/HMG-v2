@@ -260,6 +260,8 @@ async function loadUsers() {
   let users;
   try {
     const raw = await fetch('/api/users');
+    if (raw.status === 401) { window.location.href = '/login'; return; }
+    if (raw.status === 403) { document.getElementById('usersBody').innerHTML = '<div style="text-align:center;color:#dc2626;padding:20px;font-size:13px">Přístup odepřen — vyžadována role admin.</div>'; return; }
     if (!raw.ok) throw new Error('HTTP ' + raw.status);
     users = await raw.json();
     if (!Array.isArray(users)) throw new Error('Neočekávaná odpověď serveru');
