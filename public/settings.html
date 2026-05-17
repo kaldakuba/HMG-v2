@@ -8,66 +8,66 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;font-size:100%;min-height:100vh;display:flex;flex-direction:column}
-.topbar{background:#1a1a2e;color:#fff;height:62.4px;padding:0 24px;display:flex;align-items:center;gap:14.4px;position:sticky;top:0;z-index:100;flex-shrink:0}
-.topbar h1{font-size:19.2px;font-weight:700;letter-spacing:1.2px;color:#fff;flex:1;text-align:center}
-.btn-back{background:rgba(255,255,255,.1);border:none;color:#c8d0e0;font-family:'Inter',sans-serif;font-size:14.4px;font-weight:500;cursor:pointer;padding:6px 14.4px;border-radius:7.2px;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.topbar{background:#1a1a2e;color:#fff;height:52px;padding:0 20px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100;flex-shrink:0}
+.topbar h1{font-size:16px;font-weight:700;letter-spacing:1px;color:#fff;flex:1;text-align:center}
+.btn-back{background:rgba(255,255,255,.1);border:none;color:#c8d0e0;font-family:'Inter',sans-serif;font-size:12px;font-weight:500;cursor:pointer;padding:5px 12px;border-radius:6px;text-decoration:none;display:inline-flex;align-items:center;gap:5px}
 .btn-back:hover{background:rgba(255,255,255,.18)}
-.layout{display:flex;flex:1;max-width:1320px;margin:0 auto;width:100%;padding:24px 19.2px;gap:24px}
-.sidenav{width:264px;flex-shrink:0}
-.sidenav-inner{background:#fff;border:0.5px solid #d1d5db;border-radius:12px;overflow:hidden;position:sticky;top:86.4px}
-.nav-label{font-size:12px;font-weight:600;color:#9ca3af;letter-spacing:.9px;text-transform:uppercase;padding:14.4px 16.8px 7.2px}
-.nav-item{display:flex;align-items:center;gap:10.8px;padding:10.8px 16.8px;cursor:pointer;transition:background .1s;color:#374151;font-size:15.6px;border-left:2.4px solid transparent}
+.layout{display:flex;flex:1;max-width:1100px;margin:0 auto;width:100%;padding:20px 16px;gap:20px}
+.sidenav{width:180px;flex-shrink:0}
+.sidenav-inner{background:#fff;border:0.5px solid #d1d5db;border-radius:10px;overflow:hidden;position:sticky;top:72px}
+.nav-label{font-size:10px;font-weight:600;color:#9ca3af;letter-spacing:.8px;text-transform:uppercase;padding:12px 14px 6px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:9px 14px;cursor:pointer;transition:background .1s;color:#374151;font-size:13px;border-left:2px solid transparent}
 .nav-item:hover{background:#f9fafb}
 .nav-item.active{background:#eff6ff;color:#1d4ed8;border-left-color:#2563eb;font-weight:500}
-.nav-item i{font-size:19.2px;flex-shrink:0}
-.nav-item .badge{margin-left:auto;font-size:12px;background:#e5e7eb;color:#6b7280;padding:1.2px 7.2px;border-radius:24px;font-weight:500}
+.nav-item i{font-size:16px;flex-shrink:0}
+.nav-item .badge{margin-left:auto;font-size:10px;background:#e5e7eb;color:#6b7280;padding:1px 6px;border-radius:20px;font-weight:500}
 .nav-item.active .badge{background:#dbeafe;color:#1d4ed8}
 .content{flex:1;min-width:0}
 .section{display:none}
 .section.active{display:block}
-.card{background:#fff;border:0.5px solid #d1d5db;border-radius:12px;overflow:hidden;margin-bottom:19.2px}
-.card-head{padding:16.8px 21.6px;border-bottom:0.5px solid #e5e7eb;display:flex;align-items:center;gap:12px}
-.card-head-icon{width:40.8px;height:40.8px;border-radius:9.6px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.card-head h2{font-size:16.8px;font-weight:600;color:#111;flex:1}
-.card-head .sub{font-size:14.4px;color:#6b7280;margin-top:1.2px}
-.card-body{padding:19.2px 21.6px}
-.btn{border-radius:7.2px;border:none;color:#fff;font-family:'Inter',sans-serif;font-weight:600;cursor:pointer;padding:8.4px 16.8px;font-size:14.4px;white-space:nowrap;transition:filter .15s;display:inline-flex;align-items:center;gap:6px}
+.card{background:#fff;border:0.5px solid #d1d5db;border-radius:10px;overflow:hidden;margin-bottom:16px}
+.card-head{padding:14px 18px;border-bottom:0.5px solid #e5e7eb;display:flex;align-items:center;gap:10px}
+.card-head-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.card-head h2{font-size:14px;font-weight:600;color:#111;flex:1}
+.card-head .sub{font-size:12px;color:#6b7280;margin-top:1px}
+.card-body{padding:16px 18px}
+.btn{border-radius:6px;border:none;color:#fff;font-family:'Inter',sans-serif;font-weight:600;cursor:pointer;padding:7px 14px;font-size:12px;white-space:nowrap;transition:filter .15s;display:inline-flex;align-items:center;gap:5px}
 .btn:hover{filter:brightness(1.1)}
-.btn.sm{padding:4.8px 12px;font-size:13.2px}
+.btn.sm{padding:4px 10px;font-size:11px}
 .btn.green{background:#16a34a}.btn.red{background:#dc2626}.btn.blue{background:#2563eb}.btn.gray{background:#6b7280}.btn.purple{background:#7c3aed}.btn.teal{background:#0f766e}.btn.orange{background:#ea580c}
 .btn:disabled{opacity:.5;cursor:not-allowed;filter:none}
-label{display:block;font-size:13.2px;font-weight:600;color:#374151;margin-bottom:4.8px;letter-spacing:.2px}
-input[type=text],input[type=password],select{height:43.2px;border:0.5px solid #d1d5db;border-radius:7.2px;padding:0 12px;font-family:'Inter',sans-serif;font-size:15.6px;color:#111;background:#fff;outline:none;width:100%}
-input:focus,select:focus{border-color:#2563eb;box-shadow:0 0 0 2.4px rgba(37,99,235,.1)}
-.form-row{display:flex;gap:9.6px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14.4px}
-.form-group{display:flex;flex-direction:column;gap:4.8px;flex:1;min-width:132px}
-.user-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:0.5px solid #f3f4f6}
+label{display:block;font-size:11px;font-weight:600;color:#374151;margin-bottom:4px;letter-spacing:.2px}
+input[type=text],input[type=password],select{height:36px;border:0.5px solid #d1d5db;border-radius:6px;padding:0 10px;font-family:'Inter',sans-serif;font-size:13px;color:#111;background:#fff;outline:none;width:100%}
+input:focus,select:focus{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,235,.1)}
+.form-row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px}
+.form-group{display:flex;flex-direction:column;gap:4px;flex:1;min-width:110px}
+.user-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:0.5px solid #f3f4f6}
 .user-row:last-child{border-bottom:none}
-.avatar{width:40.8px;height:40.8px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14.4px;font-weight:600;flex-shrink:0}
-.role-badge{font-size:12px;padding:2.4px 9.6px;border-radius:24px;font-weight:500;white-space:nowrap}
+.avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0}
+.role-badge{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:500;white-space:nowrap}
 .role-badge.admin{background:#dbeafe;color:#1e40af}
 .role-badge.operator{background:#fef9c3;color:#854d0e}
 .role-badge.hmg_share{background:#ede9fe;color:#5b21b6}
-.session-row{display:flex;align-items:center;gap:12px;padding:10.8px 0;border-bottom:0.5px solid #f3f4f6}
+.session-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:0.5px solid #f3f4f6}
 .session-row:last-child{border-bottom:none}
-.device-icon{width:36px;height:36px;border-radius:7.2px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.token-card{border:0.5px solid #e5e7eb;border-radius:9.6px;padding:12px 14.4px;margin-top:12px}
-.token-url{font-size:13.2px;color:#6b7280;word-break:break-all;margin-top:4.8px;font-family:monospace}
-.info{font-size:14.4px;color:#6b7280;margin-top:4.8px;line-height:1.5}
-.msg-ok{font-size:14.4px;color:#16a34a;font-weight:500;margin-top:9.6px}
-.msg-err{font-size:14.4px;color:#dc2626;font-weight:500;margin-top:9.6px}
-.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(144px,1fr));gap:12px;margin-bottom:19.2px}
-.stat{background:#f9fafb;border:0.5px solid #e5e7eb;border-radius:9.6px;padding:14.4px;text-align:center}
-.stat-val{font-size:26.4px;font-weight:600;color:#111}
-.stat-label{font-size:13.2px;color:#6b7280;margin-top:2.4px}
-.add-form{background:#f9fafb;border:0.5px solid #e5e7eb;border-radius:9.6px;padding:16.8px;margin-bottom:16.8px;display:none}
-hr{border:none;border-top:0.5px solid #e5e7eb;margin:16.8px 0}
-@media(max-width:840px){
-  .layout{flex-direction:column;padding:12px 9.6px;gap:12px}
+.device-icon{width:30px;height:30px;border-radius:6px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.token-card{border:0.5px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-top:10px}
+.token-url{font-size:11px;color:#6b7280;word-break:break-all;margin-top:4px;font-family:monospace}
+.info{font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5}
+.msg-ok{font-size:12px;color:#16a34a;font-weight:500;margin-top:8px}
+.msg-err{font-size:12px;color:#dc2626;font-weight:500;margin-top:8px}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px}
+.stat{background:#f9fafb;border:0.5px solid #e5e7eb;border-radius:8px;padding:12px;text-align:center}
+.stat-val{font-size:22px;font-weight:600;color:#111}
+.stat-label{font-size:11px;color:#6b7280;margin-top:2px}
+.add-form{background:#f9fafb;border:0.5px solid #e5e7eb;border-radius:8px;padding:14px;margin-bottom:14px;display:none}
+hr{border:none;border-top:0.5px solid #e5e7eb;margin:14px 0}
+@media(max-width:700px){
+  .layout{flex-direction:column;padding:10px 8px;gap:10px}
   .sidenav{width:100%}
   .sidenav-inner{position:static;display:flex;overflow-x:auto}
   .nav-label{display:none}
-  .nav-item{padding:9.6px 14.4px;border-left:none;border-bottom:2.4px solid transparent;white-space:nowrap}
+  .nav-item{padding:8px 12px;border-left:none;border-bottom:2px solid transparent;white-space:nowrap}
   .nav-item.active{border-left:none;border-bottom-color:#2563eb}
 }
 </style>
@@ -89,13 +89,9 @@ hr{border:none;border-top:0.5px solid #e5e7eb;margin:16.8px 0}
         <i class="ti ti-users" aria-hidden="true"></i> Uživatelé
         <span class="badge" id="badge-users">—</span>
       </div>
-      <div class="nav-item" onclick="showSection('sessions')" id="nav-sessions">
-        <i class="ti ti-lock" aria-hidden="true"></i> Přihlášení
-        <span class="badge" id="badge-sessions">—</span>
-      </div>
-      <div class="nav-item" onclick="showSection('share')" id="nav-share">
-        <i class="ti ti-link" aria-hidden="true"></i> Sdílení
-        <span class="badge" id="badge-share">—</span>
+      <div class="nav-item" onclick="showSection('access')" id="nav-access">
+        <i class="ti ti-share" aria-hidden="true"></i> Sdílení přístupu
+        <span class="badge" id="badge-access">—</span>
       </div>
       <div class="nav-item" onclick="showSection('data')" id="nav-data">
         <i class="ti ti-database" aria-hidden="true"></i> Data
@@ -146,43 +142,16 @@ hr{border:none;border-top:0.5px solid #e5e7eb;margin:16.8px 0}
       </div>
     </div>
 
-    <!-- PŘIHLÁŠENÍ -->
-    <div class="section" id="sec-sessions">
+    <!-- SDÍLENÍ PŘÍSTUPU -->
+    <div class="section" id="sec-access">
       <div class="card">
         <div class="card-head">
-          <div class="card-head-icon" style="background:#d1fae5"><i class="ti ti-lock" style="font-size:18px;color:#065f46" aria-hidden="true"></i></div>
-          <div><div class="card-head h2">Aktivní přihlášení</div><div class="card-head sub">Všechna aktuálně přihlášená zařízení</div></div>
-          <button class="btn gray sm" onclick="loadSessions()" style="margin-left:auto"><i class="ti ti-refresh" style="font-size:13px" aria-hidden="true"></i> Obnovit</button>
+          <div class="card-head-icon" style="background:#ede9fe"><i class="ti ti-share" style="font-size:18px;color:#5b21b6" aria-hidden="true"></i></div>
+          <div><div class="card-head h2">Sdílení přístupu</div><div class="card-head sub">Uživatelé s přístupem k měsíčnímu přehledu (role: sdílený HMG)</div></div>
+          <button class="btn gray sm" onclick="loadAccessUsers()" style="margin-left:auto"><i class="ti ti-refresh" style="font-size:13px" aria-hidden="true"></i> Obnovit</button>
         </div>
         <div class="card-body">
-          <div id="sessionsBody"><div style="text-align:center;color:#9ca3af;padding:20px;font-size:13px">Načítám...</div></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- SDÍLENÍ -->
-    <div class="section" id="sec-share">
-      <div class="card">
-        <div class="card-head">
-          <div class="card-head-icon" style="background:#ede9fe"><i class="ti ti-link" style="font-size:18px;color:#5b21b6" aria-hidden="true"></i></div>
-          <div><div class="card-head h2">Sdílení měsíčního přehledu</div><div class="card-head sub">Odkaz nevyžaduje přihlášení</div></div>
-        </div>
-        <div class="card-body">
-          <div class="form-row" style="margin-bottom:8px">
-            <div class="form-group" style="max-width:160px">
-              <label>Platnost odkazu</label>
-              <select id="shareDays">
-                <option value="7">7 dní</option>
-                <option value="30" selected>30 dní</option>
-                <option value="90">90 dní</option>
-                <option value="365">1 rok</option>
-              </select>
-            </div>
-            <div style="display:flex;align-items:flex-end">
-              <button class="btn blue" onclick="createShareToken()"><i class="ti ti-plus" style="font-size:13px" aria-hidden="true"></i> Vygenerovat</button>
-            </div>
-          </div>
-          <div id="shareTokensList"></div>
+          <div id="accessBody"><div style="text-align:center;color:#9ca3af;padding:20px;font-size:13px">Načítám...</div></div>
         </div>
       </div>
     </div>
@@ -266,8 +235,7 @@ function showSection(name) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('sec-' + name).classList.add('active');
   document.getElementById('nav-' + name).classList.add('active');
-  if (name === 'sessions') loadSessions();
-  if (name === 'share') loadShareTokens();
+  if (name === 'access') loadAccessUsers();
   if (name === 'backup') loadBackupInfo();
 }
 
@@ -360,7 +328,7 @@ async function changeRole(id, name, currentRole) {
   const newRole = prompt(`Změnit roli uživatele "${name}"\nAktuální: ${labels[currentRole]}\n\nZadej novou roli:\n- operator\n- hmg_share\n- admin`);
   if (!newRole) return;
   const r = await api('PUT', `/api/users/${id}/role`, {role: newRole.trim()});
-  if (r.ok) { alert('Role změněna. Uživatel byl odhlášen.'); loadUsers(); loadSessions(); }
+  if (r.ok) { alert('Role změněna. Uživatel byl odhlášen.'); loadUsers(); loadAccessUsers(); }
   else alert(r.error);
 }
 async function deleteUser(id, name) {
@@ -375,62 +343,32 @@ async function resetPassword(id, name) {
   if (r.ok) alert('Heslo změněno.'); else alert(r.error);
 }
 
-async function loadSessions() {
-  const sessions = await api('GET', '/api/sessions');
-  document.getElementById('badge-sessions').textContent = sessions.length;
-  if (!sessions.length) { document.getElementById('sessionsBody').innerHTML = '<div style="text-align:center;color:#9ca3af;padding:20px;font-size:13px">Žádné aktivní přihlášení</div>'; return; }
-  document.getElementById('sessionsBody').innerHTML = sessions.map(s => `
-    <div class="session-row">
-      <div class="device-icon"><i class="ti ti-${/mobile|Android|iPhone/.test(s.user_agent||'')?'device-mobile':'device-laptop'}" style="font-size:16px;color:#6b7280" aria-hidden="true"></i></div>
+async function loadAccessUsers() {
+  const users = await api('GET', '/api/users');
+  const shared = users.filter(u => u.role === 'hmg_share');
+  document.getElementById('badge-access').textContent = shared.length || 0;
+  const el = document.getElementById('accessBody');
+  if (!shared.length) {
+    el.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:20px;font-size:13px">Žádní uživatelé se sdíleným přístupem.<br><span style="font-size:12px">Přidejte uživatele s rolí <strong>Sdílený HMG</strong> v sekci Uživatelé.</span></div>';
+    return;
+  }
+  el.innerHTML = shared.map(u => {
+    const lastSeen = u.last_seen ? fmtDate(u.last_seen) : null;
+    const created = u.created_at ? fmtDate(u.created_at) : '—';
+    return `<div class="user-row">
+      <div class="avatar" style="background:#ede9fe;color:#5b21b6">${initials(u.username)}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:500;color:#111">${esc(s.username||'?')}</div>
-        <div style="font-size:11px;color:#9ca3af">${parseUA(s.user_agent)} · Vyprší ${fmtDate(s.expire)}</div>
-      </div>
-      ${s.is_current
-        ? '<span style="font-size:10px;padding:2px 8px;border-radius:20px;background:#dbeafe;color:#1e40af;font-weight:500">Aktuální</span>'
-        : `<button class="btn red sm" onclick="deleteSession('${s.sid}')">Odhlásit</button>`}
-    </div>`).join('');
-}
-async function deleteSession(sid) {
-  if (!confirm('Odhlásit tuto session?')) return;
-  const r = await api('DELETE', `/api/sessions/${sid}`);
-  if (r.ok) loadSessions(); else alert(r.error);
-}
-
-async function loadShareTokens() {
-  const tokens = await api('GET', '/api/share-tokens');
-  document.getElementById('badge-share').textContent = tokens.filter(t => new Date(t.expires) > new Date()).length || 0;
-  const el = document.getElementById('shareTokensList');
-  if (!tokens.length) { el.innerHTML = '<div style="color:#9ca3af;font-size:13px;margin-top:8px">Žádné aktivní sdílené odkazy.</div>'; return; }
-  el.innerHTML = tokens.map(t => {
-    const url = `${location.origin}/share/${t.token}`;
-    const expired = new Date(t.expires) < new Date();
-    return `<div class="token-card" style="border-color:${expired?'#fca5a5':'#e5e7eb'}">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
-        <div>
-          <span style="font-size:11px;padding:2px 8px;border-radius:20px;background:${expired?'#fee2e2':'#dcfce7'};color:${expired?'#991b1b':'#15803d'};font-weight:500">${expired?'Vypršel':'Aktivní'}</span>
-          <span style="font-size:12px;color:#6b7280;margin-left:8px">do ${fmtDate(t.expires)}</span>
-        </div>
-        <div style="display:flex;gap:6px">
-          <button class="btn gray sm" onclick="copyUrl('${url}')"><i class="ti ti-copy" style="font-size:12px" aria-hidden="true"></i> Kopírovat</button>
-          <button class="btn red sm" onclick="deleteToken('${t.token}')"><i class="ti ti-trash" style="font-size:12px" aria-hidden="true"></i></button>
+        <div style="font-size:13px;font-weight:500;color:#111">${esc(u.username)}</div>
+        <div style="font-size:11px;color:#9ca3af">
+          Vytvořen: ${created}
+          ${lastSeen ? ` &nbsp;·&nbsp; Poslední přihlášení: ${lastSeen}` : ' &nbsp;·&nbsp; <span style="color:#dc2626">Zatím nepřihlášen</span>'}
         </div>
       </div>
-      <div class="token-url">${url}</div>
+      <span class="role-badge hmg_share">sdílený HMG</span>
     </div>`;
   }).join('');
 }
-async function createShareToken() {
-  const days = document.getElementById('shareDays').value;
-  const r = await api('POST', '/api/share-tokens', {days});
-  if (r.ok) { loadShareTokens(); const url=`${location.origin}/share/${r.token}`; if(navigator.clipboard)navigator.clipboard.writeText(url).then(()=>alert('Odkaz zkopírován:\n'+url)); else alert('Vygenerováno:\n'+url); }
-}
-async function deleteToken(token) {
-  if (!confirm('Smazat sdílený odkaz?')) return;
-  await api('DELETE', `/api/share-tokens/${token}`);
-  loadShareTokens();
-}
-function copyUrl(url) { if(navigator.clipboard)navigator.clipboard.writeText(url).then(()=>alert('Zkopírováno!')); else{const t=document.createElement('textarea');t.value=url;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove();alert('Zkopírováno!');} }
+
 
 async function settImportFromExcel(event) {
   const file=event.target.files[0]; if(!file)return; event.target.value='';
