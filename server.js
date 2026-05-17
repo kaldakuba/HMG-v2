@@ -656,6 +656,17 @@ app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+app.put('/api/users/:id/role', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (id === req.session.userId) return res.status(400).json({ error: 'Nemůžeš změnit vlastní roli' });
+  const { role } = req.body;
+  if (!['admin','operator','hmg_share'].includes(role)) return res.status(400).json({ error: 'Neplatná role' });
+  await pool.query('UPDATE users SET role=$1 WHERE id=$2', [role, id]);
+  // Smazat sessions uživatele aby se znovu přihlásil s novou rolí
+  await pool.query("DELETE FROM session WHERE sess->>'userId'=$1", [String(id)]);
+  res.json({ ok: true });
+});
+
 app.put('/api/users/:id/password', requireAuth, requireAdmin, async (req, res) => {
   const { password } = req.body;
   if (!password || password.length < 6) return res.status(400).json({ error: 'Heslo min. 6 znaků' });
