@@ -257,7 +257,16 @@ function roleBadge(role) {
 }
 
 async function loadUsers() {
-  const users = await api('GET', '/api/users');
+  let users;
+  try {
+    const raw = await fetch('/api/users');
+    if (!raw.ok) throw new Error('HTTP ' + raw.status);
+    users = await raw.json();
+    if (!Array.isArray(users)) throw new Error('Neočekávaná odpověď serveru');
+  } catch(e) {
+    document.getElementById('usersBody').innerHTML = `<div style="text-align:center;color:#dc2626;padding:20px;font-size:13px">Chyba načítání: ${e.message}</div>`;
+    return;
+  }
   const admins = users.filter(u=>u.role==='admin').length;
   const ops = users.filter(u=>u.role==='operator').length;
   const sh = users.filter(u=>u.role==='hmg_share').length;
