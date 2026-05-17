@@ -297,9 +297,10 @@ async function loadUsers() {
       </div>
       ${roleBadge(u.role)}
       <div style="display:flex;gap:4px;flex-shrink:0">
-        <button class="btn gray sm" title="Změnit heslo" onclick="resetPassword(${u.id},'${esc(u.username)}')"><i class="ti ti-key" style="font-size:12px" aria-hidden="true"></i></button>
-        <button class="btn sm" style="background:#7c3aed" title="Změnit roli" onclick="changeRole(${u.id},'${esc(u.username)}','${u.role}')"><i class="ti ti-user-cog" style="font-size:12px" aria-hidden="true"></i></button>
-        <button class="btn red sm" title="Smazat" onclick="deleteUser(${u.id},'${esc(u.username)}')"><i class="ti ti-trash" style="font-size:12px" aria-hidden="true"></i></button>
+        <button style="border:1px solid #d1d5db;background:none;border-radius:6px;padding:5px 10px;font-size:12px;color:#374151;cursor:pointer;display:inline-flex;align-items:center;gap:5px" onclick="resetPassword(${u.id},'${esc(u.username)}')"><i class="ti ti-key" style="font-size:13px" aria-hidden="true"></i> Heslo</button>
+        ${u.role === 'admin'
+          ? '<span style=\"font-size:11px;color:#d1d5db;display:inline-flex;align-items:center;gap:4px\"><i class=\"ti ti-lock\" style=\"font-size:12px\" aria-hidden=\"true\"></i> nelze smazat</span>'
+          : `<button style="border:1px solid #fca5a5;background:none;border-radius:6px;padding:5px 10px;font-size:12px;color:#dc2626;cursor:pointer;display:inline-flex;align-items:center;gap:5px" onclick="deleteUser(${u.id},'${esc(u.username)}')"><i class="ti ti-trash" style="font-size:13px" aria-hidden="true"></i> Odebrat</button>`}
       </div>
     </div>`;
   }).join('');
