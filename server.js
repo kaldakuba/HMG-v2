@@ -100,10 +100,6 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS IDX_session_expire ON session (expire);
   `);
 
-  // Smazat staré sessions bez role (migrace)
-  await pool.query("DELETE FROM session WHERE sess->>'role' IS NULL OR sess->>'userId' IS NULL");
-  console.log('Staré sessions smazány');
-
   // Vytvoř výchozího admina pokud neexistuje
   const adminUser = process.env.ADMIN_USERNAME || 'admin';
   const adminPass = process.env.ADMIN_PASSWORD || 'hmg2026';
