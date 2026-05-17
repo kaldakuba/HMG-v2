@@ -288,8 +288,7 @@ async function exportWeeks(){
   let css='table{border-collapse:collapse;font-family:Arial;font-size:10pt;margin-bottom:18px}th,td{border:1px solid #222;padding:4px;text-align:center}th{font-weight:bold;background:#f2f2f2}.blue-day{background:#ddebf7}.gray-day{background:#d9d9d9}.sum-head{background:#fce4d6;font-weight:bold}.cap-value{background:#ffe600;font-weight:bold}.hours-row td{background:#d9d9d9;font-weight:bold}';
   let html='<html><head><meta charset="UTF-8"><style>'+css+'</style></head><body><!--HMG_WEEK_DATA:'+btoa(unescape(encodeURIComponent(JSON.stringify(payload))))+'--><h1>HARMONOGRAM VÝROBY - export týdnů</h1>';
   payload.weeks.forEach(w=>{html+=weekTableHtml(w.start,w.rows)});
-  html+='<footer style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#fafafa;border-top:0.5px solid #f0f0f0"><div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#c4c9d4"><div style="width:26px;height:26px;border-radius:50%;background:#f0f2f8;color:#c4c9d4;font-size:11px;font-weight:500;display:flex;align-items:center;justify-content:center" id="footerAvatar">?</div><span id="footerUser"></span></div><button onclick="doLogout()" style="background:none;border:0.5px solid #f0f0f0;border-radius:6px;color:#d1d5db;font-size:12px;font-family:Inter,sans-serif;padding:5px 12px;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ti ti-logout" style="font-size:14px" aria-hidden="true"></i> Odhlásit se</button></footer>
-</body></html>';
+  html+='</body></html>';
   downloadBlob(new Blob(['\ufeff'+html],{type:'application/vnd.ms-excel;charset=utf-8'}),'HMG_export_tydny.xls');
 }
 function weekTableHtml(start,rows){
@@ -430,5 +429,4 @@ async function init(){
 }
 init();
 fetch('/api/me').then(r=>r.json()).then(d=>{if(d.role==='hmg_share')window.location.replace('/month');}).catch(()=>{});
-</script><footer style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#fafafa;border-top:0.5px solid #f0f0f0"><div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#c4c9d4"><div style="width:26px;height:26px;border-radius:50%;background:#f0f2f8;color:#c4c9d4;font-size:11px;font-weight:500;display:flex;align-items:center;justify-content:center" id="footerAvatar">?</div><span id="footerUser"></span></div><button onclick="doLogout()" style="background:none;border:0.5px solid #f0f0f0;border-radius:6px;color:#d1d5db;font-size:12px;font-family:Inter,sans-serif;padding:5px 12px;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ti ti-logout" style="font-size:14px" aria-hidden="true"></i> Odhlásit se</button></footer>
-</body></html>
+</script></body></html>
