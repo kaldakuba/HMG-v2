@@ -583,6 +583,9 @@ app.post('/api/backup/run', requireAuth, requireAdmin, async (req, res) => {
   sendBackup().then(() => res.json({ ok: true })).catch(e => res.status(500).json({ error: e.message }));
 });
 
+app.get('/settings', requireAuth, requireAdmin, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'settings.html'));
+});
 
 
 app.get('/api/export-excel', requireAuth, requireOperator, async (req, res) => {
@@ -615,13 +618,6 @@ app.get('/api/export-excel', requireAuth, requireOperator, async (req, res) => {
 });
 
 // ── Fallback ──
-app.get('/settings', requireAuth, requireAdmin, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'settings.html'));
-});
-
-app.get('*', requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
 
 
 // ════════════════════════════════════════════
@@ -754,6 +750,10 @@ app.get('/api/backup/last', requireAuth, requireAdmin, async (req, res) => {
 
 // ── Start ──
 console.log('=== HMG v2.3 PostgreSQL + Auth ===');
+app.get('*', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 initDb()
   .then(() => { app.listen(PORT, () => console.log(`Server běží na portu ${PORT}`)); if(process.env.GMAIL_USER) scheduleBackup(); })
   .catch(err => { console.error('DB init error:', err); process.exit(1); });
