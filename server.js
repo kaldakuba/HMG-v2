@@ -152,7 +152,7 @@ function requireAdmin(req, res, next) {
   if (req.path.startsWith('/api/')) {
     return res.status(403).json({ error: 'Nedostatečná oprávnění' });
   }
-  res.redirect('/');
+  res.redirect('/login');
 }
 
 // Operator + Admin mohou číst data
