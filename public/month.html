@@ -239,7 +239,8 @@ function render(){
 
 function shiftMonth(delta){const val=monthPick.value||defaultMonth();const[y,m]=val.split('-').map(Number);let ny=y,nm=m-1+delta;if(nm>11){nm=0;ny++;}if(nm<0){nm=11;ny--;}const newVal=ny+'-'+String(nm+1).padStart(2,'0');if(_isViewer&&newVal<_minMonth)return;monthPick.value=newVal;render();updateNavButtons();}
 function thisMonth(){monthPick.value=defaultMonth();render()}
-function exportMonth(){const table=document.getElementById('monthTable');if(!table)return;const html='<html><head><meta charset="UTF-8"><style>table{border-collapse:collapse;font-family:Arial;font-size:10pt}th,td{border:1px solid #222;padding:4px;text-align:center}.day-b{background:#ddebf7}.day-w{background:#d1d5db}.day-h{background:#86efac}.missing-order{background:#fff200}</style></head><body>'+table.outerHTML+'</body></html>';const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+html],{type:'application/vnd.ms-excel;charset=utf-8'}));a.download='mesicni_harmonogram.xls';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
+function exportMonth(){const table=document.getElementById('monthTable');if(!table)return;const html='<html><head><meta charset="UTF-8"><style>table{border-collapse:collapse;font-family:Arial;font-size:10pt}th,td{border:1px solid #222;padding:4px;text-align:center}.day-b{background:#ddebf7}.day-w{background:#d1d5db}.day-h{background:#86efac}.missing-order{background:#fff200}</style></head><body>'+table.outerHTML+'<footer style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#fafafa;border-top:0.5px solid #f0f0f0"><div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#c4c9d4"><div style="width:26px;height:26px;border-radius:50%;background:#f0f2f8;color:#c4c9d4;font-size:11px;font-weight:500;display:flex;align-items:center;justify-content:center" id="footerAvatar">?</div><span id="footerUser"></span></div><button onclick="doLogout()" style="background:none;border:0.5px solid #f0f0f0;border-radius:6px;color:#d1d5db;font-size:12px;font-family:Inter,sans-serif;padding:5px 12px;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ti ti-logout" style="font-size:14px" aria-hidden="true"></i> Odhlásit se</button></footer>
+</body></html>';const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+html],{type:'application/vnd.ms-excel;charset=utf-8'}));a.download='mesicni_harmonogram.xls';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
 
 
 // ── Viewer omezení ──
@@ -312,9 +313,7 @@ async function init(){
 }
 init();
 
-
-async function doLogout(){
-  await fetch('/api/logout',{method:'POST'}).catch(()=>{});
+).catch(()=>{});
   window.location.href='/login';
 }
 
@@ -324,4 +323,5 @@ fetch('/api/me').then(r=>r.json()).then(d=>{
   const sb=document.getElementById('settingsBtn');
   if(sb&&d.role==='admin')sb.style.display='';
 }).catch(()=>{});
-</script></body></html>
+</script><footer style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#fafafa;border-top:0.5px solid #f0f0f0"><div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#c4c9d4"><div style="width:26px;height:26px;border-radius:50%;background:#f0f2f8;color:#c4c9d4;font-size:11px;font-weight:500;display:flex;align-items:center;justify-content:center" id="footerAvatar">?</div><span id="footerUser"></span></div><button onclick="doLogout()" style="background:none;border:0.5px solid #f0f0f0;border-radius:6px;color:#d1d5db;font-size:12px;font-family:Inter,sans-serif;padding:5px 12px;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ti ti-logout" style="font-size:14px" aria-hidden="true"></i> Odhlásit se</button></footer>
+</body></html>
