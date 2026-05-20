@@ -469,7 +469,7 @@ async function confirmDelete(type) {
   if (!password) { alert('Heslo nesmi byt prazdne.'); return; }
   const msg = document.getElementById('deleteMsg');
   msg.innerHTML = '<span style="color:#6b7280;font-size:13px">Probiha mazani...</span>';
-  const r = await api('DELETE', '/api/admin/clear-' + type, { password });
+  const r = await api('POST', '/api/admin/clear-' + type, { password });
   if (r.ok) {
     msg.innerHTML = '<span style="color:#16a34a;font-size:13px">Data byla uspesne smazana.</span>';
   } else {
