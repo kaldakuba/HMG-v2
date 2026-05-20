@@ -95,7 +95,7 @@ th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151}
     <span><i class="box" style="background:#d1d5db;border-color:#9ca3af"></i> víkend</span>
     <span><i class="box" style="background:#86efac;border-color:#4ade80"></i> svátek ČR</span>
     <span><i class="box" style="background:#fef9c3;border-color:#fde68a"></i> chybí objednávka</span>
-    <span><i class="box" style="background:#fee2e2;border-color:#fca5a5"></i> překročen limit</span>
+    <span><i class="box" style="background:#fee2e2;border-color:#fca5a5"></i> překročen MAX nebo pod MIN</span>
   </div>
   <div class="note">Data jsou navázaná na týdenní kalendář. Týdny jsou odděleny výraznou linkou.</div>
 </section></main>
@@ -104,6 +104,7 @@ const FIRMA_ORDER = {'Colas':0,'Firesta':1,'Mi Roads':2};
 let _entries = {};
 let _companies = [{name:'Colas',color:'#fef08a',text:'#713f12'},{name:'Firesta',color:'#bbf7d0',text:'#14532d'},{name:'Mi Roads',color:'#fecdd3',text:'#9f1239'}];
 let _maxDaily = 1000;
+let _minDaily = 0;
 let _weekStarts = []; // seřazené pondělky pro určení hranic týdnů
 
 function n(v){const x=parseInt(String(v||'').replace(/\D+/g,''),10);return isNaN(x)?0:x}
@@ -188,7 +189,7 @@ function render(){
   for(let d=1;d<=days;d++){
     const id=iso(y,m,d);
     const ds=daySum(id);
-    const over=ds>0&&ds>=_maxDaily;
+    const over=(ds>0&&ds>=_maxDaily)||(ds>0&&_minDaily>0&&ds<_minDaily);
     const dc=dayClass(id);
     const hideDay=_isViewer&&id<todayStr;
     let style=over?'background:#fee2e2;color:#991b1b;font-weight:800'
@@ -290,6 +291,10 @@ async function init(){
     if(settings&&settings.hmg_max_daily){
       _maxDaily=parseInt(settings.hmg_max_daily,10);
       if(isNaN(_maxDaily)||_maxDaily<=0)_maxDaily=1000;
+    }
+    if(settings&&settings.hmg_min_daily){
+      _minDaily=parseInt(settings.hmg_min_daily,10);
+      if(isNaN(_minDaily)||_minDaily<0)_minDaily=0;
     }
     _entries={};
     (weeks||[]).forEach(w=>{

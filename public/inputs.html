@@ -134,6 +134,8 @@ th{background:#f5f7fa;font-weight:700;font-size:12px;color:#374151;letter-spacin
   <div class="settings-field">
     <label>Max. denní výkon (t):</label>
     <input id="maxDailyInput" type="number" step="10" value="1000">
+    <label style="margin-left:16px">Min. denní výkon (t):</label>
+    <input id="minDailyInput" type="number" step="10" value="0">
   </div>
   <button class="btn green" onclick="saveSettings()">Uložit nastavení</button>
   <span id="settingsSaved" style="font-size:13px;color:#16a34a;font-weight:700;display:none">✓ Uloženo</span>
@@ -188,7 +190,7 @@ function downloadBlob(blob,name){const a=document.createElement('a');a.href=URL.
 function importExcel(ev){const f=ev.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=e=>{try{const t=e.target.result;let data=f.name.toLowerCase().endsWith('.csv')?parseCsv(t):parseHtmlTable(t);if(!data.length){alert('V souboru nebyla nalezena tabulka.');return}if(!confirm('Import přepíše aktuální tabulku. Pokračovat?'))return;snapshot();data.forEach(r=>r.celkem=formatNumber(rowTotal(r)));saveRows(data);selectedIndex=null;render();alert('Import hotov. Načteno řádků: '+data.length)}catch(err){alert('Import se nepovedl: '+err.message)}finally{ev.target.value=''}};rd.readAsText(f,'utf-8')}
 function parseHtmlTable(t){const doc=new DOMParser().parseFromString(t,'text/html');const trs=[...(doc.querySelector('table')||document.createElement('table')).querySelectorAll('tr')];return trs.slice(1).map(tr=>{const cells=[...tr.querySelectorAll('td,th')].map(td=>td.textContent.trim());const o={};cols.forEach((c,i)=>o[c]=cells[i]||'');o.celkem=formatNumber(rowTotal(o));return o}).filter(o=>Object.values(o).some(v=>v))}
 function parseCsv(t){return t.split(/\r?\n/).filter(l=>l.trim()).slice(1).map(line=>{const cells=line.split(';').length>1?line.split(';'):line.split(',');const o={};cols.forEach((c,i)=>o[c]=(cells[i]||'').trim());o.celkem=formatNumber(rowTotal(o));return o}).filter(o=>Object.values(o).some(v=>v))}
-function saveSettings(){const data={hmg_plant_rate:document.getElementById('plantRateInput').value||'150',hmg_gas_capacity:document.getElementById('gasCapacityInput').value||'10000',hmg_max_daily:document.getElementById('maxDailyInput').value||'1000'};fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(()=>{const s=document.getElementById('settingsSaved');s.style.display='inline';setTimeout(()=>s.style.display='none',2000)}).catch(()=>{});}
+function saveSettings(){const data={hmg_plant_rate:document.getElementById('plantRateInput').value||'150',hmg_gas_capacity:document.getElementById('gasCapacityInput').value||'10000',hmg_max_daily:document.getElementById('maxDailyInput').value||'1000',hmg_min_daily:document.getElementById('minDailyInput').value||'0'};fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(()=>{const s=document.getElementById('settingsSaved');s.style.display='inline';setTimeout(()=>s.style.display='none',2000)}).catch(()=>{});}
 // settings načteny v initInputs()
 const defaultCompanies=[{name:'Colas',color:'#fff2a8'},{name:'Firesta',color:'#d9ead3'},{name:'Mi Roads',color:'#ff7f86'}];
 function loadCompanies(){return window._companies||defaultCompanies}
@@ -205,6 +207,7 @@ async function initInputs(){
   if(settings.hmg_plant_rate)document.getElementById('plantRateInput').value=settings.hmg_plant_rate;
   if(settings.hmg_gas_capacity)document.getElementById('gasCapacityInput').value=settings.hmg_gas_capacity;
   if(settings.hmg_max_daily)document.getElementById('maxDailyInput').value=settings.hmg_max_daily;
+  if(settings.hmg_min_daily)document.getElementById('minDailyInput').value=settings.hmg_min_daily;
   buildForm();renderLegend();render();
 }
 initInputs();
