@@ -326,12 +326,12 @@ app.get('/api/settings', requireAuth, async (req, res) => {
 });
 
 app.post('/api/settings', requireAuth, requireAdmin, async (req, res) => {
-  const allowed = ['hmg_max_daily', 'plant_rate'];
+  const allowed = ['hmg_max_daily', 'hmg_min_daily', 'hmg_gas_capacity', 'hmg_plant_rate', 'plant_rate'];
   for (const [k, v] of Object.entries(req.body)) {
     if (!allowed.includes(k)) continue;
-    if (k === 'hmg_max_daily' || k === 'plant_rate') {
+    if (k === 'hmg_max_daily' || k === 'hmg_min_daily' || k === 'plant_rate') {
       const n = parseInt(v, 10);
-      if (isNaN(n) || n <= 0 || n > 1000000) return res.status(400).json({ error: `${k} musí být kladné číslo` });
+      if (isNaN(n) || n < 0 || n > 1000000) return res.status(400).json({ error: `${k} musí být nezáporné číslo` });
     }
     await pool.query(
       `INSERT INTO settings (key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,
