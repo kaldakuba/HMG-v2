@@ -326,12 +326,12 @@ app.get('/api/settings', requireAuth, async (req, res) => {
 });
 
 app.post('/api/settings', requireAuth, requireAdmin, async (req, res) => {
-  const allowed = ['hmg_max_daily', 'hmg_min_daily', 'hmg_gas_capacity', 'hmg_plant_rate', 'plant_rate'];
+  const allowed = ['hmg_max_daily', 'plant_rate'];
   for (const [k, v] of Object.entries(req.body)) {
     if (!allowed.includes(k)) continue;
-    if (k === 'hmg_max_daily' || k === 'hmg_min_daily' || k === 'plant_rate') {
+    if (k === 'hmg_max_daily' || k === 'plant_rate') {
       const n = parseInt(v, 10);
-      if (isNaN(n) || n < 0 || n > 1000000) return res.status(400).json({ error: `${k} musí být nezáporné číslo` });
+      if (isNaN(n) || n <= 0 || n > 1000000) return res.status(400).json({ error: `${k} musí být kladné číslo` });
     }
     await pool.query(
       `INSERT INTO settings (key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,
@@ -365,6 +365,33 @@ function fv(v) {
   const n = parseFloat(v);
   return isNaN(n) || n === 0 ? '' : Math.round(n * 10) / 10;
 }
+
+// ── Smazat data týdnů ──
+app.delete('/api/admin/clear-weeks', requireAuth, requireAdmin, async (req, res) => {
+  const { password } = req.body || {};
+  if (!password) return res.status(400).json({ error: 'Heslo je povinné.' });
+  const user = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.session.userId]);
+  if (!user.rows.length) return res.status(403).json({ error: 'Uživatel nenalezen.' });
+  const bcrypt = require('bcrypt');
+  const ok = await bcrypt.compare(password, user.rows[0].password_hash);
+  if (!ok) return res.status(403).json({ error: 'Nesprávné heslo.' });
+  await pool.query('DELETE FROM week_data');
+  await pool.query('DELETE FROM month_entries');
+  res.json({ ok: true });
+});
+
+// ── Smazat receptury ──
+app.delete('/api/admin/clear-inputs', requireAuth, requireAdmin, async (req, res) => {
+  const { password } = req.body || {};
+  if (!password) return res.status(400).json({ error: 'Heslo je povinné.' });
+  const user = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.session.userId]);
+  if (!user.rows.length) return res.status(403).json({ error: 'Uživatel nenalezen.' });
+  const bcrypt = require('bcrypt');
+  const ok = await bcrypt.compare(password, user.rows[0].password_hash);
+  if (!ok) return res.status(403).json({ error: 'Nesprávné heslo.' });
+  await pool.query('DELETE FROM inputs');
+  res.json({ ok: true });
+});
 
 app.post('/api/import-excel', requireAuth, requireAdmin, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Žádný soubor' });
@@ -451,13 +478,20 @@ app.post('/api/import-excel', requireAuth, requireAdmin, upload.single('file'), 
 
     if (receptury.length > 0) {
       await pool.query(
-        `INSERT INTO inputs (id,rows_json,updated_at) VALUES(1,$1,NOW()) ON CONFLICT(id) DO NOTHING`,
+        `INSERT INTO inputs (id,rows_json,updated_at) VALUES(1,$1,NOW()) ON CONFLICT(id) DO UPDATE SET rows_json=EXCLUDED.rows_json,updated_at=NOW()`,
         [JSON.stringify(receptury)]
       );
     }
+    // Přepis pouze od aktuálního týdne dál (pondělí aktuálního týdne)
+    const todayMonday = (() => {
+      const d = new Date(); const day = d.getDay() || 7;
+      d.setDate(d.getDate() - day + 1); d.setHours(0,0,0,0);
+      return d.toISOString().slice(0,10);
+    })();
     for (const [ws, rows] of Object.entries(weekMap)) {
+      if (ws < todayMonday) continue; // přeskoč minulé týdny
       await pool.query(
-        `INSERT INTO week_data (week_start,rows_json,updated_at) VALUES($1,$2,NOW()) ON CONFLICT(week_start) DO NOTHING`,
+        `INSERT INTO week_data (week_start,rows_json,updated_at) VALUES($1,$2,NOW()) ON CONFLICT(week_start) DO UPDATE SET rows_json=EXCLUDED.rows_json,updated_at=NOW()`,
         [ws, JSON.stringify(rows)]
       );
     }
