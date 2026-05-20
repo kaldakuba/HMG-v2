@@ -367,7 +367,7 @@ function fv(v) {
 }
 
 // ── Smazat data týdnů ──
-app.delete('/api/admin/clear-weeks', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/admin/clear-weeks', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { password } = req.body || {};
     if (!password) return res.status(400).json({ error: 'Heslo je povinné.' });
@@ -385,7 +385,7 @@ app.delete('/api/admin/clear-weeks', requireAuth, requireAdmin, async (req, res)
 });
 
 // ── Smazat receptury ──
-app.delete('/api/admin/clear-inputs', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/admin/clear-inputs', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { password } = req.body || {};
     if (!password) return res.status(400).json({ error: 'Heslo je povinné.' });
