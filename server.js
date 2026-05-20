@@ -368,29 +368,37 @@ function fv(v) {
 
 // ── Smazat data týdnů ──
 app.delete('/api/admin/clear-weeks', requireAuth, requireAdmin, async (req, res) => {
-  const { password } = req.body || {};
-  if (!password) return res.status(400).json({ error: 'Heslo je povinné.' });
-  const user = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.session.userId]);
-  if (!user.rows.length) return res.status(403).json({ error: 'Uživatel nenalezen.' });
-  const bcrypt = require('bcrypt');
-  const ok = await bcrypt.compare(password, user.rows[0].password_hash);
-  if (!ok) return res.status(403).json({ error: 'Nesprávné heslo.' });
-  await pool.query('DELETE FROM week_data');
-  await pool.query('DELETE FROM month_entries');
-  res.json({ ok: true });
+  try {
+    const { password } = req.body || {};
+    if (!password) return res.status(400).json({ error: 'Heslo je povinné.' });
+    const userRes = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.session.userId]);
+    if (!userRes.rows.length) return res.status(403).json({ error: 'Uživatel nenalezen.' });
+    const ok = await bcrypt.compare(String(password), userRes.rows[0].password_hash);
+    if (!ok) return res.status(403).json({ error: 'Nesprávné heslo.' });
+    await pool.query('DELETE FROM week_data');
+    await pool.query('DELETE FROM month_entries');
+    res.json({ ok: true });
+  } catch(err) {
+    console.error('clear-weeks error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── Smazat receptury ──
 app.delete('/api/admin/clear-inputs', requireAuth, requireAdmin, async (req, res) => {
-  const { password } = req.body || {};
-  if (!password) return res.status(400).json({ error: 'Heslo je povinné.' });
-  const user = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.session.userId]);
-  if (!user.rows.length) return res.status(403).json({ error: 'Uživatel nenalezen.' });
-  const bcrypt = require('bcrypt');
-  const ok = await bcrypt.compare(password, user.rows[0].password_hash);
-  if (!ok) return res.status(403).json({ error: 'Nesprávné heslo.' });
-  await pool.query('DELETE FROM inputs');
-  res.json({ ok: true });
+  try {
+    const { password } = req.body || {};
+    if (!password) return res.status(400).json({ error: 'Heslo je povinné.' });
+    const userRes = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.session.userId]);
+    if (!userRes.rows.length) return res.status(403).json({ error: 'Uživatel nenalezen.' });
+    const ok = await bcrypt.compare(String(password), userRes.rows[0].password_hash);
+    if (!ok) return res.status(403).json({ error: 'Nesprávné heslo.' });
+    await pool.query('DELETE FROM inputs');
+    res.json({ ok: true });
+  } catch(err) {
+    console.error('clear-inputs error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/import-excel', requireAuth, requireAdmin, upload.single('file'), async (req, res) => {
