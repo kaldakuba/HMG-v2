@@ -125,7 +125,7 @@ let _weekStart = defaultMonday();
 let _rows = null;
 let _mixes = [];
 let _companies = [{name:'Colas',color:'#fff2a8'},{name:'Firesta',color:'#d9ead3'},{name:'Mi Roads',color:'#ff7f86'}];
-let _settings = {hmg_plant_rate:'150',hmg_gas_capacity:'10 000',hmg_max_daily:'1000',hmg_min_daily:'0'};
+let _settings = {hmg_plant_rate:'150',hmg_gas_capacity:'10 000',hmg_max_daily:'1000'};
 let _saveTimer = null;
 
 function showSaving(){const el=document.getElementById('savingIndicator');el.textContent='Ukládám...';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1500)}
@@ -197,9 +197,8 @@ function renderHead(){
   const twt=document.getElementById('topWeekTitle');if(twt)twt.textContent='Kalendářní týden č. '+week+' | '+fmtTitleRange(start);
   const total=dayKeys.reduce((s,k)=>s+daySum(rows,k),0);
   const maxDaily=parseInt(_settings.hmg_max_daily||'1000');
-  const minDaily=parseInt(_settings.hmg_min_daily||'0');
   const cap=_settings.hmg_gas_capacity||'10 000';
-  thead.innerHTML=`<tr><th class="cap-label" colspan="2">Denní kapacita plynu:</th><th class="cap-value">${cap} m3</th><th></th><th class="sum-label" colspan="2">Součet t/den:</th>${dayKeys.map(k=>`<th class="sum-head" style="${(daySum(rows,k)>=maxDaily&&daySum(rows,k)>0)||(daySum(rows,k)>0&&minDaily>0&&daySum(rows,k)<minDaily)?'background:#fee2e2!important;color:#991b1b!important;':''}">  ${fmtNum(daySum(rows,k))}</th>`).join('')}<th class="sum-head">${fmtNum(total)}</th><th class="sel-col"></th></tr><tr style='height:38px'><th>č.</th><th>lokalita</th><th>objednávka</th><th>Směs a průkazná zk. typu</th><th>ITT</th><th>četa</th>${dates.map((d,i)=>`<th class="${i>=5?'gray-day':'blue-day'}" style="${i>=5?'color:#6b7280':'color:#1d4ed8'}">${fmtShort(d)}</th>`).join('')}<th>souhrn</th><th class='sel-col'>✓</th></tr>`;
+  thead.innerHTML=`<tr><th class="cap-label" colspan="2">Denní kapacita plynu:</th><th class="cap-value">${cap} m3</th><th></th><th class="sum-label" colspan="2">Součet t/den:</th>${dayKeys.map(k=>`<th class="sum-head" style="${daySum(rows,k)>=maxDaily&&daySum(rows,k)>0?'background:#fee2e2!important;color:#991b1b!important;':''}">  ${fmtNum(daySum(rows,k))}</th>`).join('')}<th class="sum-head">${fmtNum(total)}</th><th class="sel-col"></th></tr><tr style='height:38px'><th>č.</th><th>lokalita</th><th>objednávka</th><th>Směs a průkazná zk. typu</th><th>ITT</th><th>četa</th>${dates.map((d,i)=>`<th class="${i>=5?'gray-day':'blue-day'}" style="${i>=5?'color:#6b7280':'color:#1d4ed8'}">${fmtShort(d)}</th>`).join('')}<th>souhrn</th><th class='sel-col'>✓</th></tr>`;
 }
 
 function selectOptions(values,current){return `<option value=""></option>${values.map(v=>`<option value="${esc(v)}" ${String(v)===String(current||'')?'selected':''}>${esc(v)}</option>`).join('')}`}
@@ -350,11 +349,10 @@ function renderMobileHead(){
   const twt=document.getElementById('topWeekTitle');if(twt)twt.textContent='KT '+week+' | '+fmtTitleRange(start);
   const total=dayKeys.reduce((s,k)=>s+daySum(rows,k),0);
   const maxDaily=parseInt(_settings.hmg_max_daily||'1000');
-  const minDaily=parseInt(_settings.hmg_min_daily||'0');
   // Řádek součtů + řádek datumů
   thead.innerHTML=
     `<tr><th class="sum-label" colspan="4" style="text-align:left;padding-left:6px">Součet t/den:</th>`+
-    dayKeys.map(k=>{const s=daySum(rows,k);const over=(s>0&&s>=maxDaily)||(s>0&&minDaily>0&&s<minDaily);return`<th class="sum-head" style="${over?'background:#fee2e2!important;color:#991b1b!important;':''}">${s||''}</th>`}).join('')+
+    dayKeys.map(k=>{const s=daySum(rows,k);const over=s>0&&s>=maxDaily;return`<th class="sum-head" style="${over?'background:#fee2e2!important;color:#991b1b!important;':''}">${s||''}</th>`}).join('')+
     `<th class="sum-head">${fmtNum(total)}</th></tr>`+
     `<tr><th>č.</th><th>lokalita</th><th>směs</th><th>četa</th>`+
     dates.map((d,i)=>`<th class="${i>=5?'gray-day':'blue-day'}" style="${i>=5?'color:#6b7280':'color:#1d4ed8'}">${fmtShort(d)}</th>`).join('')+
@@ -401,12 +399,14 @@ async function checkOperatorRole() {
     const el = document.getElementById('footerUser');
     if (el && me.username) el.textContent = me.username;
     if (role === 'operator') {
-      // Skrýt editační tlačítka
-      document.querySelectorAll('.btn.green, .btn.red').forEach(b => {
-        if (!b.textContent.includes('Export')) b.style.display = 'none';
+      // Skrýt pouze editační tlačítka (Přidat, Označit, Smazat, Zpět) - NE panely
+      document.querySelectorAll('.controls .btn.green, .controls .btn.red').forEach(b => {
+        b.style.display = 'none';
       });
-      const ctrl = document.querySelector('.controls');
-      if (ctrl) ctrl.style.display = 'none';
+      document.getElementById('selModeBtn').style.display = 'none';
+      document.querySelectorAll('.controls .btn.gray').forEach(b => {
+        if (b.textContent.trim() === 'Zpět') b.style.display = 'none';
+      });
       document.body.classList.add('read-only-mode');
     }
   } catch(e) {}
