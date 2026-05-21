@@ -92,11 +92,21 @@ async function loadSettings() {
 const _urlToken = new URLSearchParams(location.search).get('t') || localStorage.getItem('hmg_view_token') || '';
 
 async function checkAccess() {
+  // Nejdřív zkus přihlášeného uživatele přes session (hmg_share role)
+  try {
+    const me = await fetch('/api/me').then(r => r.json());
+    if (me && me.role) {
+      _accessOk = true;
+      const emailEl = document.getElementById('viewerEmail');
+      if (emailEl && me.username) emailEl.textContent = me.username;
+      return true;
+    }
+  } catch(e) {}
+  // Fallback: kontrola URL tokenu (pro sdílené odkazy bez přihlášení)
   if (!_urlToken) {
     document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:Inter,sans-serif"><div style="text-align:center;padding:40px"><h2 style="color:#991b1b">Přístup zamítnut</h2><p style="color:#6b7280">Nemáte platný přístupový odkaz.</p></div></div>';
     return false;
   }
-  // Uložit token do localStorage pro případ že URL přijde bez ?t=
   localStorage.setItem('hmg_view_token', _urlToken);
   try {
     const r = await fetch('/api/viewer-check?t=' + _urlToken);
@@ -105,7 +115,6 @@ async function checkAccess() {
       document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:Inter,sans-serif"><div style="text-align:center;padding:40px"><h2 style="color:#991b1b">Přístup zamítnut</h2><p style="color:#6b7280">Váš přístup byl odvolán nebo odkaz je neplatný.</p></div></div>';
       return false;
     }
-    // Zobraz email v topbaru
     const emailEl = document.getElementById('viewerEmail');
     if (emailEl && d.email) emailEl.textContent = d.email;
   } catch(e) {}
