@@ -404,6 +404,8 @@ async function checkOperatorRole() {
         b.style.display = 'none';
       });
       document.getElementById('selModeBtn').style.display = 'none';
+      // Skrýt tlačítko Vstupy pro operátora
+      document.querySelectorAll('.btn.inputs').forEach(b => b.style.display = 'none');
       document.querySelectorAll('.controls .btn.gray').forEach(b => {
         if (b.textContent.trim() === 'Zpět') b.style.display = 'none';
       });
