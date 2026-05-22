@@ -44,10 +44,23 @@ input:focus,select:focus{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,23
 .user-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:0.5px solid #f3f4f6}
 .user-row:last-child{border-bottom:none}
 .avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0}
-.role-badge{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:500;white-space:nowrap}
-.role-badge.admin{background:#dbeafe;color:#1e40af}
-.role-badge.operator{background:#fef9c3;color:#854d0e}
-.role-badge.hmg_share{background:#ede9fe;color:#5b21b6}
+.role-badge{font-size:11px;padding:3px 10px;border-radius:20px;font-weight:500;white-space:nowrap;display:inline-block}
+.role-badge.admin{background:#E6F1FB;color:#0C447C}
+.role-badge.operator{background:#FAEEDA;color:#633806}
+.role-badge.hmg_share{background:#EEEDFE;color:#3C3489}
+.users-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:0.5px solid #e5e7eb}
+.users-title{font-size:14px;font-weight:600;color:#111}
+.users-count{font-weight:400;color:#6b7280}
+.users-table{width:100%;border-collapse:collapse;font-size:13px}
+.users-table th{text-align:left;font-size:11px;font-weight:600;color:#6b7280;letter-spacing:.3px;text-transform:uppercase;padding:9px 14px;border-bottom:0.5px solid #e5e7eb;background:#f9fafb}
+.users-table th:last-child{text-align:right}
+.users-table td{padding:11px 14px;border-bottom:0.5px solid #f3f4f6;vertical-align:middle}
+.users-table tr:last-child td{border-bottom:none}
+.users-table tr:hover td{background:#fafafa}
+.users-table .td-name{font-weight:600;color:#111}
+.users-table .td-actions{text-align:right;white-space:nowrap}
+.users-table .td-date{color:#6b7280;font-size:12px;white-space:nowrap}
+.cant-delete{font-size:12px;color:#9ca3af;font-style:italic}
 .session-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:0.5px solid #f3f4f6}
 .session-row:last-child{border-bottom:none}
 .device-icon{width:30px;height:30px;border-radius:6px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;flex-shrink:0}
@@ -102,38 +115,31 @@ hr{border:none;border-top:0.5px solid #e5e7eb;margin:14px 0}
 
     <!-- UŽIVATELÉ -->
     <div class="section active" id="sec-users">
-      <div id="statsUsers" class="stat-grid" style="display:none">
-        <div class="stat"><div class="stat-val" id="statTotal">—</div><div class="stat-label">Uživatelů celkem</div></div>
-        <div class="stat"><div class="stat-val" id="statAdmins">—</div><div class="stat-label">Adminů</div></div>
-        <div class="stat"><div class="stat-val" id="statOperators">—</div><div class="stat-label">Operátorů</div></div>
-        <div class="stat"><div class="stat-val" id="statShare">—</div><div class="stat-label">Sdílený HMG</div></div>
-      </div>
       <div class="card">
-        <div class="card-head">
-          <div class="card-head-icon" style="background:#dbeafe"><i class="ti ti-users" style="font-size:18px;color:#1e40af" aria-hidden="true"></i></div>
-          <div><div class="card-head h2">Správa uživatelů</div></div>
-          <button class="btn green sm" onclick="toggleAddUser()" style="margin-left:auto">+ Přidat</button>
+        <div class="users-header">
+          <span class="users-title">Správa uživatelů <span class="users-count" id="usersCountLabel"></span></span>
+          <button class="btn green sm" onclick="toggleAddUser()" id="btnAddUser">+ Přidat uživatele</button>
         </div>
-        <div class="card-body">
-          <div class="add-form" id="addUserForm">
-            <div class="form-row">
-              <div class="form-group"><label>Uživatelské jméno</label><input type="text" id="newUsername" placeholder="jmeno.prijmeni" autocomplete="off"></div>
-              <div class="form-group"><label>Heslo</label><input type="password" id="newPassword" placeholder="min. 6 znaků" autocomplete="new-password"></div>
-              <div class="form-group" style="max-width:130px"><label>Role</label>
-                <select id="newRole">
-                  <option value="operator">Operátor</option>
-                  <option value="hmg_share">Sdílený HMG</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
-              <div style="display:flex;gap:6px;align-items:flex-end;padding-bottom:1px">
-                <button class="btn green sm" onclick="addUser()">Přidat</button>
-                <button class="btn gray sm" onclick="toggleAddUser()">Zrušit</button>
-              </div>
+        <div class="add-form" id="addUserForm" style="margin:0;border-radius:0;border-left:none;border-right:none;border-top:none;border-bottom:0.5px solid #e5e7eb;padding:14px 18px">
+          <div class="form-row" style="margin-bottom:8px">
+            <div class="form-group"><label>Uživatelské jméno</label><input type="text" id="newUsername" placeholder="jmeno.prijmeni" autocomplete="off"></div>
+            <div class="form-group"><label>Heslo</label><input type="password" id="newPassword" placeholder="min. 6 znaků" autocomplete="new-password"></div>
+            <div class="form-group" style="max-width:130px"><label>Role</label>
+              <select id="newRole">
+                <option value="operator">Operátor</option>
+                <option value="hmg_share">Sdílený HMG</option>
+                <option value="admin">Admin</option>
+              </select>
             </div>
-            <div id="addUserMsg"></div>
+            <div style="display:flex;gap:6px;align-items:flex-end;padding-bottom:1px">
+              <button class="btn green sm" onclick="addUser()">Přidat</button>
+              <button class="btn gray sm" onclick="toggleAddUser()">Zrušit</button>
+            </div>
           </div>
-          <div id="usersBody"><div style="text-align:center;color:#9ca3af;padding:20px;font-size:13px">Načítám...</div></div>
+          <div id="addUserMsg"></div>
+        </div>
+        <div id="usersBody">
+          <div style="text-align:center;color:#9ca3af;padding:24px;font-size:13px">Načítám...</div>
         </div>
       </div>
     </div>
@@ -275,47 +281,67 @@ function roleBadge(role) {
   return '<span class="role-badge hmg_share">sdílený HMG</span>';
 }
 
+function fmtDateShort(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('cs-CZ');
+}
+
 async function loadUsers() {
   let users;
   try {
     users = await api('GET', '/api/users');
     if (!Array.isArray(users)) throw new Error('bad response');
   } catch(e) {
-    document.getElementById('usersBody').innerHTML = '<div style="text-align:center;color:#dc2626;padding:20px;font-size:13px">Chyba načítání uživatelů. Zkuste obnovit stránku.</div>';
+    document.getElementById('usersBody').innerHTML = '<div style="text-align:center;color:#dc2626;padding:24px;font-size:13px">Chyba načítání uživatelů. Zkuste obnovit stránku.</div>';
     return;
   }
-  const admins = users.filter(u=>u.role==='admin').length;
-  const ops = users.filter(u=>u.role==='operator').length;
-  const sh = users.filter(u=>u.role==='hmg_share').length;
-  document.getElementById('statTotal').textContent = users.length;
-  document.getElementById('statAdmins').textContent = admins;
-  document.getElementById('statOperators').textContent = ops;
-  document.getElementById('statShare').textContent = sh;
-  document.getElementById('statsUsers').style.display = '';
+
   document.getElementById('badge-users').textContent = users.length;
-  if (!users.length) { document.getElementById('usersBody').innerHTML = '<div style="text-align:center;color:#9ca3af;padding:20px;font-size:13px">Žádní uživatelé</div>'; return; }
-  document.getElementById('usersBody').innerHTML = users.map(u => {
-    const av = avatarColor(u.role);
-    return `<div class="user-row">
-      <div class="avatar" style="background:${av.bg};color:${av.color}">${initials(u.username)}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:500;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(u.username)}</div>
-        <div style="font-size:11px;color:#9ca3af">${fmtDate(u.last_seen)||'Nepřihlášen'} · ${u.session_count||0} session</div>
-      </div>
-      ${roleBadge(u.role)}
-      <div style="display:flex;gap:4px;flex-shrink:0">
-        <button class="btn gray sm" title="Změnit heslo" onclick="resetPassword(${u.id},'${esc(u.username)}')"><i class="ti ti-key" style="font-size:12px" aria-hidden="true"></i></button>
-        <button class="btn sm" style="background:#7c3aed" title="Změnit roli" onclick="changeRole(${u.id},'${esc(u.username)}','${u.role}')"><i class="ti ti-user-cog" style="font-size:12px" aria-hidden="true"></i></button>
-        <button class="btn red sm" title="Smazat" onclick="deleteUser(${u.id},'${esc(u.username)}')"><i class="ti ti-trash" style="font-size:12px" aria-hidden="true"></i></button>
-      </div>
-    </div>`;
+  document.getElementById('usersCountLabel').textContent = '(' + users.length + ' uživatelů)';
+
+  if (!users.length) {
+    document.getElementById('usersBody').innerHTML = '<div style="text-align:center;color:#9ca3af;padding:24px;font-size:13px">Žádní uživatelé</div>';
+    return;
+  }
+
+  const rows = users.map(u => {
+    const isAdmin = u.role === 'admin';
+    const actions = isAdmin
+      ? `<button class="btn gray sm" onclick="resetPassword(${u.id},'${esc(u.username)}')" style="margin-right:4px">Heslo</button><span class="cant-delete">nelze smazat</span>`
+      : `<button class="btn gray sm" onclick="resetPassword(${u.id},'${esc(u.username)}')" style="margin-right:4px">Heslo</button><button class="btn red sm" onclick="deleteUser(${u.id},'${esc(u.username)}')">Smazat</button>`;
+    return `<tr>
+      <td class="td-name">${esc(u.username)}</td>
+      <td>${roleBadge(u.role)}</td>
+      <td class="td-date">${fmtDateShort(u.created_at)}</td>
+      <td class="td-actions">${actions}</td>
+    </tr>`;
   }).join('');
+
+  document.getElementById('usersBody').innerHTML = `
+    <table class="users-table">
+      <thead>
+        <tr>
+          <th>Jméno</th>
+          <th>Role</th>
+          <th>Vytvořen</th>
+          <th>Akce</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
 }
 
 function toggleAddUser() {
   const f = document.getElementById('addUserForm');
-  f.style.display = f.style.display === 'none' || !f.style.display ? 'block' : 'none';
-  if (f.style.display === 'block') document.getElementById('newUsername').focus();
+  const btn = document.getElementById('btnAddUser');
+  const isOpen = f.style.display === 'block';
+  f.style.display = isOpen ? 'none' : 'block';
+  btn.textContent = isOpen ? '+ Přidat uživatele' : '✕ Zrušit';
+  if (!isOpen) {
+    document.getElementById('newUsername').focus();
+    document.getElementById('addUserMsg').innerHTML = '';
+  }
 }
 async function addUser() {
   const username = document.getElementById('newUsername').value.trim();
@@ -327,7 +353,13 @@ async function addUser() {
     msg.innerHTML = '<span class="msg-ok">✓ Uživatel přidán</span>';
     document.getElementById('newUsername').value = '';
     document.getElementById('newPassword').value = '';
-    setTimeout(() => { toggleAddUser(); msg.innerHTML=''; loadUsers(); }, 1000);
+    setTimeout(() => {
+      // zavřít formulář a obnovit stav tlačítka
+      document.getElementById('addUserForm').style.display = 'none';
+      document.getElementById('btnAddUser').textContent = '+ Přidat uživatele';
+      msg.innerHTML = '';
+      loadUsers();
+    }, 1000);
   } else { msg.innerHTML = `<span class="msg-err">✗ ${esc(r.error)}</span>`; }
 }
 async function changeRole(id, name, currentRole) {

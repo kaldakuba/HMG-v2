@@ -29,13 +29,12 @@ th,td{border:1px solid #a0aabb;height:28px;padding:2px 4px;text-align:center;whi
 th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151;letter-spacing:.2px}
 .col-lok{width:150px}.col-obj{width:150px}.col-smes{width:230px}.col-itt{width:100px}.col-ceta{width:110px}.day{width:60px}
 .sum-head{background:#dbeafe!important;font-weight:800;color:#1e3a8a!important}
-.blue{background:#eff6ff}.gray{background:#f3f4f6}
+.blue{background:#eff6ff}.gray{background:#c8ccd4}
 .holiday{background:#f0fdf4!important;color:#15803d}
 .today-col{background:#fef9c3!important;color:#854d0e!important;font-weight:700}
-.missing-order{background:#fef9c3!important;color:#854d0e}
 .group-top td{border-top:3px solid #a0aabb}
-.sticky-head th{position:sticky;top:0;z-index:3}
-.sticky-head-2 th{position:sticky;top:28px;z-index:3}
+.sticky-head th{position:sticky;top:0;z-index:4}
+.sticky-head-2 th{position:sticky;top:28px;z-index:4}
 .left-head{background:#dbeafe!important;color:#1e3a8a!important}
 .legend{font-size:12px;text-align:center;padding:8px 12px;border-top:1px solid #a0aabb;background:#f8fafc;display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap}
 .legend span{display:inline-flex;align-items:center;gap:5px;font-weight:500;color:#374151}
@@ -43,6 +42,12 @@ th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151;letter-spacin
 .note{text-align:center;font-size:11px;color:#6b7280;padding:6px 12px;border-top:1px solid #a0aabb;background:#f8fafc}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#f1f5f9}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 .over-limit{background:#fee2e2!important;color:#991b1b!important;font-weight:800!important}
+/* Sticky sloupce lokalita + smes */
+.sticky-lok{position:sticky;left:0;z-index:3}
+.sticky-smes{position:sticky;left:150px;z-index:3}
+th.sticky-lok,th.sticky-smes{z-index:6!important}
+/* Hover crosshair – zvýrazní celý řádek i celý sloupec vč. sticky buněk */
+tr.row-hover td,td.col-hover{background:#fefce8!important}
 @media(max-width:900px){.topbar{display:flex;flex-direction:column;align-items:stretch;padding:10px;min-height:auto}.topbar h1{text-align:left;font-size:16px}.actions{justify-content:flex-start}.wrap{padding:6px}}
 </style>
 </head>
@@ -69,9 +74,10 @@ th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151;letter-spacin
   <div class="table-wrap" id="tableWrap"></div>
   <div class="legend">
     <span><i class="box" style="background:#eff6ff"></i> všední den</span>
-    <span><i class="box" style="background:#f3f4f6"></i> víkend</span>
+    <span><i class="box" style="background:#c8ccd4"></i> víkend</span>
     <span><i class="box" style="background:#f0fdf4;border-color:#86efac"></i> svátek ČR</span>
-    <span><i class="box" style="background:#fef9c3;border-color:#fde68a"></i> dnes / chybí obj.</span>
+    <span><i class="box" style="background:#fef9c3;border-color:#fde68a"></i> dnes</span>
+    <span><i class="box" style="background:#fbbf24;border-color:#f59e0b"></i> chybí objednávka</span>
   </div>
   <div class="note">Zobrazují se pouze dnešní a budoucí dny. Data se aktualizují v reálném čase.</div>
 </section></main>
@@ -79,6 +85,7 @@ th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151;letter-spacin
 <script>
 // ── TOKEN CHECK ──
 let _maxDaily = 1500;
+let _minDaily = 0;
 let _accessOk = false; // default, přepíše se ze settings
 
 async function loadSettings() {
@@ -86,6 +93,7 @@ async function loadSettings() {
     const url = '/api/settings' + (_urlToken ? '?t=' + _urlToken : '');
     const s = await fetch(url).then(r => r.json());
     if (s && s.hmg_max_daily) _maxDaily = parseInt(s.hmg_max_daily) || 1500;
+    if (s && s.hmg_min_daily) _minDaily = parseInt(s.hmg_min_daily) || 0;
   } catch(e) {}
 }
 
@@ -241,11 +249,11 @@ async function renderMonth(){
 
   let h='<table id="monthTable"><thead>';
   // Řádek součtů
-  h+='<tr class="sticky-head"><th class="left-head col-lok"></th><th class="left-head col-obj"></th><th class="left-head col-smes"></th><th class="left-head col-itt"></th><th class="left-head col-ceta">Součet t/den:</th>';
-  visibleDays.forEach(d=>{const _ds=daySum(entries,iso(y,m,d));h+='<th class="sum-head day'+(_ds>0&&_ds>=_maxDaily?' over-limit':'')+'">'+_ds+'</th>';});
+  h+='<tr class="sticky-head"><th class="left-head col-lok sticky-lok"></th><th class="left-head col-obj"></th><th class="left-head col-smes sticky-smes"></th><th class="left-head col-itt"></th><th class="left-head col-ceta">Součet t/den:</th>';
+  visibleDays.forEach(d=>{const _ds=daySum(entries,iso(y,m,d));const _over=(_ds>0&&_ds>=_maxDaily)||(_ds>0&&_minDaily>0&&_ds<_minDaily);h+='<th class="sum-head day'+(_over?' over-limit':'')+'">'+_ds+'</th>';});
   h+='</tr>';
   // Řádek datumů
-  h+='<tr class="sticky-head-2"><th class="col-lok">lokalita</th><th class="col-obj">objednávka</th><th class="col-smes">Směs a průkazná zk. typu</th><th class="col-itt">ITT</th><th class="col-ceta">četa</th>';
+  h+='<tr class="sticky-head-2"><th class="col-lok sticky-lok">lokalita</th><th class="col-obj">objednávka</th><th class="col-smes sticky-smes">Směs a průkazná zk. typu</th><th class="col-itt">ITT</th><th class="col-ceta">četa</th>';
   visibleDays.forEach(d=>{
     const cls=dayClass(y,m,d);
     h+='<th class="day '+cls+'" style="font-size:11px">'+d+'.'+(m+1)+'.'+(cls==='today-col'?' ▲':'')+'</th>';
@@ -254,20 +262,57 @@ async function renderMonth(){
 
   if(!rows.length){
     for(let i=0;i<10;i++){
-      h+='<tr><td></td><td></td><td></td><td></td><td></td>';
+      h+='<tr><td class="sticky-lok" style="background:#fff"></td><td></td><td class="sticky-smes" style="background:#fff"></td><td></td><td></td>';
       visibleDays.forEach(d=>h+='<td class="'+dayClass(y,m,d)+'"></td>');
       h+='</tr>';
     }
   } else {
     rows.forEach((r,idx)=>{
       const color=companyColor(r.ceta);
-      h+='<tr class="'+(idx%4===0?'group-top':'')+'" style="'+(color?'background:'+color:'')+'"><td style="text-align:left;padding-left:8px">'+esc(r.lokalita)+'</td><td class="'+(!r.objednavka?'missing-order':'')+'">'+esc(r.objednavka)+'</td><td style="text-align:left;padding-left:6px">'+esc(r.smes)+'</td><td style="font-size:11px">'+esc(r.itt)+'</td><td>'+esc(r.ceta)+'</td>';
+      h+='<tr class="'+(idx%4===0?'group-top':'')+'" style="'+(color?'background:'+color:'')+'"><td class="sticky-lok" style="background:'+(color||'#fff')+';text-align:center;vertical-align:middle">'+esc(r.lokalita)+'</td><td style="'+((!r.objednavka)?'background:#ffffff;':'')+'">'+ esc(r.objednavka)+'</td><td class="sticky-smes" style="background:'+(color||'#fff')+';text-align:left;padding-left:6px">'+esc(r.smes)+'</td><td style="font-size:11px">'+esc(r.itt)+'</td><td>'+esc(r.ceta)+'</td>';
       visibleDays.forEach(d=>h+='<td class="'+dayClass(y,m,d)+'">'+(r.days[d]||'')+'</td>');
       h+='</tr>';
     });
   }
   h+='</tbody></table>';
   tableWrap.innerHTML=h;
+  setupHover();
+}
+
+// ── HOVER zvýraznění řádku a sloupce ──
+function setupHover(){
+  const table=document.getElementById('monthTable');
+  if(!table)return;
+  const tbody=table.querySelector('tbody');
+  if(!tbody)return;
+  let _lastTd=null;
+
+  function applyHover(td){
+    if(!td||!td.parentElement)return;
+    const tr=td.parentElement;
+    const col=Array.from(tr.cells).indexOf(td);
+    tr.classList.add('row-hover');
+    Array.from(tbody.rows).forEach(row=>{if(row.cells[col])row.cells[col].classList.add('col-hover');});
+  }
+  function clearHover(td){
+    if(!td||!td.parentElement)return;
+    const tr=td.parentElement;
+    const col=Array.from(tr.cells).indexOf(td);
+    tr.classList.remove('row-hover');
+    Array.from(tbody.rows).forEach(row=>{if(row.cells[col])row.cells[col].classList.remove('col-hover');});
+  }
+
+  tbody.addEventListener('mouseover',e=>{
+    const td=e.target.closest('td');
+    if(!td||td===_lastTd)return;
+    if(_lastTd)clearHover(_lastTd);
+    _lastTd=td;
+    applyHover(td);
+  });
+  tbody.addEventListener('mouseleave',()=>{
+    if(_lastTd)clearHover(_lastTd);
+    _lastTd=null;
+  });
 }
 
 // ── NAVIGACE (pouze dopředu) ──

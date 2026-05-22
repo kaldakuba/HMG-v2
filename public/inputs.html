@@ -51,18 +51,27 @@ th{background:#f5f7fa;font-weight:700;font-size:12px;color:#374151;letter-spacin
 .settings-field input:focus{outline:2px solid #3b82f6;border-color:#3b82f6}
 
 /* COMPANIES */
-.company-panel{margin:10px 12px 12px;display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
-.legend-wrap{min-width:200px}
-.legend-wrap .hint{font-size:11px;color:#6b7280;margin-top:6px;max-width:220px;line-height:1.4}
-.legend-row{height:30px;border:1px solid #a0aabb;text-align:center;line-height:28px;font-size:13px;font-weight:600;cursor:pointer;border-radius:4px;margin-bottom:3px;transition:filter .1s}
-.legend-row:hover{filter:brightness(.95)}
-.company-form{border:1px solid #a0aabb;border-radius:8px;background:#f8fafc;padding:12px 14px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
-.company-form input{height:32px;border:1px solid #a0aabb;border-radius:5px;padding:2px 8px;font-family:'Inter',sans-serif;font-size:13px;background:#fff}
-.company-form input:focus{outline:2px solid #3b82f6}
-.company-form input[type=color]{width:46px;padding:1px 3px;cursor:pointer}
-.company-form-field{display:flex;flex-direction:column;gap:2px}
-.company-form-field label{font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.3px}
 #selectedInfo{font-size:12px;font-weight:700;color:#374151}
+.cpanel-card{background:#fff;border:1px solid #a0aabb;border-radius:8px;overflow:hidden;margin:10px 12px 12px}
+.cpanel-hdr{padding:10px 14px;border-bottom:1px solid #a0aabb;background:#f8fafc;font-size:14px;font-weight:700;color:#374151;display:flex;align-items:center;gap:8px}
+.cpanel-table{width:100%;border-collapse:collapse;font-size:13px}
+.cpanel-table th{background:#f5f7fa;font-weight:700;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.3px;padding:6px 10px;border-bottom:1px solid #a0aabb;text-align:left}
+.cpanel-table td{padding:6px 10px;border-bottom:1px solid #e5e7eb;vertical-align:middle}
+.cpanel-table tbody tr:last-child td{border-bottom:none}
+.cpanel-table tbody tr:hover{background:#f8fafc}
+.cpanel-drag{cursor:grab;color:#9ca3af;user-select:none;display:inline-flex;align-items:center}
+.cpanel-drag:active{cursor:grabbing}
+.cpanel-swatch{width:28px;height:28px;border-radius:5px;border:1px solid #a0aabb;cursor:pointer;padding:1px 2px;display:block}
+.cpanel-badge{display:inline-block;padding:3px 12px;border-radius:12px;font-size:12px;font-weight:700}
+.cpanel-delbtn{background:none;border:1px solid #fca5a5;border-radius:5px;color:#991b1b;cursor:pointer;padding:3px 8px;font-size:15px;line-height:1}
+.cpanel-delbtn:hover{background:#fee2e2}
+.cpanel-addrow{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid #a0aabb;background:#f8fafc;flex-wrap:wrap}
+.cpanel-addrow input[type=text]{height:32px;border:1px solid #a0aabb;border-radius:5px;padding:2px 8px;font-family:'Inter',sans-serif;font-size:13px;background:#fff;min-width:160px}
+.cpanel-addrow input[type=text]:focus{outline:2px solid #3b82f6;border-color:#3b82f6}
+.cpanel-addrow input[type=color]{width:46px;height:32px;padding:1px 3px;cursor:pointer;border:1px solid #a0aabb;border-radius:5px}
+.cpanel-hint{padding:6px 14px 10px;font-size:11px;color:#9ca3af}
+.row-dragging{opacity:.35}
+.row-drag-over td{border-top:2px solid #3b82f6!important}
 
 /* IMPORT/EXPORT BAR */
 .import-bar{padding:10px 12px;border-top:1px solid #a0aabb;background:#f8fafc;display:flex;align-items:center;gap:8px}
@@ -143,17 +152,26 @@ th{background:#f5f7fa;font-weight:700;font-size:12px;color:#374151;letter-spacin
   <span id="settingsSaved" style="font-size:13px;color:#16a34a;font-weight:700;display:none">✓ Uloženo</span>
 </div>
 
-<div class="company-panel">
-  <div class="legend-wrap">
-    <div id="legend"></div>
-    <div class="hint">Správa firem je pouze legenda. Směsi ani řádky tabulky nejsou s firmou nijak propojené.</div>
+<div class="cpanel-card">
+  <div class="cpanel-hdr">🎨 Firmy a barvy (legenda)</div>
+  <table class="cpanel-table">
+    <thead>
+      <tr>
+        <th style="width:44px">Řazení</th>
+        <th>Název firmy</th>
+        <th style="width:80px">Barva</th>
+        <th>Náhled</th>
+        <th style="width:60px">Akce</th>
+      </tr>
+    </thead>
+    <tbody id="companyTbody"></tbody>
+  </table>
+  <div class="cpanel-addrow">
+    <input id="companyName" type="text" placeholder="Název firmy">
+    <input id="companyColor" type="color" value="#fff2a8">
+    <button class="btn green" onclick="saveCompany()">+ Přidat firmu</button>
   </div>
-  <div class="company-form">
-    <div class="company-form-field"><label>Firma</label><input id="companyName" placeholder="Název firmy" style="width:160px"></div>
-    <div class="company-form-field"><label>Barva</label><input id="companyColor" type="color" value="#fff2a8"></div>
-    <button class="btn green" onclick="saveCompany()">Uložit firmu</button>
-    <button class="btn red" onclick="deleteSelectedCompany()">Smazat vybranou</button>
-  </div>
+  <div class="cpanel-hint">Správa firem je pouze legenda. Pořadí firem určuje řazení v měsíčním přehledu. Přetažením změníš pořadí.</div>
 </div>
 
 </main>
@@ -197,9 +215,46 @@ function saveSettings(){const data={hmg_plant_rate:document.getElementById('plan
 const defaultCompanies=[{name:'Colas',color:'#fff2a8'},{name:'Firesta',color:'#d9ead3'},{name:'Mi Roads',color:'#ff7f86'}];
 function loadCompanies(){return window._companies||defaultCompanies}
 function saveCompanies(c){window._companies=c;fetch('/api/companies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({companies:c})}).catch(()=>{})}
-function renderLegend(){legend.innerHTML='';loadCompanies().forEach(c=>{const d=document.createElement('div');d.className='legend-row';d.style.backgroundColor=c.color;d.style.color='#374151';d.textContent=c.name;d.onclick=()=>{companyName.value=c.name;companyColor.value=c.color};legend.appendChild(d)})}
-function saveCompany(){const name=companyName.value.trim(),color=companyColor.value;if(!name){alert('Zadej název firmy.');return}let c=loadCompanies();let f=c.find(x=>x.name.toLowerCase()===name.toLowerCase());if(f){f.name=name;f.color=color}else c.push({name,color});saveCompanies(c);renderLegend()}
-function deleteSelectedCompany(){const name=companyName.value.trim();if(!name){alert('Vyber nebo zadej firmu ke smazání.');return}saveCompanies(loadCompanies().filter(c=>c.name!==name));companyName.value='';renderLegend()}
+let _dragSrcIdx=null;
+function darkenHex(hex){try{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return'rgb('+Math.round(r*.4)+','+Math.round(g*.4)+','+Math.round(b*.4)+')';}catch(e){return'#374151';}}
+function renderLegend(){
+  const tbody=document.getElementById('companyTbody');
+  if(!tbody)return;
+  const companies=loadCompanies();
+  tbody.innerHTML='';
+  companies.forEach((c,idx)=>{
+    const tr=document.createElement('tr');
+    tr.draggable=true;
+    tr.addEventListener('dragstart',e=>{_dragSrcIdx=idx;e.dataTransfer.effectAllowed='move';setTimeout(()=>tr.classList.add('row-dragging'),0);});
+    tr.addEventListener('dragend',()=>{tr.classList.remove('row-dragging');document.querySelectorAll('#companyTbody tr').forEach(r=>r.classList.remove('row-drag-over'));_dragSrcIdx=null;});
+    tr.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='move';document.querySelectorAll('#companyTbody tr').forEach(r=>r.classList.remove('row-drag-over'));if(_dragSrcIdx!==idx)tr.classList.add('row-drag-over');});
+    tr.addEventListener('drop',e=>{e.preventDefault();if(_dragSrcIdx===null||_dragSrcIdx===idx)return;const arr=loadCompanies();const[moved]=arr.splice(_dragSrcIdx,1);arr.splice(idx,0,moved);saveCompanies(arr);renderLegend();});
+    // Drag handle
+    const tdH=document.createElement('td');tdH.style.textAlign='center';
+    tdH.innerHTML='<span class="cpanel-drag" title="Přetáhni pro změnu pořadí"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg></span>';
+    // Name
+    const tdN=document.createElement('td');tdN.style.fontWeight='700';tdN.textContent=c.name;
+    // Color swatch
+    const tdC=document.createElement('td');
+    const inp=document.createElement('input');inp.type='color';inp.value=c.color;inp.className='cpanel-swatch';inp.title='Klikni pro výběr barvy';
+    inp.addEventListener('mousedown',e=>e.stopPropagation());
+    inp.addEventListener('change',()=>{const arr=loadCompanies();arr[idx].color=inp.value;saveCompanies(arr);renderLegend();});
+    tdC.appendChild(inp);
+    // Badge preview
+    const tdP=document.createElement('td');
+    const badge=document.createElement('span');badge.className='cpanel-badge';badge.style.background=c.color;badge.style.color=darkenHex(c.color);badge.textContent=c.name;
+    tdP.appendChild(badge);
+    // Delete
+    const tdA=document.createElement('td');
+    const del=document.createElement('button');del.className='cpanel-delbtn';del.innerHTML='🗑';del.title='Smazat firmu '+c.name;
+    del.addEventListener('mousedown',e=>e.stopPropagation());
+    del.onclick=()=>{if(!confirm('Smazat firmu „'+c.name+'"?'))return;saveCompanies(loadCompanies().filter((_,i)=>i!==idx));renderLegend();};
+    tdA.appendChild(del);
+    tr.append(tdH,tdN,tdC,tdP,tdA);
+    tbody.appendChild(tr);
+  });
+}
+function saveCompany(){const name=document.getElementById('companyName').value.trim(),color=document.getElementById('companyColor').value;if(!name){alert('Zadej název firmy.');return}const arr=loadCompanies();const f=arr.find(x=>x.name.toLowerCase()===name.toLowerCase());if(f){f.color=color;}else arr.push({name,color});saveCompanies(arr);document.getElementById('companyName').value='';renderLegend();}
 async function initInputs(){
   const rows=await fetch('/api/inputs').then(r=>r.json()).catch(()=>null);
   if(rows)window._inputRows=rows;

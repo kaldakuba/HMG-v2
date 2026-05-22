@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const nodemailer = require('nodemailer');
@@ -255,6 +256,8 @@ app.post('/api/week/:start', requireAuth, requireAdmin, async (req, res) => {
     smes: sanitizeStr(r.smes, 200),
     itt: sanitizeStr(r.itt, 50),
     ceta: sanitizeStr(r.ceta, 50),
+    lat: (r.lat != null && isFinite(+r.lat)) ? +r.lat : null,
+    lng: (r.lng != null && isFinite(+r.lng)) ? +r.lng : null,
   }));
   await pool.query(
     `INSERT INTO week_data (week_start,rows_json,updated_at) VALUES($1,$2,NOW())
@@ -517,6 +520,11 @@ app.post('/api/import-excel', requireAuth, requireAdmin, upload.single('file'), 
     console.error('Import error:', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── Konfigurace pro frontend (Mapy.cz klíč, chráněno autentizací) ──
+app.get('/api/config', requireAuth, (req, res) => {
+  res.json({ mapyCzKey: process.env.MAPY_CZ_KEY || '' });
 });
 
 // ── Globální error handler ──

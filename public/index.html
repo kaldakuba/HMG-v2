@@ -55,6 +55,24 @@ input[type=checkbox]:checked::after{content:"";position:absolute;left:4px;top:1p
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#f1f5f9}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 .saving-indicator{position:fixed;bottom:16px;right:16px;background:#1e293b;color:#fff;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;opacity:0;transition:opacity .3s;z-index:9999;pointer-events:none}
 .saving-indicator.show{opacity:1}
+/* GPS tlačítko v buňce lokalita */
+.gps-btn{position:absolute;right:2px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:12px;padding:1px 2px;border-radius:3px;opacity:.35;line-height:1;z-index:1;transition:opacity .15s}
+.gps-btn:hover{opacity:1;background:#f3f4f6}
+.gps-btn.has-gps{opacity:1;color:#16a34a}
+/* Mapový overlay */
+.map-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;align-items:center;justify-content:center}
+.map-overlay.open{display:flex!important}
+.map-box{background:#fff;border-radius:12px;overflow:hidden;width:min(640px,96vw);max-height:92vh;box-shadow:0 8px 40px rgba(0,0,0,.3);display:flex;flex-direction:column}
+.map-hdr{padding:12px 16px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0}
+.map-hdr h3{font-size:14px;font-weight:600;margin:0;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#mapImgArea{background:#f0f2f5;flex-shrink:0;overflow:hidden;min-height:100px}
+.map-search-bar{padding:10px 16px;border-bottom:1px solid #e5e7eb;display:flex;gap:8px;align-items:center;flex-shrink:0}
+.map-search-inp{flex:1;height:34px;border:0.5px solid #d1d5db;border-radius:6px;padding:0 10px;font-family:Inter,sans-serif;font-size:13px;outline:none;color:#111}
+.map-search-inp:focus{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,235,.1)}
+.map-ftr{padding:10px 16px;border-top:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;flex-shrink:0}
+.map-coord-row{display:flex;align-items:center;gap:6px;flex:1;min-width:0;flex-wrap:wrap}
+.map-coord-inp{width:124px;height:30px;border:0.5px solid #d1d5db;border-radius:6px;padding:0 8px;font-size:12px;font-family:monospace;color:#111;outline:none}
+.map-coord-inp:focus{border-color:#2563eb}
 
 /* ═══════════════════════════════════════════════════
    MOBILNÍ READ-ONLY MÓD — třída .mobile-ro na <body>
@@ -115,6 +133,34 @@ body.mobile-ro .hours-row td{height:18px;font-size:9px}
 <div class="controls"><input id="plantRate" type="number" step="1" value="150" style="display:none" onchange="setPlantRate(this.value);render()"><div style="margin-right:auto;display:flex;gap:8px;"><button class="btn top-orange" onclick="togglePanel('materialsPanel')">Spotřeba materiálu</button><button class="btn top-orange" onclick="togglePanel('mixesPanel')">Seznam směsí</button></div><button class="btn green" onclick="addRow()">Přidat nový řádek</button><button class="btn gray" onclick="toggleSelMode()" id="selModeBtn">Označit</button><button class="btn red delete-btn" onclick="deleteCheckedRows()" style="display:none">Smazat vybrané řádky</button><button class="btn gray" onclick="undoLast()">Zpět</button><span id="selectedInfo" style="display:none"></span></div>
 <div id="panelsRow" style="display:none;gap:16px;align-items:flex-start;flex-wrap:wrap;padding:12px;"><div id="materialsPanel" style="display:none"><h2 style="font-size:14px;font-weight:700;margin:0 0 8px">Spotřeba materiálu</h2><div class="panel-wrap" id="materialsArea"></div></div><div id="mixesPanel" style="display:none"><h2 style="font-size:14px;font-weight:700;margin:0 0 8px">Seznam směsí</h2><div class="panel-wrap" id="mixesArea"></div></div>
 </section></main>
+
+<!-- ══ GPS / MAPA OVERLAY ══ -->
+<div class="map-overlay" id="mapOverlay">
+  <div class="map-box">
+    <div class="map-hdr">
+      <h3 id="mapPopupTitle">📍 GPS souřadnice</h3>
+      <button onclick="closeMapPopup()" type="button" style="border:none;background:#f3f4f6;border-radius:6px;cursor:pointer;font-size:16px;padding:3px 8px;line-height:1;color:#6b7280;flex-shrink:0">✕</button>
+    </div>
+    <div class="map-search-bar">
+      <input type="text" id="mapSearchInput" class="map-search-inp" placeholder="Hledat adresu nebo lokalitu…" onkeydown="if(event.key==='Enter')geocodeSearch()">
+      <button class="btn blue" onclick="geocodeSearch()" type="button" style="padding:6px 14px;font-size:12px;flex-shrink:0">🔍 Hledat</button>
+    </div>
+    <div id="mapImgArea"></div>
+    <div class="map-ftr">
+      <div class="map-coord-row">
+        <span style="font-size:11px;color:#6b7280;white-space:nowrap">Lat / Lng:</span>
+        <input type="number" id="mapLatInput" class="map-coord-inp" step="0.000001" placeholder="šířka">
+        <input type="number" id="mapLngInput" class="map-coord-inp" step="0.000001" placeholder="délka">
+        <button type="button" onclick="applyManualCoords()" style="border:0.5px solid #d1d5db;background:#f9fafb;border-radius:6px;cursor:pointer;padding:4px 10px;font-size:12px;font-family:Inter,sans-serif;white-space:nowrap">↺ Zobrazit</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        <button class="btn gray" style="padding:6px 14px;font-size:12px" onclick="closeMapPopup()" type="button">Zrušit</button>
+        <button class="btn green" style="padding:6px 14px;font-size:12px" onclick="saveGpsCoords()" type="button">Uložit souřadnice</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 const dayKeys=['d0','d1','d2','d3','d4','d5','d6'];let undoStack=[];
 const mixCols=['c04','c24','c48','c811','c1116','c1622','b5070','b255560','b458065','b2030','prach','vapenec','addbit','scel','ra16','ra22'];
@@ -157,7 +203,7 @@ function applyMix(row,m){if(!m)return;row.cislo=m.cislo||row.cislo||'';row.smes=
 function uniq(arr){return [...new Set(arr.filter(x=>String(x||'').trim()!==''))]}
 function esc(v){return String(v||'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))}
 
-function defaultRows(){return Array.from({length:12},()=>({checked:false,cislo:'',lokalita:'',objednavka:'',smes:'',itt:'',ceta:'',d0:'',d1:'',d2:'',d3:'',d4:'',d5:'',d6:''}))}
+function defaultRows(){return Array.from({length:12},()=>({checked:false,cislo:'',lokalita:'',objednavka:'',smes:'',itt:'',ceta:'',d0:'',d1:'',d2:'',d3:'',d4:'',d5:'',d6:'',lat:null,lng:null}))}
 
 // ── API VOLÁNÍ ──
 async function apiLoadWeek(start){
@@ -210,7 +256,7 @@ function render(){
   let html='';
   rows.forEach((r,i)=>{
     const color=companyColor(r.ceta);
-    html+=`<tr class="${r.checked?'row-checked':''}" style="${color?'background:'+color:''}"><td style="background:#f8fafc;font-weight:800;font-size:13px"><select class="select-cell" style="font-weight:800" onchange="updateMixSelect(${i},'cislo',this.value)">${selectOptions(nums,r.cislo)}</select></td><td><input class="editable" value="${esc(r.lokalita||'')}" onchange="updateCell(${i},'lokalita',this.value)"></td><td><input class="editable" value="${esc(r.objednavka||'')}" onchange="updateCell(${i},'objednavka',this.value)"></td><td><select class="select-cell" onchange="updateMixSelect(${i},'smes',this.value)">${selectOptions(smesi,r.smes)}</select></td><td><select class="select-cell" onchange="updateMixSelect(${i},'itt',this.value)">${selectOptions(itts,r.itt)}</select></td><td><select class="select-cell" onchange="updateCell(${i},'ceta',this.value)"><option value=""></option>${_companies.map(c=>`<option value="${esc(c.name)}" ${c.name===(r.ceta||'')?'selected':''}>${esc(c.name)}</option>`).join('')}</select></td>`;
+    html+=`<tr class="${r.checked?'row-checked':''}" style="${color?'background:'+color:''}"><td style="background:#f8fafc;font-weight:800;font-size:13px"><select class="select-cell" style="font-weight:800" onchange="updateMixSelect(${i},'cislo',this.value)">${selectOptions(nums,r.cislo)}</select></td><td style="position:relative"><input class="editable" style="padding-right:20px" value="${esc(r.lokalita||'')}" onchange="updateCell(${i},'lokalita',this.value)"><button class="gps-btn${r.lat?' has-gps':''}" type="button" onclick="openMapPopup(${i},event)" title="${r.lat?'GPS: '+Number(r.lat).toFixed(4)+', '+Number(r.lng).toFixed(4):'Nastavit GPS'}">📍</button></td><td><input class="editable" value="${esc(r.objednavka||'')}" onchange="updateCell(${i},'objednavka',this.value)"></td><td><select class="select-cell" onchange="updateMixSelect(${i},'smes',this.value)">${selectOptions(smesi,r.smes)}</select></td><td><select class="select-cell" onchange="updateMixSelect(${i},'itt',this.value)">${selectOptions(itts,r.itt)}</select></td><td><select class="select-cell" onchange="updateCell(${i},'ceta',this.value)"><option value=""></option>${_companies.map(c=>`<option value="${esc(c.name)}" ${c.name===(r.ceta||'')?'selected':''}>${esc(c.name)}</option>`).join('')}</select></td>`;
     dayKeys.forEach((k,di)=>{const dv=r[k]?fmtNum(n(r[k])||0)||"":"";html+=`<td class="${di>=5?'gray-day':'blue-day'}"><input class="day-input" inputmode="numeric" value="${esc(dv)}" onfocus="this.value=String(n(this.value.replace(/ /g,''))||this.value)" onchange="updateCell(${i},'${k}',this.value,false,true)"></td>`;});
     html+=`<td class="row-total">${fmtNum(rowSum(r))}</td><td class="sel-col" style="background:#f8fafc"><input type="checkbox" ${r.checked?'checked':''} onchange="updateCheck(${i},this.checked)"></td></tr>`;
   });
@@ -229,7 +275,7 @@ function updateSelectedInfo(){const c=(_rows||[]).filter(r=>r.checked).length;se
 function updateCheck(i,val){_rows[i].checked=val;render();saveRows()}
 function updateMixSelect(i,key,val){snapshot();let m=key==='cislo'?mixByNumber(val):key==='smes'?mixByName(val):mixByItt(val);applyMix(_rows[i],m);render();saveRows()}
 function updateCell(i,key,val,autofill=false,integer=false){snapshot();_rows[i][key]=integer?intVal(val):val;render();saveRows()}
-function addRow(){snapshot();_rows.push({checked:false,cislo:'',lokalita:'',objednavka:'',smes:'',itt:'',ceta:'',d0:'',d1:'',d2:'',d3:'',d4:'',d5:'',d6:''});render();saveRows()}
+function addRow(){snapshot();_rows.push({checked:false,cislo:'',lokalita:'',objednavka:'',smes:'',itt:'',ceta:'',d0:'',d1:'',d2:'',d3:'',d4:'',d5:'',d6:'',lat:null,lng:null});render();saveRows()}
 function deleteCheckedRows(){if(!_rows.some(r=>r.checked)){alert('Nejdřív zatrhni řádky ke smazání.');return}snapshot();_rows=_rows.filter(r=>!r.checked);render();saveRows()}
 function undoLast(){if(!undoStack.length){alert('Není co vrátit zpět.');return}_rows=JSON.parse(undoStack.pop());render();saveRows()}
 
@@ -388,6 +434,122 @@ function renderMobile(){
 }
 
 
+// ── GPS / MAPA (Mapy.cz API v4) ──
+// ── GPS stav ──
+let _mapyCzKey='';let _mapRowIdx=-1;let _mapTempCoords=null;
+
+async function openMapPopup(rowIdx,e){
+  if(e){e.stopPropagation();e.preventDefault();}
+  _mapRowIdx=rowIdx;
+  const row=_rows[rowIdx];
+  _mapTempCoords=(row.lat!=null&&row.lng!=null)?{lat:+row.lat,lng:+row.lng}:null;
+  document.getElementById('mapPopupTitle').textContent='📍 '+(row.lokalita||'GPS souřadnice');
+  document.getElementById('mapSearchInput').value=row.lokalita||'';
+  document.getElementById('mapLatInput').value='';
+  document.getElementById('mapLngInput').value='';
+  document.getElementById('mapOverlay').classList.add('open');
+  if(_mapTempCoords){
+    // Máme uložené souřadnice — zobraz rovnou
+    updateMapInputs(_mapTempCoords.lat,_mapTempCoords.lng);
+    showMapImage(_mapTempCoords.lat,_mapTempCoords.lng);
+  } else if(row.lokalita&&row.lokalita.trim()){
+    // Geocoduj název lokality
+    showMapLoading();
+    await geocodeAndShow(row.lokalita);
+  } else {
+    showMapPlaceholder();
+  }
+}
+
+// Geocoding přes Mapy.cz REST API v1
+async function geocodeAddress(query){
+  const url=`https://api.mapy.cz/v1/geocode?query=${encodeURIComponent(query)}&lang=cs&limit=1&apikey=${_mapyCzKey}`;
+  const r=await fetch(url);
+  if(!r.ok)throw new Error(`HTTP ${r.status}`);
+  const d=await r.json();
+  if(d.items&&d.items.length>0){const p=d.items[0].position;return{lat:p.lat,lng:p.lon};}
+  return null;
+}
+
+async function geocodeAndShow(query){
+  try{
+    const coords=await geocodeAddress(query);
+    if(coords){
+      _mapTempCoords=coords;
+      updateMapInputs(coords.lat,coords.lng);
+      showMapImage(coords.lat,coords.lng);
+    } else {
+      showMapMsg('⚠️ Adresa nenalezena — zadejte souřadnice ručně nebo upřesněte hledaný výraz.');
+    }
+  }catch(ex){
+    showMapMsg('❌ Chyba geocodingu: '+esc(ex.message));
+  }
+}
+
+// Mapa jako iframe OpenStreetMap (zobrazí interaktivní mapu s pinem, bez API klíče)
+function showMapImage(lat,lng){
+  const d=0.008; // bbox padding ~900m
+  const bbox=`${lng-d},${lat-d},${lng+d},${lat+d}`;
+  const src=`https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`;
+  document.getElementById('mapImgArea').innerHTML=
+    `<iframe src="${src}" style="width:100%;height:360px;border:none;display:block" loading="lazy" title="Mapa lokality"></iframe>`+
+    `<div style="text-align:right;padding:3px 8px;background:#f9fafb;border-top:0.5px solid #e5e7eb;font-size:10px;color:#9ca3af">© <a href="https://www.openstreetmap.org/copyright" target="_blank" style="color:#9ca3af">OpenStreetMap</a></div>`;
+}
+function showMapLoading(){
+  document.getElementById('mapImgArea').innerHTML=
+    '<div style="display:flex;align-items:center;justify-content:center;height:360px;color:#6b7280;font-size:13px;gap:8px">⏳ Načítám…</div>';
+}
+function showMapMsg(msg){
+  document.getElementById('mapImgArea').innerHTML=
+    `<div style="display:flex;align-items:center;justify-content:center;height:240px;font-size:13px;color:#6b7280;padding:24px;text-align:center">${msg}</div>`;
+}
+function showMapPlaceholder(){
+  document.getElementById('mapImgArea').innerHTML=
+    '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:280px;color:#9ca3af;font-size:13px;gap:10px"><div style="font-size:36px">🗺️</div><div style="text-align:center">Zadejte adresu do vyhledávacího pole<br>nebo souřadnice níže</div></div>';
+}
+function updateMapInputs(lat,lng){
+  document.getElementById('mapLatInput').value=lat.toFixed(6);
+  document.getElementById('mapLngInput').value=lng.toFixed(6);
+}
+
+async function geocodeSearch(){
+  const q=document.getElementById('mapSearchInput').value.trim();
+  if(!q)return;
+  showMapLoading();
+  await geocodeAndShow(q);
+}
+
+function applyManualCoords(){
+  const lat=parseFloat(document.getElementById('mapLatInput').value);
+  const lng=parseFloat(document.getElementById('mapLngInput').value);
+  if(isNaN(lat)||isNaN(lng)){alert('Zadejte platné souřadnice.');return;}
+  if(lat<-90||lat>90||lng<-180||lng>180){alert('Souřadnice mimo rozsah (lat ±90, lng ±180).');return;}
+  _mapTempCoords={lat,lng};
+  showMapImage(lat,lng);
+}
+
+function saveGpsCoords(){
+  // Přečti aktuální hodnoty vstupů (uživatel mohl ručně upravit)
+  const latV=parseFloat((document.getElementById('mapLatInput')||{}).value);
+  const lngV=parseFloat((document.getElementById('mapLngInput')||{}).value);
+  if(!isNaN(latV)&&!isNaN(lngV)&&latV>=-90&&latV<=90&&lngV>=-180&&lngV<=180){
+    _mapTempCoords={lat:latV,lng:lngV};
+  }
+  if(_mapRowIdx>=0&&_rows[_mapRowIdx]){
+    snapshot();
+    _rows[_mapRowIdx].lat=_mapTempCoords?_mapTempCoords.lat:null;
+    _rows[_mapRowIdx].lng=_mapTempCoords?_mapTempCoords.lng:null;
+    saveRows();render();
+  }
+  closeMapPopup();
+}
+
+function closeMapPopup(){
+  document.getElementById('mapOverlay').classList.remove('open');
+  document.getElementById('mapImgArea').innerHTML='';
+  _mapRowIdx=-1;_mapTempCoords=null;
+}
+
 // ── Operátor read-only ──
 async function checkOperatorRole() {
   try {
@@ -416,6 +578,8 @@ async function checkOperatorRole() {
 
 // ── INIT ──
 async function init(){
+  // Načti Mapy.cz API klíč
+  try{const cfg=await fetch('/api/config').then(r=>r.json());if(cfg&&cfg.mapyCzKey)_mapyCzKey=cfg.mapyCzKey;}catch(ex){}
   // Načti nastavení
   const s=await fetch('/api/settings').then(r=>r.json()).catch(()=>({}));
   if(s&&Object.keys(s).length)_settings=s;

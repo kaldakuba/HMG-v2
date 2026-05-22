@@ -1,0 +1,18 @@
+# ── Citlivé soubory (NIKDY nepushovat) ──────────────────
+.env
+.env.*
+*.env
+
+# ── Runtime logy serveru ─────────────────────────────────
+*.log
+*.err
+server.log
+server.err
+
+# ── Závislosti Node.js ───────────────────────────────────
+node_modules/
+
+# ── Systémové soubory ────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
