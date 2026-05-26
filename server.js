@@ -256,8 +256,14 @@ app.post('/api/logout', (req, res) => {
   });
 });
 
-app.get('/api/me', requireAuth, (req, res) => {
-  res.json({ username: req.session.username, role: req.session.role, userId: req.session.userId });
+app.get('/api/me', requireAuth, async (req, res) => {
+  try {
+    const r = await pool.query('SELECT firma FROM users WHERE id=$1', [req.session.userId]);
+    const firma = r.rows[0] ? r.rows[0].firma : null;
+    res.json({ username: req.session.username, role: req.session.role, userId: req.session.userId, firma });
+  } catch(err) {
+    res.json({ username: req.session.username, role: req.session.role, userId: req.session.userId, firma: null });
+  }
 });
 
 // ── Data API (chráněno přihlášením) ──
