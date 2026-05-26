@@ -126,11 +126,14 @@ hr{border:none;border-top:0.5px solid #e5e7eb;margin:14px 0}
             <div class="form-group"><label>Uživatelské jméno</label><input type="text" id="newUsername" placeholder="jmeno.prijmeni" autocomplete="off"></div>
             <div class="form-group"><label>Heslo</label><input type="password" id="newPassword" placeholder="min. 6 znaků" autocomplete="new-password"></div>
             <div class="form-group" style="max-width:130px"><label>Role</label>
-              <select id="newRole">
+              <select id="newRole" onchange="onRoleChange(this.value)">
                 <option value="operator">Operátor</option>
                 <option value="hmg_share">Sdílený HMG</option>
                 <option value="admin">Admin</option>
               </select>
+            </div>
+            <div class="form-group" id="firmaGroup" style="max-width:140px;display:none"><label>Firma</label>
+              <select id="newFirma"><option value="">— vyberte —</option></select>
             </div>
             <div style="display:flex;gap:6px;align-items:flex-end;padding-bottom:1px">
               <button class="btn green sm" onclick="addUser()">Přidat</button>
@@ -308,12 +311,16 @@ async function loadUsers() {
 
   const rows = users.map(u => {
     const isAdmin = u.role === 'admin';
+    const firmaCell = u.role === 'hmg_share'
+      ? `<button class="btn gray sm" onclick="changeFirma(${u.id},'${esc(u.username)}','${esc(u.firma||'')}')" style="margin-right:4px" title="Změnit firmu">${u.firma ? `<span style="font-size:10px;background:#ede9fe;color:#5b21b6;border-radius:10px;padding:1px 7px">${esc(u.firma)}</span>` : '⚠ bez firmy'}</button>`
+      : '<span style="color:#d1d5db;font-size:11px">—</span>';
     const actions = isAdmin
       ? `<button class="btn gray sm" onclick="resetPassword(${u.id},'${esc(u.username)}')" style="margin-right:4px">Heslo</button><span class="cant-delete">nelze smazat</span>`
       : `<button class="btn gray sm" onclick="resetPassword(${u.id},'${esc(u.username)}')" style="margin-right:4px">Heslo</button><button class="btn red sm" onclick="deleteUser(${u.id},'${esc(u.username)}')">Smazat</button>`;
     return `<tr>
       <td class="td-name">${esc(u.username)}</td>
       <td>${roleBadge(u.role)}</td>
+      <td>${firmaCell}</td>
       <td class="td-date">${fmtDateShort(u.created_at)}</td>
       <td class="td-actions">${actions}</td>
     </tr>`;
@@ -325,12 +332,29 @@ async function loadUsers() {
         <tr>
           <th>Jméno</th>
           <th>Role</th>
+          <th>Firma</th>
           <th>Vytvořen</th>
           <th>Akce</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>`;
+}
+
+let _companies = [];
+async function loadCompanies() {
+  try {
+    const data = await api('GET', '/api/companies');
+    _companies = Array.isArray(data) ? data : [];
+  } catch(e) { _companies = []; }
+  const sel = document.getElementById('newFirma');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— vyberte —</option>' +
+    _companies.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
+}
+function onRoleChange(role) {
+  const grp = document.getElementById('firmaGroup');
+  grp.style.display = role === 'hmg_share' ? 'flex' : 'none';
 }
 
 function toggleAddUser() {
@@ -342,26 +366,36 @@ function toggleAddUser() {
   if (!isOpen) {
     document.getElementById('newUsername').focus();
     document.getElementById('addUserMsg').innerHTML = '';
+    document.getElementById('newRole').value = 'operator';
+    onRoleChange('operator');
+    loadCompanies();
   }
 }
 async function addUser() {
   const username = document.getElementById('newUsername').value.trim();
   const password = document.getElementById('newPassword').value;
   const role = document.getElementById('newRole').value;
+  const firma = document.getElementById('newFirma').value || undefined;
   const msg = document.getElementById('addUserMsg');
-  const r = await api('POST', '/api/users', {username, password, role});
+  const r = await api('POST', '/api/users', {username, password, role, firma});
   if (r.ok) {
     msg.innerHTML = '<span class="msg-ok">✓ Uživatel přidán</span>';
     document.getElementById('newUsername').value = '';
     document.getElementById('newPassword').value = '';
     setTimeout(() => {
-      // zavřít formulář a obnovit stav tlačítka
       document.getElementById('addUserForm').style.display = 'none';
       document.getElementById('btnAddUser').textContent = '+ Přidat uživatele';
       msg.innerHTML = '';
       loadUsers();
     }, 1000);
   } else { msg.innerHTML = `<span class="msg-err">✗ ${esc(r.error)}</span>`; }
+}
+async function changeFirma(id, name, currentFirma) {
+  const companiesList = _companies.length ? _companies.map(c => c.name).join(', ') : 'nejdříve otevřete formulář přidání';
+  const newFirma = prompt(`Firma pro uživatele "${name}"\nAktuální: ${currentFirma || '—'}\n\nDostupné firmy: ${companiesList}\n\nNová firma (prázdné = odebrat):`);
+  if (newFirma === null) return;
+  const r = await api('PUT', `/api/users/${id}/firma`, { firma: newFirma.trim() });
+  if (r.ok) loadUsers(); else alert(r.error);
 }
 async function changeRole(id, name, currentRole) {
   const labels = {operator:'Operátor',hmg_share:'Sdílený HMG',admin:'Admin'};

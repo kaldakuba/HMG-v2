@@ -101,6 +101,27 @@ async function initDb() {
       CONSTRAINT session_pkey PRIMARY KEY (sid) NOT DEFERRABLE INITIALLY IMMEDIATE
     );
     CREATE INDEX IF NOT EXISTS IDX_session_expire ON session (expire);
+
+    -- HMG V3
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS firma TEXT;
+    CREATE TABLE IF NOT EXISTS orders (
+      id              SERIAL PRIMARY KEY,
+      order_group_id  UUID NOT NULL,
+      user_id         INTEGER REFERENCES users(id),
+      firma           TEXT NOT NULL,
+      datum           DATE NOT NULL,
+      smes            TEXT NOT NULL,
+      itt             TEXT NOT NULL,
+      tuny            INTEGER NOT NULL,
+      komentar        TEXT,
+      status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+      created_at      TIMESTAMPTZ DEFAULT NOW(),
+      resolved_at     TIMESTAMPTZ,
+      resolved_by     INTEGER REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_orders_group_id ON orders(order_group_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_datum    ON orders(datum);
+    CREATE INDEX IF NOT EXISTS idx_orders_status   ON orders(status);
   `);
 
 
@@ -331,10 +352,10 @@ app.get('/api/settings', requireAuth, async (req, res) => {
 });
 
 app.post('/api/settings', requireAuth, requireAdmin, async (req, res) => {
-  const allowed = ['hmg_max_daily', 'plant_rate'];
+  const allowed = ['hmg_max_daily', 'hmg_min_daily', 'plant_rate'];
   for (const [k, v] of Object.entries(req.body)) {
     if (!allowed.includes(k)) continue;
-    if (k === 'hmg_max_daily' || k === 'plant_rate') {
+    if (['hmg_max_daily', 'hmg_min_daily', 'plant_rate'].includes(k)) {
       const n = parseInt(v, 10);
       if (isNaN(n) || n <= 0 || n > 1000000) return res.status(400).json({ error: `${k} musí být kladné číslo` });
     }
@@ -772,7 +793,7 @@ app.get('/api/export-excel', requireAuth, requireOperator, async (req, res) => {
 // ── Správa uživatelů ──
 app.get('/api/users', requireAuth, requireAdmin, async (req, res) => {
   const r = await pool.query(`
-    SELECT u.id, u.username, u.role, u.created_at, u.last_seen,
+    SELECT u.id, u.username, u.role, u.firma, u.created_at, u.last_seen,
       (SELECT COUNT(*) FROM session s WHERE s.sess->>'userId' = u.id::text AND s.expire > NOW()) as session_count
     FROM users u ORDER BY u.created_at
   `);
@@ -781,15 +802,16 @@ app.get('/api/users', requireAuth, requireAdmin, async (req, res) => {
 
 app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { username, password, role } = req.body;
+    const { username, password, role, firma } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Vyplňte jméno a heslo' });
     if (!['admin','operator','hmg_share'].includes(role)) return res.status(400).json({ error: 'Neplatná role' });
     if (username.length < 3 || username.length > 50) return res.status(400).json({ error: 'Jméno 3-50 znaků' });
     if (password.length < 6) return res.status(400).json({ error: 'Heslo min. 6 znaků' });
+    const firmaVal = (role === 'hmg_share' && firma) ? sanitizeStr(firma, 100) : null;
     const hash = await bcrypt.hash(password, 12);
     const r = await pool.query(
-      'INSERT INTO users (username, password_hash, role) VALUES ($1,$2,$3) RETURNING id,username,role',
-      [username.trim(), hash, role]
+      'INSERT INTO users (username, password_hash, role, firma) VALUES ($1,$2,$3,$4) RETURNING id,username,role,firma',
+      [username.trim(), hash, role, firmaVal]
     );
     res.json({ ok: true, user: r.rows[0] });
   } catch (err) {
@@ -822,6 +844,14 @@ app.delete('/api/users/:id', requireAuth, requireAdmin, async (req, res) => {
   if (id === req.session.userId) return res.status(400).json({ error: 'Nemůžeš smazat sám sebe' });
   await pool.query("DELETE FROM session WHERE sess->>'userId' = $1", [String(id)]);
   await pool.query('DELETE FROM users WHERE id=$1', [id]);
+  res.json({ ok: true });
+});
+
+app.put('/api/users/:id/firma', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id);
+  const { firma } = req.body;
+  const firmaVal = firma ? sanitizeStr(String(firma), 100) : null;
+  await pool.query('UPDATE users SET firma=$1 WHERE id=$2', [firmaVal, id]);
   res.json({ ok: true });
 });
 
@@ -884,6 +914,222 @@ app.get('/share/:token', async (req, res) => {
     return res.status(410).send('<h2>Odkaz vypršel nebo neexistuje.</h2>');
   }
   res.sendFile(path.join(__dirname, 'public', 'month.html'));
+});
+
+// ── HMG V3 — Objednávky ─────────────────────────────────────────────────────
+
+// GET /api/orders?month=2026-06
+app.get('/api/orders', requireAuth, async (req, res) => {
+  try {
+    const { month } = req.query;
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ error: 'Neplatný formát měsíce (YYYY-MM)' });
+    }
+    const [year, mon] = month.split('-').map(Number);
+    const from = `${year}-${String(mon).padStart(2,'0')}-01`;
+    const lastDay = new Date(year, mon, 0).getDate();
+    const to   = `${year}-${String(mon).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+
+    let r;
+    if (req.session.role === 'hmg_share') {
+      const uRes = await pool.query('SELECT firma FROM users WHERE id=$1', [req.session.userId]);
+      const firma = uRes.rows[0] ? uRes.rows[0].firma : null;
+      if (!firma) return res.json([]);
+      r = await pool.query(
+        `SELECT * FROM orders WHERE datum >= $1 AND datum <= $2 AND firma=$3 ORDER BY datum, created_at`,
+        [from, to, firma]
+      );
+    } else {
+      r = await pool.query(
+        `SELECT * FROM orders WHERE datum >= $1 AND datum <= $2 ORDER BY datum, firma, created_at`,
+        [from, to]
+      );
+    }
+    res.json(r.rows);
+  } catch (err) {
+    console.error('GET /api/orders error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+// POST /api/orders — jen pro hmg_share uživatele
+app.post('/api/orders', requireAuth, async (req, res) => {
+  if (req.session.role !== 'hmg_share') {
+    return res.status(403).json({ error: 'Pouze sdílení uživatelé (hmg_share) mohou podávat objednávky' });
+  }
+  try {
+    const { items } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'items musí být neprázdné pole' });
+    }
+    if (items.length > 50) {
+      return res.status(400).json({ error: 'Maximálně 50 položek v jedné skupině' });
+    }
+
+    // Firma přihlášeného uživatele
+    const uRes = await pool.query('SELECT firma FROM users WHERE id=$1', [req.session.userId]);
+    const firma = uRes.rows[0] ? uRes.rows[0].firma : null;
+    if (!firma) {
+      return res.status(400).json({ error: 'Uživatel nemá přiřazenu firmu. Kontaktujte admina.' });
+    }
+
+    // Validace každé položky
+    for (const item of items) {
+      if (!isIsoDate(item.datum)) return res.status(400).json({ error: `Neplatný formát data: ${item.datum}` });
+      if (!item.smes || typeof item.smes !== 'string' || !item.smes.trim()) {
+        return res.status(400).json({ error: 'Chybí nebo prázdná směs' });
+      }
+      if (!item.itt || typeof item.itt !== 'string' || !item.itt.trim()) {
+        return res.status(400).json({ error: 'Chybí nebo prázdné ITT' });
+      }
+      const tuny = parseInt(item.tuny);
+      if (isNaN(tuny) || tuny <= 0 || tuny > 99999) {
+        return res.status(400).json({ error: 'Tuny musí být kladné celé číslo (1–99999)' });
+      }
+    }
+
+    // Načti denní limity
+    const sRes = await pool.query(
+      "SELECT key,value FROM settings WHERE key IN ('hmg_max_daily','hmg_min_daily')"
+    );
+    const limits = {};
+    sRes.rows.forEach(r => { limits[r.key] = parseInt(r.value); });
+    const maxDaily = limits.hmg_max_daily || null;
+    const minDaily = limits.hmg_min_daily || null;
+
+    // Kapacitní kontrola per den
+    const datumSet = [...new Set(items.map(i => i.datum))];
+    const warnings = [];
+    const errors   = [];
+
+    for (const datum of datumSet) {
+      const dayNewTuny = items
+        .filter(i => i.datum === datum)
+        .reduce((s, i) => s + parseInt(i.tuny), 0);
+
+      // Výpočet pondělí a indexu dne
+      const d = new Date(datum + 'T00:00:00Z');
+      const dow = d.getUTCDay(); // 0=Ne,1=Po,...,6=So
+      const daysFromMonday = (dow + 6) % 7; // 0=Po,...,6=Ne
+      const monday = new Date(d);
+      monday.setUTCDate(d.getUTCDate() - daysFromMonday);
+      const weekStart = monday.toISOString().slice(0, 10);
+      const di = daysFromMonday;
+
+      // Tuny z týdenního harmonogramu
+      const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1', [weekStart]);
+      let weekTuny = 0;
+      if (wRes.rows[0]) {
+        const rows = JSON.parse(wRes.rows[0].rows_json);
+        weekTuny = rows.reduce((s, r) => s + (parseInt(r[`d${di}`]) || 0), 0);
+      }
+
+      // Čekající objednávky pro tento den
+      const pRes = await pool.query(
+        "SELECT COALESCE(SUM(tuny),0) AS total FROM orders WHERE datum=$1 AND status='pending'",
+        [datum]
+      );
+      const pendingTuny = parseInt(pRes.rows[0].total) || 0;
+
+      const totalWithNew = weekTuny + pendingTuny + dayNewTuny;
+
+      if (maxDaily && totalWithNew > maxDaily) {
+        errors.push(`${datum}: kapacita překročena (${totalWithNew} t > max ${maxDaily} t)`);
+      } else if (minDaily && totalWithNew < minDaily) {
+        warnings.push(`${datum}: pod minimem (${totalWithNew} t < min ${minDaily} t)`);
+      }
+    }
+
+    if (errors.length > 0) {
+      return res.status(409).json({ error: errors.join('; '), warnings });
+    }
+
+    // Uložení celé skupiny v transakci
+    const groupId = crypto.randomUUID();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const item of items) {
+        await client.query(
+          `INSERT INTO orders (order_group_id, user_id, firma, datum, smes, itt, tuny, komentar)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            groupId,
+            req.session.userId,
+            firma,
+            item.datum,
+            sanitizeStr(item.smes, 200),
+            sanitizeStr(item.itt, 50),
+            parseInt(item.tuny),
+            item.komentar ? sanitizeStr(item.komentar, 500) : null
+          ]
+        );
+      }
+      await client.query('COMMIT');
+      console.log(`Nová objednávka ${groupId} od ${firma} (${items.length} položek)`);
+      res.json({ ok: true, groupId, warnings });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('POST /api/orders error:', err);
+    res.status(500).json({ error: 'Chyba serveru: ' + err.message });
+  }
+});
+
+// PATCH /api/orders/:groupId/approve — admin schválí skupinu
+app.patch('/api/orders/:groupId/approve', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId)) {
+      return res.status(400).json({ error: 'Neplatné ID skupiny' });
+    }
+    const r = await pool.query(
+      `UPDATE orders SET status='approved', resolved_at=NOW(), resolved_by=$1
+       WHERE order_group_id=$2 AND status='pending' RETURNING id`,
+      [req.session.userId, groupId]
+    );
+    if (r.rowCount === 0) return res.status(404).json({ error: 'Skupina nenalezena nebo již vyřešena' });
+    res.json({ ok: true, updated: r.rowCount });
+  } catch (err) {
+    console.error('PATCH approve error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+// PATCH /api/orders/:groupId/reject — admin zamítne skupinu (smaže)
+app.patch('/api/orders/:groupId/reject', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId)) {
+      return res.status(400).json({ error: 'Neplatné ID skupiny' });
+    }
+    const r = await pool.query('DELETE FROM orders WHERE order_group_id=$1 RETURNING id', [groupId]);
+    if (r.rowCount === 0) return res.status(404).json({ error: 'Skupina nenalezena' });
+    res.json({ ok: true, deleted: r.rowCount });
+  } catch (err) {
+    console.error('PATCH reject error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+// DELETE /api/orders/:groupId — admin smaže skupinu
+app.delete('/api/orders/:groupId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId)) {
+      return res.status(400).json({ error: 'Neplatné ID skupiny' });
+    }
+    const r = await pool.query('DELETE FROM orders WHERE order_group_id=$1 RETURNING id', [groupId]);
+    if (r.rowCount === 0) return res.status(404).json({ error: 'Skupina nenalezena' });
+    res.json({ ok: true, deleted: r.rowCount });
+  } catch (err) {
+    console.error('DELETE orders error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
 });
 
 // ── Záloha - poslední datum ──
