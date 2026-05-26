@@ -28,6 +28,10 @@ const loginLimiter = rateLimit({
 });
 const PORT = process.env.PORT || 3000;
 
+// ── Fix: node-postgres vrací DATE sloupce jako plain string (ne JS Date s timezone posunem) ──
+const { types } = require('pg');
+types.setTypeParser(1082, val => val); // OID 1082 = DATE
+
 // ── PostgreSQL pool ──
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -123,6 +127,23 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_orders_datum    ON orders(datum);
     CREATE INDEX IF NOT EXISTS idx_orders_status   ON orders(status);
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS reject_reason TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS lokalita TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;
+
+    -- Migrace: rozšíření CHECK constraintu statusů (pre_approved, pre_rejected)
+    DO $$
+    BEGIN
+      BEGIN
+        ALTER TABLE orders DROP CONSTRAINT orders_status_check;
+      EXCEPTION WHEN undefined_object THEN NULL;
+      END;
+      BEGIN
+        ALTER TABLE orders ADD CONSTRAINT orders_status_check
+          CHECK (status IN ('pending','pre_approved','pre_rejected','approved','rejected'));
+      EXCEPTION WHEN duplicate_object THEN NULL;
+      END;
+    END $$;
   `);
 
 
@@ -967,27 +988,16 @@ app.get('/api/orders', requireAuth, async (req, res) => {
     const lastDay = new Date(year, mon, 0).getDate();
     const to   = `${year}-${String(mon).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
 
-    let r;
-    if (req.session.role === 'hmg_share') {
-      const uRes = await pool.query('SELECT firma FROM users WHERE id=$1', [req.session.userId]);
-      const firma = uRes.rows[0] ? uRes.rows[0].firma : null;
-      if (!firma) return res.json([]);
-      r = await pool.query(
-        `SELECT * FROM orders
-         WHERE datum >= $1 AND datum <= $2 AND firma=$3
-           AND status IN ('pending','approved')
-         ORDER BY datum, created_at`,
-        [from, to, firma]
-      );
-    } else {
-      r = await pool.query(
-        `SELECT * FROM orders
-         WHERE datum >= $1 AND datum <= $2
-           AND status IN ('pending','approved')
-         ORDER BY datum, firma, created_at`,
-        [from, to]
-      );
-    }
+    // Všechny role (hmg_share i admin) vidí objednávky VŠECH firem — plná transparentnost.
+    // Filtr podle firmy se záměrně NEpoužívá: uživatel vidí cizí objednávky (jen čtení),
+    // ale při POST /api/orders se firma bere z users.firma → nemůže objednat za cizí firmu.
+    const r = await pool.query(
+      `SELECT * FROM orders
+       WHERE datum >= $1 AND datum <= $2
+         AND status IN ('pending','pre_approved','pre_rejected','approved')
+       ORDER BY datum, firma, created_at`,
+      [from, to]
+    );
     res.json(r.rows);
   } catch (err) {
     console.error('GET /api/orders error:', err);
@@ -995,13 +1005,81 @@ app.get('/api/orders', requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/day-capacity?date=YYYY-MM-DD — rozpad obsazenosti dne (přístupné pro hmg_share i admina)
+// Vrátí: { harmonogram, orders:[{firma,tuny,status}], maxDaily, minDaily }
+app.get('/api/day-capacity', requireAuth, async (req, res) => {
+  try {
+    const { date } = req.query;
+    if (!isIsoDate(date)) return res.status(400).json({ error: 'Neplatné datum' });
+
+    // Harmonogram z week_data
+    const d = new Date(date + 'T00:00:00Z');
+    const dow = d.getUTCDay();
+    const daysFromMonday = (dow + 6) % 7;
+    const monday = new Date(d);
+    monday.setUTCDate(d.getUTCDate() - daysFromMonday);
+    const weekStart = monday.toISOString().slice(0, 10);
+    const di = daysFromMonday;
+
+    const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1', [weekStart]);
+    let harmonogram = 0;
+    if (wRes.rows[0]) {
+      const rows = JSON.parse(wRes.rows[0].rows_json);
+      harmonogram = rows.reduce((s, r) => s + (parseInt(r[`d${di}`]) || 0), 0);
+    }
+
+    // Všechny objednávky pro daný den (bez filtru firmy — plná transparentnost)
+    const oRes = await pool.query(
+      `SELECT firma, SUM(tuny)::int AS tuny, status
+       FROM orders
+       WHERE datum=$1 AND status IN ('pending','pre_approved','pre_rejected','approved')
+       GROUP BY firma, status
+       ORDER BY firma, status`,
+      [date]
+    );
+
+    // Denní limity
+    const sRes = await pool.query(
+      "SELECT key,value FROM settings WHERE key IN ('hmg_max_daily','hmg_min_daily')"
+    );
+    const limits = {};
+    sRes.rows.forEach(r => { limits[r.key] = parseInt(r.value); });
+
+    res.json({
+      date,
+      harmonogram,
+      orders: oRes.rows,   // [{firma, tuny, status}]
+      maxDaily: limits.hmg_max_daily || null,
+      minDaily: limits.hmg_min_daily || null
+    });
+  } catch (err) {
+    console.error('GET /api/day-capacity error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
 // POST /api/orders — jen pro hmg_share uživatele
+// Body: { lokalita, lat, lng, items: [{datum,smes,itt,tuny,komentar},...] }
 app.post('/api/orders', requireAuth, async (req, res) => {
   if (req.session.role !== 'hmg_share') {
     return res.status(403).json({ error: 'Pouze sdílení uživatelé (hmg_share) mohou podávat objednávky' });
   }
   try {
-    const { items } = req.body;
+    const { lokalita, lat, lng, items } = req.body;
+
+    // Validace group-level lokality
+    if (!lokalita || typeof lokalita !== 'string' || !lokalita.trim()) {
+      return res.status(400).json({ error: 'Chybí nebo prázdná lokalita' });
+    }
+    const groupLat = parseFloat(lat);
+    const groupLng = parseFloat(lng);
+    if (isNaN(groupLat) || groupLat < -90 || groupLat > 90) {
+      return res.status(400).json({ error: `Neplatná zeměpisná šířka (lat): ${lat}` });
+    }
+    if (isNaN(groupLng) || groupLng < -180 || groupLng > 180) {
+      return res.status(400).json({ error: `Neplatná zeměpisná délka (lng): ${lng}` });
+    }
+
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'items musí být neprázdné pole' });
     }
@@ -1022,9 +1100,6 @@ app.post('/api/orders', requireAuth, async (req, res) => {
       if (!item.smes || typeof item.smes !== 'string' || !item.smes.trim()) {
         return res.status(400).json({ error: 'Chybí nebo prázdná směs' });
       }
-      if (!item.itt || typeof item.itt !== 'string' || !item.itt.trim()) {
-        return res.status(400).json({ error: 'Chybí nebo prázdné ITT' });
-      }
       const tuny = parseInt(item.tuny);
       if (isNaN(tuny) || tuny <= 0 || tuny > 99999) {
         return res.status(400).json({ error: 'Tuny musí být kladné celé číslo (1–99999)' });
@@ -1040,7 +1115,7 @@ app.post('/api/orders', requireAuth, async (req, res) => {
     const maxDaily = limits.hmg_max_daily || null;
     const minDaily = limits.hmg_min_daily || null;
 
-    // Kapacitní kontrola per den
+    // Kapacitní kontrola per den (server-side bezpečnost)
     const datumSet = [...new Set(items.map(i => i.datum))];
     const warnings = [];
     const errors   = [];
@@ -1050,16 +1125,14 @@ app.post('/api/orders', requireAuth, async (req, res) => {
         .filter(i => i.datum === datum)
         .reduce((s, i) => s + parseInt(i.tuny), 0);
 
-      // Výpočet pondělí a indexu dne
       const d = new Date(datum + 'T00:00:00Z');
-      const dow = d.getUTCDay(); // 0=Ne,1=Po,...,6=So
-      const daysFromMonday = (dow + 6) % 7; // 0=Po,...,6=Ne
+      const dow = d.getUTCDay();
+      const daysFromMonday = (dow + 6) % 7;
       const monday = new Date(d);
       monday.setUTCDate(d.getUTCDate() - daysFromMonday);
       const weekStart = monday.toISOString().slice(0, 10);
       const di = daysFromMonday;
 
-      // Tuny z týdenního harmonogramu
       const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1', [weekStart]);
       let weekTuny = 0;
       if (wRes.rows[0]) {
@@ -1067,14 +1140,14 @@ app.post('/api/orders', requireAuth, async (req, res) => {
         weekTuny = rows.reduce((s, r) => s + (parseInt(r[`d${di}`]) || 0), 0);
       }
 
-      // Čekající + schválené objednávky pro tento den (rejected se nezapočítávají)
       const pRes = await pool.query(
-        "SELECT COALESCE(SUM(tuny),0) AS total FROM orders WHERE datum=$1 AND status IN ('pending','approved')",
+        `SELECT COALESCE(SUM(tuny),0) AS total FROM orders
+         WHERE datum=$1 AND status IN ('pending','pre_approved','pre_rejected','approved')`,
         [datum]
       );
-      const pendingTuny = parseInt(pRes.rows[0].total) || 0;
+      const existingTuny = parseInt(pRes.rows[0].total) || 0;
 
-      const totalWithNew = weekTuny + pendingTuny + dayNewTuny;
+      const totalWithNew = weekTuny + existingTuny + dayNewTuny;
 
       if (maxDaily && totalWithNew > maxDaily) {
         errors.push(`${datum}: kapacita překročena (${totalWithNew} t > max ${maxDaily} t)`);
@@ -1089,27 +1162,31 @@ app.post('/api/orders', requireAuth, async (req, res) => {
 
     // Uložení celé skupiny v transakci
     const groupId = crypto.randomUUID();
+    const lokSafe = sanitizeStr(lokalita.trim(), 200);
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       for (const item of items) {
         await client.query(
-          `INSERT INTO orders (order_group_id, user_id, firma, datum, smes, itt, tuny, komentar)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          `INSERT INTO orders (order_group_id, user_id, firma, datum, smes, itt, tuny, komentar, lokalita, lat, lng)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
           [
             groupId,
             req.session.userId,
             firma,
             item.datum,
             sanitizeStr(item.smes, 200),
-            sanitizeStr(item.itt, 50),
+            item.itt ? sanitizeStr(item.itt, 50) : '',
             parseInt(item.tuny),
-            item.komentar ? sanitizeStr(item.komentar, 500) : null
+            item.komentar ? sanitizeStr(item.komentar, 500) : null,
+            lokSafe,
+            groupLat,
+            groupLng
           ]
         );
       }
       await client.query('COMMIT');
-      console.log(`Nová objednávka ${groupId} od ${firma} (${items.length} položek)`);
+      console.log(`Nová objednávka ${groupId} od ${firma} — lokalita: ${lokSafe} (${items.length} řádků)`);
       res.json({ ok: true, groupId, warnings });
     } catch (err) {
       await client.query('ROLLBACK');
@@ -1213,6 +1290,58 @@ app.patch('/api/orders/:groupId/approve', requireAuth, requireAdmin, async (req,
     );
     if (r.rowCount === 0) return res.status(404).json({ error: 'Skupina nenalezena nebo již vyřešena' });
     console.log(`Objednávka ${groupId} schválena adminem ${req.session.username} (exceedsMax:${exceedsMax})`);
+
+    // Propagace schválené objednávky do week_data harmonogramu
+    try {
+      const itemsRes = await pool.query(
+        `SELECT datum, smes, itt, tuny, lokalita, lat, lng, firma
+         FROM orders WHERE order_group_id=$1`,
+        [groupId]
+      );
+      const byWeek = {};
+      for (const item of itemsRes.rows) {
+        const datum = item.datum instanceof Date
+          ? item.datum.toISOString().slice(0, 10)
+          : String(item.datum).slice(0, 10);
+        const d = new Date(datum + 'T00:00:00Z');
+        const dow = d.getUTCDay();
+        const daysFromMonday = (dow + 6) % 7;
+        const monday = new Date(d);
+        monday.setUTCDate(d.getUTCDate() - daysFromMonday);
+        const weekStart = monday.toISOString().slice(0, 10);
+        const di = daysFromMonday;
+        if (!byWeek[weekStart]) byWeek[weekStart] = [];
+        byWeek[weekStart].push({ ...item, datum, di });
+      }
+      for (const [weekStart, weekItems] of Object.entries(byWeek)) {
+        const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1', [weekStart]);
+        const rows = wRes.rows[0] ? JSON.parse(wRes.rows[0].rows_json) : [];
+        for (const item of weekItems) {
+          const newRow = {
+            checked: false, cislo: '',
+            lokalita: item.lokalita || '',
+            objednavka: item.firma || '',
+            smes: item.smes || '',
+            itt: item.itt || '',
+            ceta: item.firma || '',
+            lat: item.lat != null ? parseFloat(item.lat) : null,
+            lng: item.lng != null ? parseFloat(item.lng) : null,
+            d0: 0, d1: 0, d2: 0, d3: 0, d4: 0, d5: 0, d6: 0
+          };
+          newRow[`d${item.di}`] = parseInt(item.tuny) || 0;
+          rows.push(newRow);
+        }
+        await pool.query(
+          `INSERT INTO week_data (week_start, rows_json, updated_at) VALUES($1, $2, NOW())
+           ON CONFLICT(week_start) DO UPDATE SET rows_json=EXCLUDED.rows_json, updated_at=NOW()`,
+          [weekStart, JSON.stringify(rows)]
+        );
+      }
+      console.log(`Objednávka ${groupId} propsána do ${Object.keys(byWeek).length} týdnů v harmonogramu`);
+    } catch (propErr) {
+      console.error(`Chyba při propsání objednávky ${groupId} do harmonogramu:`, propErr.message);
+    }
+
     res.json({ ok: true, updated: r.rowCount, exceedsMax });
   } catch (err) {
     console.error('PATCH approve error:', err);

@@ -609,13 +609,20 @@ function renderOrderGroupCard(group) {
   const totalTuny = group.items.reduce((s, i) => s + (parseInt(i.tuny) || 0), 0);
   const datumSet = [...new Set(group.items.map(i => String(i.datum).slice(0, 10)))].sort();
   const datumsStr = datumSet.map(formatDatum).join(', ');
-  const itemRows = group.items.map(item => `<tr>
+  const itemRows = group.items.map(item => {
+    const gps = (item.lat != null && item.lng != null)
+      ? `<span style="font-family:monospace;font-size:10px;color:#0f766e">${parseFloat(item.lat).toFixed(4)}, ${parseFloat(item.lng).toFixed(4)}</span>`
+      : '<span style="color:#fbbf24;font-size:10px">—</span>';
+    return `<tr>
     <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;color:#6b7280;white-space:nowrap">${formatDatum(item.datum)}</td>
     <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;font-size:12px">${esc(item.smes)}</td>
     <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;font-family:monospace;font-size:11px;color:#6b7280">${esc(item.itt)}</td>
+    <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;font-size:12px;color:#374151">${esc(item.lokalita || '')}</td>
+    <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;white-space:nowrap">${gps}</td>
     <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;text-align:right;font-weight:600;white-space:nowrap">${item.tuny} t</td>
     <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;color:#9ca3af;font-size:11px">${esc(item.komentar || '')}</td>
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
   return `<div id="ogrp-${gid}" style="border:0.5px solid #e5e7eb;border-radius:8px;margin-bottom:12px;overflow:hidden">
     <div style="background:#f9fafb;padding:12px 14px;border-bottom:0.5px solid #e5e7eb;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <div style="flex:1;min-width:0">
@@ -634,6 +641,8 @@ function renderOrderGroupCard(group) {
           <th style="text-align:left;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap">Datum</th>
           <th style="text-align:left;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px">Směs</th>
           <th style="text-align:left;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px">ITT</th>
+          <th style="text-align:left;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px">Lokalita</th>
+          <th style="text-align:left;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap">GPS</th>
           <th style="text-align:right;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px">Tuny</th>
           <th style="text-align:left;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px">Komentář</th>
         </tr></thead>

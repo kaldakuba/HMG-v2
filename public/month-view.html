@@ -6,6 +6,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HARMONOGRAM VÝROBY – Přehled</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<!-- Leaflet – interaktivní mapa s přetahovatelným praporkem -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;-webkit-font-smoothing:antialiased;font-size:110%}
@@ -20,7 +23,7 @@ body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111
 .ro-badge{display:inline-flex;align-items:center;gap:5px;background:#fee2e2;color:#991b1b;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700}
 .wrap{padding:10px 12px}
 .card{background:#fff;border:1px solid #a0aabb;border-radius:8px;overflow:hidden}
-.month-toolbar{display:flex;align-items:center;padding:10px 12px;border-bottom:1px solid #a0aabb;background:#fff}
+.month-toolbar{display:flex;align-items:center;padding:10px 12px;border-bottom:1px solid #a0aabb;background:#fff;gap:10px}
 .month-toolbar .right{margin-left:auto;display:flex;gap:8px;align-items:center}
 input[type=month]{height:34px;border:1px solid #a0aabb;border-radius:6px;padding:2px 10px;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;color:#374151;background:#f8fafc;cursor:pointer}
 input[type=month]:focus{outline:2px solid #3b82f6;border-color:#3b82f6}
@@ -43,16 +46,21 @@ th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151;letter-spacin
 .note{text-align:center;font-size:11px;color:#6b7280;padding:6px 12px;border-top:1px solid #a0aabb;background:#f8fafc}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#f1f5f9}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 .over-limit{background:#fee2e2!important;color:#991b1b!important;font-weight:800!important}
-/* Sticky sloupce lokalita + smes */
 .sticky-lok{position:sticky;left:0;z-index:3}
 .sticky-smes{position:sticky;left:150px;z-index:3}
 th.sticky-lok,th.sticky-smes{z-index:6!important}
-/* Hover crosshair – zvýrazní celý řádek i celý sloupec vč. sticky buněk */
 tr.row-hover td,td.col-hover{background:#fefce8!important}
 @media(max-width:900px){.topbar{display:flex;flex-direction:column;align-items:stretch;padding:10px;min-height:auto}.topbar h1{text-align:left;font-size:16px}.actions{justify-content:flex-start}.wrap{padding:6px}}
 /* Popup overlay */
 #orderPopupOverlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center;padding:16px}
 #orderPopupOverlay::-webkit-scrollbar{width:0}
+#ppMapOverlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:2000;align-items:center;justify-content:center;padding:16px}
+/* Tlačítko Nová objednávka */
+#btnNewOrder{background:#16a34a;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;transition:filter .15s}
+#btnNewOrder:hover{filter:brightness(1.1)}
+/* Leaflet mapa v popup */
+#ppLeafletMap{height:300px;width:100%;z-index:1}
+.leaflet-container{font-family:'Inter',sans-serif!important}
 </style>
 </head>
 <body>
@@ -71,7 +79,8 @@ tr.row-hover td,td.col-hover{background:#fefce8!important}
 </header>
 <main class="wrap"><section class="card">
   <div class="month-toolbar">
-    <div class="right" style="margin-left:auto">
+    <button id="btnNewOrder" onclick="openOrderPopup()" style="display:none">+ Nová objednávka</button>
+    <div class="right">
       <input id="monthPick" type="month" onchange="onMonthChange()">
     </div>
   </div>
@@ -93,9 +102,32 @@ tr.row-hover td,td.col-hover{background:#fefce8!important}
 let _maxDaily = 1500, _minDaily = 0, _accessOk = false;
 let _meRole = '', _meFirma = '', _meUsername = '';
 let _receptury = [], _orders = [], _entries = {};
-let _popupDate = '', _orderRowCount = 0;
+let _orderRowCount = 0;
+let _mapyCzKey = '', _mapTempCoords = null;
+let _dayCapCache = {}; // datum → {harmonogram, orders, maxDaily, minDaily}
+// Nová objednávka – sdílená lokalita
+let _ppLat = null, _ppLng = null;
+// Leaflet mapa
+let _ppLeafletMap = null, _ppLeafletMarker = null;
 
 const _urlToken = new URLSearchParams(location.search).get('t') || localStorage.getItem('hmg_view_token') || '';
+
+// Barvy skupin objednávek – cyklické přiřazení podle order_group_id
+const ORDER_GROUP_COLORS = [
+  {bg:'#ede9fe',dot:'#7c3aed'},{bg:'#fce7f3',dot:'#be185d'},{bg:'#d1fae5',dot:'#047857'},
+  {bg:'#fff7ed',dot:'#c2410c'},{bg:'#eff6ff',dot:'#1d4ed8'},{bg:'#ecfdf5',dot:'#065f46'},
+  {bg:'#fef9c3',dot:'#a16207'},{bg:'#f3e8ff',dot:'#6d28d9'},{bg:'#cffafe',dot:'#0e7490'}
+];
+const _groupColorMap = {};
+let _groupColorIdx = 0;
+
+function getGroupColor(groupId) {
+  if (!_groupColorMap[groupId]) {
+    _groupColorMap[groupId] = ORDER_GROUP_COLORS[_groupColorIdx % ORDER_GROUP_COLORS.length];
+    _groupColorIdx++;
+  }
+  return _groupColorMap[groupId];
+}
 
 // ── SETTINGS ──
 async function loadSettings() {
@@ -120,6 +152,11 @@ async function checkAccess() {
       if (me.role === 'hmg_share') {
         const badge = document.querySelector('.ro-badge');
         if (badge) { badge.style.background='#ede9fe'; badge.style.color='#5b21b6'; badge.innerHTML='🏢 ' + esc(_meFirma || 'firma'); }
+        // Zobraz tlačítko jen pro hmg_share s přiřazenou firmou
+        if (_meFirma) {
+          const btnNew = document.getElementById('btnNewOrder');
+          if (btnNew) btnNew.style.display = 'inline-block';
+        }
       }
       return true;
     }
@@ -148,6 +185,13 @@ async function loadReceptury() {
   try {
     const r = await fetch('/api/inputs');
     if (r.ok) { const d = await r.json(); _receptury = Array.isArray(d) ? d : []; }
+  } catch(e) {}
+}
+
+async function loadMapyCzKey() {
+  try {
+    const cfg = await fetch('/api/config').then(r => r.json());
+    _mapyCzKey = cfg.mapyCzKey || '';
   } catch(e) {}
 }
 
@@ -186,6 +230,15 @@ function loadCompanies(){
 function companyColor(name){const c=loadCompanies().find(x=>x.name===name);return c?c.color:''}
 function daySum(entries,id){return(entries[id]||[]).reduce((s,e)=>s+n(e.tuny),0)}
 
+// Součet dne ze harmonogramu + objednávky
+function dayTotalWithOrders(entries, orders, dateId) {
+  const wk = daySum(entries, dateId);
+  const ord = (orders||[])
+    .filter(o=>(o.datum||'').slice(0,10)===dateId && ['pending','pre_approved','pre_rejected','approved'].includes(o.status))
+    .reduce((s,o)=>s+(o.tuny||0),0);
+  return wk + ord;
+}
+
 const FIRMA_ORDER={'Colas':0,'Firesta':1,'Mi Roads':2};
 function rowsForMonth(y,m,entries){
   const map={};
@@ -210,7 +263,7 @@ function rowsForMonth(y,m,entries){
   return result;
 }
 
-// Skupiny objednávek → řádky tabulky
+// Skupiny objednávek → řádky tabulky (s barvami skupin)
 function buildOrderRows(y,m,orders){
   const map={};
   (orders||[]).forEach(o=>{
@@ -219,13 +272,24 @@ function buildOrderRows(y,m,orders){
     const dt=new Date(datum+'T00:00:00Z');
     if(dt.getUTCFullYear()!==y||dt.getUTCMonth()!==m)return;
     const key=o.order_group_id+'||'+o.smes+'||'+o.itt;
-    if(!map[key])map[key]={firma:o.firma,smes:o.smes,itt:o.itt,status:o.status,days:{}};
+    if(!map[key]){
+      map[key]={
+        firma:o.firma, smes:o.smes, itt:o.itt,
+        status:o.status, groupId:o.order_group_id,
+        lokalita:o.lokalita||'', days:{}
+      };
+    }
     const d=dt.getUTCDate();
     map[key].days[d]=(map[key].days[d]||0)+(o.tuny||0);
+    // Nejmíň příznivý status pro skupinu
+    const so={'pending':0,'pre_approved':1,'pre_rejected':2,'approved':3};
+    if((so[o.status]||0)<(so[map[key].status]||3)) map[key].status=o.status;
   });
   const result=Object.values(map);
+  const so={'pending':0,'pre_approved':1,'pre_rejected':2,'approved':3};
   result.sort((a,b)=>{
-    if(a.status!==b.status)return a.status==='pending'?-1:1;
+    const diff=(so[a.status]||0)-(so[b.status]||0);
+    if(diff!==0)return diff;
     return (a.firma||'').localeCompare(b.firma||'','cs');
   });
   return result;
@@ -273,10 +337,9 @@ async function renderMonth(){
     });
   }catch(e){console.error('Chyba načítání dat:',e);}
 
-  _entries=entries; // pro popup
+  _entries=entries;
   const rows=rowsForMonth(y,m,entries);
   const orderRows=buildOrderRows(y,m,_orders);
-  const canOrder=_meRole==='hmg_share'&&!!_meFirma;
 
   if(isPastMonth||visibleDays.length===0){
     tableWrap.innerHTML='<div style="padding:40px;text-align:center;color:#6b7280;font-size:14px">Pro tento měsíc nejsou k dispozici žádná budoucí data.</div>';
@@ -284,24 +347,20 @@ async function renderMonth(){
   }
 
   let h='<table id="monthTable"><thead>';
-  // Řádek součtů
+  // Řádek součtů (harmonogram + objednávky)
   h+='<tr class="sticky-head"><th class="left-head col-lok sticky-lok"></th><th class="left-head col-obj"></th><th class="left-head col-smes sticky-smes"></th><th class="left-head col-itt"></th><th class="left-head col-ceta">Součet t/den:</th>';
   visibleDays.forEach(d=>{
-    const _ds=daySum(entries,iso(y,m,d));
-    const _over=(_ds>0&&_ds>=_maxDaily)||(_ds>0&&_minDaily>0&&_ds<_minDaily);
+    const dateId=iso(y,m,d);
+    const _ds=dayTotalWithOrders(entries,_orders,dateId);
+    const _over=(_maxDaily&&_ds>=_maxDaily)||(_minDaily>0&&_ds>0&&_ds<_minDaily);
     h+='<th class="sum-head day'+(_over?' over-limit':'')+'">'+_ds+'</th>';
   });
   h+='</tr>';
-  // Řádek datumů
+  // Řádek datumů – bez onclick pro objednávky (objednávka jen přes tlačítko)
   h+='<tr class="sticky-head-2"><th class="col-lok sticky-lok">lokalita</th><th class="col-obj">objednávka</th><th class="col-smes sticky-smes">Směs a průkazná zk. typu</th><th class="col-itt">ITT</th><th class="col-ceta">četa</th>';
   visibleDays.forEach(d=>{
     const cls=dayClass(y,m,d);
-    const ds=iso(y,m,d);
-    if(canOrder){
-      h+='<th class="day '+cls+'" onclick="openOrderPopup(\''+ds+'\')" style="font-size:11px;cursor:pointer;user-select:none" title="Klikněte pro zadání objednávky">'+d+'.'+(m+1)+'.'+(cls==='today-col'?' ▲':'')+'<br><span style="font-size:9px;color:#818cf8;display:block;line-height:1.3">+ obj.</span></th>';
-    } else {
-      h+='<th class="day '+cls+'" style="font-size:11px">'+d+'.'+(m+1)+'.'+(cls==='today-col'?' ▲':'')+'</th>';
-    }
+    h+='<th class="day '+cls+'" style="font-size:11px">'+d+'.'+(m+1)+'.'+(cls==='today-col'?' ▲':'')+'</th>';
   });
   h+='</tr></thead><tbody>';
 
@@ -312,7 +371,7 @@ async function renderMonth(){
       h+='</tr>';
     }
   } else {
-    // Standardní řádky HMG
+    // Standardní řádky HMG harmonogramu
     rows.forEach((r,idx)=>{
       const color=companyColor(r.ceta);
       h+='<tr class="'+(idx%4===0?'group-top':'')+'" style="'+(color?'background:'+color:'')+'">';
@@ -323,23 +382,35 @@ async function renderMonth(){
       visibleDays.forEach(d=>h+='<td class="'+dayClass(y,m,d)+'">'+(r.days[d]||'')+'</td>');
       h+='</tr>';
     });
-    // Řádky objednávek (pending = přerušovaný rámeček, approved = zelené)
+
+    // Řádky objednávek (barevné podle skupiny)
     orderRows.forEach(r=>{
-      const isPending=r.status==='pending';
-      const bg=isPending?'#fffbeb':'#f0fdf4';
-      const fc=isPending?'#92400e':'#065f46';
-      const badge=isPending
-        ?'<span style="font-size:9px;background:#fef9c3;color:#d97706;border:1px solid #fde68a;border-radius:3px;padding:1px 5px;font-weight:700">ČEKÁ</span>'
-        :'<span style="font-size:9px;background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;border-radius:3px;padding:1px 5px;font-weight:700">OK</span>';
+      const isWaiting=['pending','pre_approved','pre_rejected'].includes(r.status);
+      const gc=getGroupColor(r.groupId);
+      const bg=isWaiting?'#fffbeb':'#f0fdf4';
+      const fc=isWaiting?'#92400e':'#065f46';
+      const dot='<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+gc.dot+';margin-right:4px;vertical-align:middle;flex-shrink:0"></span>';
+
+      let badge;
+      if(r.status==='pending'){
+        badge='<span style="font-size:9px;background:#fef9c3;color:#d97706;border:1px solid #fde68a;border-radius:3px;padding:1px 5px;font-weight:700">ČEKÁ</span>';
+      } else if(r.status==='pre_approved'){
+        badge='<span style="font-size:9px;background:#dcfce7;color:#15803d;border:1px dashed #6ee7b7;border-radius:3px;padding:1px 5px;font-weight:700">PRE OK</span>';
+      } else if(r.status==='pre_rejected'){
+        badge='<span style="font-size:9px;background:#fee2e2;color:#dc2626;border:1px dashed #fca5a5;border-radius:3px;padding:1px 5px;font-weight:700">PRE ZAMÍT.</span>';
+      } else {
+        badge='<span style="font-size:9px;background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;border-radius:3px;padding:1px 5px;font-weight:700">OK</span>';
+      }
+
       h+='<tr>';
-      h+='<td class="sticky-lok" style="background:'+bg+';font-size:11px;font-weight:600;color:'+fc+'">'+esc(r.firma)+'</td>';
+      h+='<td class="sticky-lok" style="background:'+bg+';font-size:11px;font-weight:600;color:'+fc+';border-left:3px solid '+gc.dot+'">'+dot+esc(r.firma)+'</td>';
       h+='<td style="background:'+bg+';text-align:center">'+badge+'</td>';
       h+='<td class="sticky-smes" style="background:'+bg+';text-align:left;padding-left:6px;font-size:12px">'+esc(r.smes)+'</td>';
       h+='<td style="background:'+bg+';font-size:11px">'+esc(r.itt)+'</td>';
       h+='<td style="background:'+bg+';font-size:11px">'+esc(r.firma)+'</td>';
       visibleDays.forEach(d=>{
         const tuny=r.days[d]||'';
-        if(tuny&&isPending){
+        if(tuny&&isWaiting){
           h+='<td style="border:2px dashed #f59e0b;background:#fffbeb;font-weight:700;color:#d97706">'+tuny+'</td>';
         } else if(tuny){
           h+='<td style="background:#dcfce7;font-weight:700;color:#15803d">'+tuny+'</td>';
@@ -389,7 +460,6 @@ function onMonthChange(){
   if(val<defaultMonth()){monthPick.value=defaultMonth();}
   loadOrders().then(()=>renderMonth());
 }
-function getToken(){return new URLSearchParams(location.search).get('t')||'';}
 function shiftMonth(delta){
   const val=monthPick.value||defaultMonth();
   const[y,m]=val.split('-').map(Number);
@@ -405,187 +475,596 @@ function shiftMonth(delta){
 function thisMonth(){monthPick.value=defaultMonth();loadOrders().then(()=>renderMonth());}
 function setMonthMin(){document.getElementById('monthPick').min=defaultMonth();}
 
-// ── POPUP — OBJEDNÁVKY ───────────────────────────────────────────────────────
+// ── MAPOVÉ FUNKCE (Leaflet – přetahovatelný praporek) ────────────────────────
 
-function openOrderPopup(dateStr){
-  if(_meRole!=='hmg_share')return;
-  if(!_meFirma){alert('Váš účet nemá přiřazenu firmu. Kontaktujte admina.');return;}
-  _popupDate=dateStr;
-  const d=new Date(dateStr+'T00:00:00Z');
-  const dNames=['Neděle','Pondělí','Úterý','Středa','Čtvrtek','Pátek','Sobota'];
-  document.getElementById('ppDateLabel').textContent=dNames[d.getUTCDay()]+' '+d.getUTCDate()+'.'+(d.getUTCMonth()+1)+'.'+d.getUTCFullYear();
-  document.getElementById('ppUserLabel').innerHTML=esc(_meUsername)+'<br><span style="color:#818cf8;font-size:11px">'+esc(_meFirma)+'</span>';
-  document.getElementById('ppFirmaLabel').textContent=_meFirma;
-  document.getElementById('ppMaxLabel').textContent=_maxDaily?_maxDaily+' t':'— t';
-  populatePopupState(dateStr);
-  _orderRowCount=0;
-  document.getElementById('ppOrderRows').innerHTML='';
-  addOrderRow();
-  updateOrderSum();
-  const warn=document.getElementById('ppWarning');
-  warn.style.display='none';warn.style.background='#fee2e2';warn.style.color='#991b1b';
-  const btn=document.getElementById('ppSubmitBtn');
-  btn.disabled=false;btn.style.opacity='1';btn.textContent='Odeslat požadavek';
-  document.getElementById('orderPopupOverlay').style.display='flex';
-  document.body.style.overflow='hidden';
-}
-
-function closeOrderPopup(){
-  document.getElementById('orderPopupOverlay').style.display='none';
-  document.body.style.overflow='';
-}
-
-function populatePopupState(dateStr){
-  const dayOrders=_orders.filter(o=>(o.datum||'').slice(0,10)===dateStr);
-  const appTuny=dayOrders.filter(o=>o.status==='approved').reduce((s,o)=>s+(o.tuny||0),0);
-  const penTuny=dayOrders.filter(o=>o.status==='pending').reduce((s,o)=>s+(o.tuny||0),0);
-  const wkTuny=daySum(_entries,dateStr);
-  const totalEx=wkTuny+appTuny+penTuny;
-  const rem=_maxDaily?Math.max(0,_maxDaily-totalEx):null;
-
-  document.getElementById('ppStatApproved').textContent=appTuny+' t';
-  document.getElementById('ppStatPending').textContent=penTuny+' t';
-  const remCard=document.getElementById('ppStatRemCard'),remVal=document.getElementById('ppStatRem');
-  remVal.textContent=rem!==null?rem+' t':'— t';
-  if(rem!==null&&rem<=0){remCard.style.background='#fee2e2';remCard.style.borderColor='#fca5a5';remVal.style.color='#dc2626';}
-  else{remCard.style.background='#eff6ff';remCard.style.borderColor='#bfdbfe';remVal.style.color='#1d4ed8';}
-
-  const el=document.getElementById('ppExistingTable');
-  if(!dayOrders.length){
-    el.innerHTML='<div style="text-align:center;color:#9ca3af;font-size:12px;padding:8px 0">Žádné objednávky na tento den.</div>';
-  } else {
-    let t='<table style="width:100%;border-collapse:collapse;font-size:12px">';
-    t+='<thead><tr style="background:#f9fafb"><th style="padding:5px 8px;text-align:left;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Firma</th><th style="padding:5px 8px;text-align:left;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Směs</th><th style="padding:5px 8px;text-align:right;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Tuny</th><th style="padding:5px 8px;text-align:center;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Status</th></tr></thead><tbody>';
-    dayOrders.forEach(o=>{
-      const badge=o.status==='approved'
-        ?'<span style="background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600">✓ schváleno</span>'
-        :'<span style="background:#fef9c3;color:#d97706;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600">⏳ čeká</span>';
-      t+='<tr style="border-bottom:1px solid #f3f4f6"><td style="padding:5px 8px">'+esc(o.firma)+'</td><td style="padding:5px 8px">'+esc(o.smes)+'</td><td style="padding:5px 8px;text-align:right;font-weight:600">'+o.tuny+' t</td><td style="padding:5px 8px;text-align:center">'+badge+'</td></tr>';
-    });
-    t+='</tbody></table>';
-    el.innerHTML=t;
+async function ppGeocodeAddress(query) {
+  if (!query) return null;
+  // Zkus Mapy.cz pokud máme klíč, jinak Nominatim (OSM, bez klíče)
+  if (_mapyCzKey) {
+    try {
+      const url = 'https://api.mapy.cz/v1/geocode?query=' + encodeURIComponent(query)
+        + '&apikey=' + encodeURIComponent(_mapyCzKey) + '&lang=cs&limit=1';
+      const r = await fetch(url);
+      const d = await r.json();
+      if (d.items && d.items.length > 0) {
+        const p = d.items[0].position;
+        return { lat: p.lat, lng: p.lon };
+      }
+    } catch(e) {}
   }
-}
-
-function addOrderRow(){
-  const idx=_orderRowCount++;
-  const smesOpts=_receptury.length
-    ?_receptury.map(r=>'<option value="'+esc(r.smes)+'" data-itt="'+esc(r.zt||'')+'">'+esc((r.cislo?r.cislo+' — ':'')+r.smes)+'</option>').join('')
-    :'';
-  const div=document.createElement('div');
-  div.id='ppRow'+idx;
-  div.style.cssText='display:grid;grid-template-columns:1.5fr 86px 66px 1fr 30px;gap:5px;align-items:center;margin-bottom:5px';
-  div.innerHTML=
-    '<select id="ppSmes'+idx+'" onchange="onSmesChange('+idx+')" style="height:34px;border:1px solid #d1d5db;border-radius:6px;padding:0 6px;font-size:12px;font-family:Inter,sans-serif;width:100%;min-width:0">'+
-      '<option value="">— směs —</option>'+smesOpts+
-    '</select>'+
-    '<input id="ppItt'+idx+'" type="text" placeholder="ITT" readonly style="height:34px;border:1px solid #e5e7eb;border-radius:6px;padding:0 6px;font-size:11px;background:#f9fafb;color:#6b7280;font-family:Inter,sans-serif;width:100%">'+
-    '<input id="ppTuny'+idx+'" type="number" min="1" max="99999" placeholder="t" oninput="updateOrderSum()" style="height:34px;border:1px solid #d1d5db;border-radius:6px;padding:0 6px;font-size:13px;font-weight:600;font-family:Inter,sans-serif;width:100%;text-align:center">'+
-    '<input id="ppKom'+idx+'" type="text" placeholder="komentář…" style="height:34px;border:1px solid #d1d5db;border-radius:6px;padding:0 8px;font-size:12px;font-family:Inter,sans-serif;width:100%;min-width:0">'+
-    '<button onclick="removeOrderRow('+idx+')" title="Odebrat" style="height:30px;width:30px;background:none;border:1px solid #fca5a5;border-radius:6px;cursor:pointer;color:#dc2626;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0">🗑</button>';
-  document.getElementById('ppOrderRows').appendChild(div);
-}
-
-function removeOrderRow(idx){
-  const el=document.getElementById('ppRow'+idx);
-  if(el)el.remove();
-  updateOrderSum();
-}
-
-function onSmesChange(idx){
-  const sel=document.getElementById('ppSmes'+idx);
-  if(!sel)return;
-  const opt=sel.options[sel.selectedIndex];
-  const ittInput=document.getElementById('ppItt'+idx);
-  if(ittInput)ittInput.value=opt?(opt.getAttribute('data-itt')||''):'';
-  updateOrderSum();
-}
-
-function updateOrderSum(){
-  const rows=document.querySelectorAll('#ppOrderRows > div');
-  let mySum=0;
-  rows.forEach(row=>{
-    const idx=row.id.replace('ppRow','');
-    mySum+=parseInt(document.getElementById('ppTuny'+idx)?.value||'0')||0;
-  });
-  const dayOrd=_orders.filter(o=>(o.datum||'').slice(0,10)===_popupDate);
-  const existTuny=daySum(_entries,_popupDate)+dayOrd.reduce((s,o)=>s+(o.tuny||0),0);
-  const dayTotal=existTuny+mySum;
-  document.getElementById('ppMySum').textContent=mySum+' t';
-  document.getElementById('ppDayTotal').textContent=dayTotal+' t';
-  const warn=document.getElementById('ppWarning'),btn=document.getElementById('ppSubmitBtn');
-  if(_maxDaily&&dayTotal>_maxDaily){
-    warn.innerHTML='⚠ Kapacita překročena! Den celkem <strong>'+dayTotal+' t</strong> &gt; max <strong>'+_maxDaily+' t</strong>';
-    warn.style.display='block';warn.style.background='#fee2e2';warn.style.color='#991b1b';
-    btn.disabled=true;btn.style.opacity='0.4';
-  } else if(_minDaily&&mySum>0&&dayTotal<_minDaily){
-    warn.innerHTML='ℹ Pod minimem: den celkem <strong>'+dayTotal+' t</strong> &lt; min <strong>'+_minDaily+' t</strong> — objednávka bude přijata';
-    warn.style.display='block';warn.style.background='#fefce8';warn.style.color='#92400e';
-    btn.disabled=false;btn.style.opacity='1';
-  } else {
-    warn.style.display='none';
-    btn.disabled=false;btn.style.opacity='1';
-  }
-}
-
-async function submitOrder(){
-  const rows=document.querySelectorAll('#ppOrderRows > div');
-  const items=[];let hasErr=false;
-  rows.forEach(row=>{
-    const idx=row.id.replace('ppRow','');
-    const smes=document.getElementById('ppSmes'+idx)?.value||'';
-    const itt=document.getElementById('ppItt'+idx)?.value||'';
-    const tuny=parseInt(document.getElementById('ppTuny'+idx)?.value||'0')||0;
-    const kom=document.getElementById('ppKom'+idx)?.value||'';
-    if(!smes||tuny<=0){hasErr=true;return;}
-    items.push({datum:_popupDate,smes,itt,tuny,komentar:kom||undefined});
-  });
-  const warn=document.getElementById('ppWarning');
-  if(hasErr||!items.length){
-    warn.innerHTML=hasErr?'Vyplňte směs a tuny u každého řádku (nebo odeberte prázdné).':'Přidejte alespoň jeden řádek se směsí a tunami.';
-    warn.style.display='block';warn.style.background='#fee2e2';warn.style.color='#991b1b';return;
-  }
-  const btn=document.getElementById('ppSubmitBtn');
-  btn.disabled=true;btn.textContent='⏳ Odesílám…';
-  try{
-    const r=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items})});
-    const data=await r.json();
-    if(data.ok){
-      closeOrderPopup();
-      await loadOrders();
-      await renderMonth();
-    } else {
-      warn.innerHTML=esc(data.error||'Chyba při odesílání objednávky.');
-      warn.style.display='block';warn.style.background='#fee2e2';warn.style.color='#991b1b';
-      btn.disabled=false;btn.textContent='Odeslat požadavek';
+  // Fallback: Nominatim (OSM)
+  try {
+    const url = 'https://nominatim.openstreetmap.org/search?q=' + encodeURIComponent(query)
+      + '&format=json&limit=1&accept-language=cs';
+    const r = await fetch(url, { headers: { 'User-Agent': 'HMG-app/1.0' } });
+    const d = await r.json();
+    if (d && d.length > 0) {
+      return { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) };
     }
-  }catch(e){
-    warn.innerHTML='Chyba spojení: '+esc(e.message);
-    warn.style.display='block';warn.style.background='#fee2e2';warn.style.color='#991b1b';
-    btn.disabled=false;btn.textContent='Odeslat požadavek';
+  } catch(e) {}
+  return null;
+}
+
+// Inicializuje nebo aktualizuje Leaflet mapu
+function ppInitOrUpdateLeafletMap(lat, lng) {
+  const mapDiv = document.getElementById('ppLeafletMap');
+  if (!mapDiv || typeof L === 'undefined') return;
+
+  if (!_ppLeafletMap) {
+    // První inicializace
+    _ppLeafletMap = L.map('ppLeafletMap', { zoomControl: true }).setView([lat, lng], 14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19
+    }).addTo(_ppLeafletMap);
+
+    // Přetahovatelný marker
+    _ppLeafletMarker = L.marker([lat, lng], { draggable: true }).addTo(_ppLeafletMap);
+
+    // Po přetažení markeru → aktualizuj souřadnice
+    _ppLeafletMarker.on('dragend', function() {
+      const pos = _ppLeafletMarker.getLatLng();
+      _mapTempCoords = { lat: pos.lat, lng: pos.lng };
+      ppUpdateMapInputs();
+    });
+
+    // Klik do mapy → přesune praporek na nové místo
+    _ppLeafletMap.on('click', function(e) {
+      _ppLeafletMarker.setLatLng(e.latlng);
+      _mapTempCoords = { lat: e.latlng.lat, lng: e.latlng.lng };
+      ppUpdateMapInputs();
+    });
+  } else {
+    // Aktualizace existující mapy
+    _ppLeafletMap.setView([lat, lng], 14);
+    _ppLeafletMarker.setLatLng([lat, lng]);
+  }
+
+  // Leaflet potřebuje přepočítat velikost po zobrazení
+  setTimeout(() => { if (_ppLeafletMap) _ppLeafletMap.invalidateSize(); }, 120);
+}
+
+function ppShowMapMsg(text, isError) {
+  const el = document.getElementById('ppMapStatusText');
+  if (!el) return;
+  if (text) {
+    el.textContent = text;
+    el.style.color = isError ? '#dc2626' : '#6b7280';
+  } else {
+    el.textContent = 'Klikněte do mapy nebo přetáhněte 📍 praporek pro upřesnění polohy.';
+    el.style.color = '#6b7280';
+  }
+}
+
+function ppShowMapImage(lat, lng) {
+  _mapTempCoords = { lat, lng };
+  ppInitOrUpdateLeafletMap(lat, lng);
+  ppUpdateMapInputs();
+  ppShowMapMsg('', false);
+}
+
+function ppShowMapPlaceholder() {
+  // Zobraz mapu nad ČR jako výchozí pohled (bez specifického markeru)
+  const lat = 49.8, lng = 15.5;
+  if (!_ppLeafletMap) {
+    ppInitOrUpdateLeafletMap(lat, lng);
+  } else {
+    setTimeout(() => { if (_ppLeafletMap) _ppLeafletMap.invalidateSize(); }, 120);
+  }
+  ppShowMapMsg('Zadejte lokalitu a klikněte Hledat, nebo klikněte do mapy.', false);
+}
+
+function ppUpdateMapInputs() {
+  const coordsInput = document.getElementById('ppMapCoords');
+  if (coordsInput && _mapTempCoords) {
+    coordsInput.value = _mapTempCoords.lat.toFixed(6) + ', ' + _mapTempCoords.lng.toFixed(6);
+  }
+}
+
+async function ppMapGeoSearch() {
+  const searchInput = document.getElementById('ppMapSearch');
+  const query = searchInput ? searchInput.value.trim() : '';
+  if (!query) return;
+  ppShowMapMsg('⏳ Hledám…', false);
+  const coords = await ppGeocodeAddress(query);
+  if (coords) {
+    ppShowMapImage(coords.lat, coords.lng);
+  } else {
+    ppShowMapMsg('Lokalita nenalezena. Zkuste jiný název nebo zadejte souřadnice ručně.', true);
+  }
+}
+
+function ppApplyManualCoords() {
+  const coordsInput = document.getElementById('ppMapCoords');
+  if (!coordsInput) return;
+  const val = coordsInput.value.trim();
+  const parts = val.split(',').map(s => parseFloat(s.trim()));
+  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) &&
+      parts[0] >= -90 && parts[0] <= 90 && parts[1] >= -180 && parts[1] <= 180) {
+    ppShowMapImage(parts[0], parts[1]);
+  } else {
+    ppShowMapMsg('Neplatný formát. Použijte "lat, lng" (např. 49.195, 16.608)', true);
+  }
+}
+
+// Live update: přesouvá marker při dopsání validních souřadnic (bez nutnosti kliknout ↺)
+function ppApplyManualCoordsLive() {
+  const coordsInput = document.getElementById('ppMapCoords');
+  if (!coordsInput) return;
+  const val = coordsInput.value.trim();
+  const parts = val.split(',').map(s => parseFloat(s.trim()));
+  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) &&
+      parts[0] >= -90 && parts[0] <= 90 && parts[1] >= -180 && parts[1] <= 180) {
+    _mapTempCoords = { lat: parts[0], lng: parts[1] };
+    if (_ppLeafletMap && _ppLeafletMarker) {
+      _ppLeafletMarker.setLatLng([parts[0], parts[1]]);
+      _ppLeafletMap.setView([parts[0], parts[1]], _ppLeafletMap.getZoom());
+    }
+    ppShowMapMsg('', false);
+  }
+}
+
+// Uložit souřadnice z mapy do hlavního popupu
+// Čte aktuální hodnotu VŽDY z input pole (jako admin v index.html), ne jen z _mapTempCoords
+function ppSaveGpsCoords() {
+  // 1) Přečti aktuální pozici z Leaflet markeru (nejpřesnější)
+  if (_ppLeafletMarker) {
+    const pos = _ppLeafletMarker.getLatLng();
+    if (pos && !isNaN(pos.lat) && !isNaN(pos.lng)) {
+      _mapTempCoords = { lat: pos.lat, lng: pos.lng };
+    }
+  }
+  // 2) Fallback: přečti z input pole (uživatel mohl ručně upravit)
+  if (!_mapTempCoords) {
+    const coordsInput = document.getElementById('ppMapCoords');
+    if (coordsInput && coordsInput.value.trim()) {
+      const parts = coordsInput.value.trim().split(',').map(s => parseFloat(s.trim()));
+      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        _mapTempCoords = { lat: parts[0], lng: parts[1] };
+      }
+    }
+  }
+  if (!_mapTempCoords) {
+    ppShowMapMsg('Nejprve vyberte polohu v mapě nebo zadejte souřadnice.', true);
+    return;
+  }
+  // 3) Ulož do globálních proměnných
+  _ppLat = _mapTempCoords.lat;
+  _ppLng = _mapTempCoords.lng;
+  // 4) Aktualizuj zobrazovací pole v hlavním popupu
+  const coordsDisp = document.getElementById('ppGlobalCoordsDisp');
+  if (coordsDisp) coordsDisp.value = _ppLat.toFixed(6) + ', ' + _ppLng.toFixed(6);
+  const gpsStatus = document.getElementById('ppGpsStatus');
+  if (gpsStatus) { gpsStatus.textContent = '✓ Nastaveno'; gpsStatus.style.color = '#15803d'; }
+  closeMapPopup();
+  updateOrderSum();
+}
+
+function closeMapPopup() {
+  const overlay = document.getElementById('ppMapOverlay');
+  if (overlay) overlay.style.display = 'none';
+  // Leaflet mapu NEdestruujeme – jen skryjeme overlay, map si pamatuje stav
+}
+
+// Otevřít mapový popup pro sdílenou lokalitu objednávky
+function openMapForLokalita() {
+  _mapTempCoords = (_ppLat !== null && _ppLng !== null) ? { lat: _ppLat, lng: _ppLng } : null;
+  const query = (document.getElementById('ppGlobalLokalita')?.value || '').trim();
+  const searchInput = document.getElementById('ppMapSearch');
+  if (searchInput) searchInput.value = query;
+  const overlay = document.getElementById('ppMapOverlay');
+  if (overlay) overlay.style.display = 'flex';
+
+  if (_mapTempCoords) {
+    ppShowMapImage(_mapTempCoords.lat, _mapTempCoords.lng);
+  } else if (query) {
+    ppShowMapPlaceholder(); // Zobraz mapu nejdřív, pak geokóduj
+    ppMapGeoSearch();
+  } else {
+    ppShowMapPlaceholder();
+  }
+}
+
+// Ruční zadání souřadnic do zobrazovacího pole hlavního popupu
+function onGlobalCoordsInput() {
+  const val = (document.getElementById('ppGlobalCoordsDisp')?.value || '').trim();
+  const parts = val.split(',').map(s => parseFloat(s.trim()));
+  const gpsStatus = document.getElementById('ppGpsStatus');
+  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) &&
+      parts[0] >= -90 && parts[0] <= 90 && parts[1] >= -180 && parts[1] <= 180) {
+    _ppLat = parts[0];
+    _ppLng = parts[1];
+    if (gpsStatus) { gpsStatus.textContent = '✓ ' + parts[0].toFixed(6) + ', ' + parts[1].toFixed(6); gpsStatus.style.color = '#15803d'; }
+  } else {
+    _ppLat = null;
+    _ppLng = null;
+    if (gpsStatus) { gpsStatus.textContent = val ? '✗ Neplatný formát' : ''; gpsStatus.style.color = '#dc2626'; }
+  }
+  updateOrderSum();
+}
+
+// ── POPUP — NOVÁ OBJEDNÁVKA ───────────────────────────────────────────────────
+
+function openOrderPopup() {
+  if (_meRole !== 'hmg_share') return;
+  if (!_meFirma) { alert('Váš účet nemá přiřazenu firmu. Kontaktujte admina.'); return; }
+
+  // Reset state
+  _ppLat = null;
+  _ppLng = null;
+  _orderRowCount = 0;
+  _mapTempCoords = null;
+  _dayCapCache = {}; // Vymaž cache kapacity — načteme aktuální data
+
+  // Reset formuláře
+  const lokEl = document.getElementById('ppGlobalLokalita');
+  if (lokEl) lokEl.value = '';
+  const coordsEl = document.getElementById('ppGlobalCoordsDisp');
+  if (coordsEl) coordsEl.value = '';
+  const gpsStatus = document.getElementById('ppGpsStatus');
+  if (gpsStatus) { gpsStatus.textContent = ''; }
+  document.getElementById('ppOrderRows').innerHTML = '';
+
+  // User label
+  document.getElementById('ppUserLabel').innerHTML =
+    esc(_meUsername) + '<br><span style="color:#818cf8;font-size:11px">' + esc(_meFirma) + '</span>';
+
+  // Zavři případně otevřenou mapu
+  const mapOv = document.getElementById('ppMapOverlay');
+  if (mapOv) mapOv.style.display = 'none';
+
+  // Přidej první řádek
+  addOrderRow();
+
+  // Reset varování
+  const warn = document.getElementById('ppWarning');
+  warn.style.display = 'none';
+  const btn = document.getElementById('ppSubmitBtn');
+  btn.disabled = false;
+  btn.style.opacity = '1';
+  btn.textContent = 'Odeslat požadavek';
+
+  updateOrderSum();
+
+  document.getElementById('orderPopupOverlay').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeOrderPopup() {
+  document.getElementById('orderPopupOverlay').style.display = 'none';
+  document.body.style.overflow = '';
+  const mapOv = document.getElementById('ppMapOverlay');
+  if (mapOv) mapOv.style.display = 'none';
+}
+
+function addOrderRow() {
+  const idx = _orderRowCount++;
+  const today = todayIso();
+  const smesOpts = _receptury.length
+    ? _receptury.map(r => '<option value="' + esc(r.smes) + '" data-itt="' + esc(r.zt || '') + '">' +
+        esc((r.cislo ? r.cislo + ' — ' : '') + r.smes) + '</option>').join('')
+    : '';
+
+  // Wrapper — ppRow<idx> — content: grid div + capacity breakdown div
+  const wrap = document.createElement('div');
+  wrap.id = 'ppRow' + idx;
+  wrap.style.cssText = 'margin-bottom:8px';
+
+  wrap.innerHTML =
+    '<div style="display:grid;grid-template-columns:122px 1.6fr 82px 68px 1fr 32px;gap:5px;align-items:center;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;background:#fafafa">' +
+      '<input id="ppDate' + idx + '" type="date" min="' + today + '" oninput="updateOrderSum()" ' +
+        'style="height:34px;border:1px solid #d1d5db;border-radius:6px;padding:0 6px;font-size:12px;font-family:Inter,sans-serif;width:100%;min-width:0">' +
+      '<select id="ppSmes' + idx + '" onchange="onSmesChange(' + idx + ')" ' +
+        'style="height:34px;border:1px solid #d1d5db;border-radius:6px;padding:0 6px;font-size:12px;font-family:Inter,sans-serif;width:100%;min-width:0">' +
+        '<option value="">— směs —</option>' + smesOpts +
+      '</select>' +
+      '<input id="ppItt' + idx + '" type="text" placeholder="ITT" readonly ' +
+        'style="height:34px;border:1px solid #e5e7eb;border-radius:6px;padding:0 6px;font-size:11px;background:#f9fafb;color:#6b7280;font-family:Inter,sans-serif;width:100%;min-width:0">' +
+      '<input id="ppTuny' + idx + '" type="number" min="1" max="99999" placeholder="t" oninput="updateOrderSum()" ' +
+        'style="height:34px;border:1px solid #d1d5db;border-radius:6px;padding:0 6px;font-size:13px;font-weight:600;font-family:Inter,sans-serif;width:100%;text-align:center">' +
+      '<input id="ppKom' + idx + '" type="text" placeholder="komentář…" ' +
+        'style="height:34px;border:1px solid #d1d5db;border-radius:6px;padding:0 8px;font-size:12px;font-family:Inter,sans-serif;width:100%;min-width:0">' +
+      '<button onclick="removeOrderRow(' + idx + ')" title="Odebrat" ' +
+        'style="height:32px;width:32px;background:none;border:1px solid #fca5a5;border-radius:6px;cursor:pointer;color:#dc2626;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0">🗑</button>' +
+    '</div>' +
+    // Breakdown obsazenosti dne — zobrazí se jakmile je vybrán den
+    '<div id="ppRowCap' + idx + '" style="display:none;margin-top:2px;padding:5px 10px;font-size:11px;line-height:1.5;border-radius:6px"></div>';
+
+  document.getElementById('ppOrderRows').appendChild(wrap);
+}
+
+function removeOrderRow(idx) {
+  const el = document.getElementById('ppRow' + idx);
+  if (el) el.remove();
+  updateOrderSum();
+}
+
+function onSmesChange(idx) {
+  const sel = document.getElementById('ppSmes' + idx);
+  if (!sel) return;
+  const opt = sel.options[sel.selectedIndex];
+  const ittInput = document.getElementById('ppItt' + idx);
+  if (ittInput) ittInput.value = opt ? (opt.getAttribute('data-itt') || '') : '';
+  updateOrderSum();
+}
+
+// Přeloží status objednávky do češtiny pro breakdown
+function _statusLabel(s) {
+  return s === 'pending' ? 'čeká' : s === 'pre_approved' ? 'přesch.' : s === 'pre_rejected' ? 'přezam.' : 'schváleno';
+}
+
+// Aktualizuje breakdown div pro jeden řádek (ppRowCap<idx>)
+function _renderCapDiv(idx, datum, cap, dayTuny) {
+  const capDiv = document.getElementById('ppRowCap' + idx);
+  if (!capDiv) return;
+  if (!datum || !cap) { capDiv.style.display = 'none'; return; }
+
+  const myTuny = dayTuny[datum] || 0;
+  const existingTotal = cap.orders.reduce((s, o) => s + (o.tuny || 0), 0);
+  const total = cap.harmonogram + existingTotal + myTuny;
+  const maxD = cap.maxDaily || _maxDaily;
+  const minD = cap.minDaily || _minDaily;
+
+  // Datum popisek
+  const d = new Date(datum + 'T00:00:00Z');
+  const dStr = d.getUTCDate() + '.' + (d.getUTCMonth() + 1) + '.';
+
+  // Rozpad: harmonogram + cizí firmy + moje
+  const parts = [];
+  if (cap.harmonogram > 0) parts.push('harmonogram <b>' + cap.harmonogram + ' t</b>');
+  cap.orders.forEach(o => {
+    parts.push(esc(o.firma) + ' <b>' + o.tuny + ' t</b> (' + _statusLabel(o.status) + ')');
+  });
+  if (myTuny > 0) parts.push('tvých <b>' + myTuny + ' t</b>');
+
+  const breakdownHtml = dStr + ': ' + (parts.length ? parts.join(' · ') : 'zatím prázdný')
+    + ' = <b>' + total + ' t</b> / max ' + maxD + ' t';
+
+  let bg, color, icon;
+  if (maxD && total > maxD) {
+    bg = '#fee2e2'; color = '#991b1b';
+    const over = total - maxD;
+    capDiv.innerHTML = '<span style="font-weight:700">⛔ PŘEKROČENO o ' + over + ' t</span> — ' + breakdownHtml;
+  } else if (minD && total > 0 && total < minD) {
+    bg = '#fefce8'; color = '#92400e';
+    capDiv.innerHTML = '<span style="font-weight:600">⚠ Pod minimem</span> — ' + breakdownHtml;
+  } else {
+    bg = '#f0fdf4'; color = '#166534';
+    capDiv.innerHTML = '✓ ' + breakdownHtml;
+  }
+  capDiv.style.cssText = 'display:block;margin-top:2px;padding:5px 10px;font-size:11px;line-height:1.5;border-radius:6px;background:' + bg + ';color:' + color;
+}
+
+async function updateOrderSum() {
+  const domRows = document.querySelectorAll('#ppOrderRows > div');
+  let totalTuny = 0;
+  const dayTuny = {};   // datum → tuny z AKTUÁLNÍ objednávky (součet přes všechny řádky)
+  const rowMeta = [];   // {idx, datum, smes, tuny, valid}
+
+  domRows.forEach(row => {
+    const idx = row.id.replace('ppRow', '');
+    const datum = document.getElementById('ppDate' + idx)?.value || '';
+    const smes  = document.getElementById('ppSmes' + idx)?.value || '';
+    const tuny  = parseInt(document.getElementById('ppTuny' + idx)?.value || '0') || 0;
+    const valid = !!(datum && smes && tuny > 0);
+    if (valid) {
+      dayTuny[datum] = (dayTuny[datum] || 0) + tuny;
+      totalTuny += tuny;
+    }
+    rowMeta.push({ idx, datum, smes, tuny, valid });
+  });
+
+  const dayCount = Object.keys(dayTuny).length;
+  const summaryEl = document.getElementById('ppTotalSummary');
+  if (summaryEl) summaryEl.textContent = 'Celkem objednávka: ' + totalTuny + ' t ve ' + dayCount + ' dnech';
+
+  // Dny které potřebujeme načíst z /api/day-capacity (zatím nejsou v cache)
+  const missingDates = Object.keys(dayTuny).filter(date => !_dayCapCache[date]);
+  if (missingDates.length > 0) {
+    await Promise.all(missingDates.map(async date => {
+      try {
+        const r = await fetch('/api/day-capacity?date=' + date);
+        if (r.ok) _dayCapCache[date] = await r.json();
+      } catch(e) { /* chyba sítě — tiše přeskočit */ }
+    }));
+  }
+
+  // Aktualizuj breakdown div pro každý řádek
+  rowMeta.forEach(({ idx, datum, valid }) => {
+    const capDiv = document.getElementById('ppRowCap' + idx);
+    if (!capDiv) return;
+    if (!valid || !datum) {
+      capDiv.style.display = 'none';
+      return;
+    }
+    const cap = _dayCapCache[datum];
+    if (!cap) {
+      // Ještě se načítá (nebo chyba sítě) — ukaž spinner
+      capDiv.style.cssText = 'display:block;margin-top:2px;padding:5px 10px;font-size:11px;border-radius:6px;background:#f1f5f9;color:#6b7280';
+      capDiv.textContent = '⏳ Načítám kapacitu pro ' + datum + '…';
+      return;
+    }
+    _renderCapDiv(idx, datum, cap, dayTuny);
+  });
+
+  // ── Kapacitní kontrola pro submit button ──
+  const capErrors = [];
+  const capWarns  = [];
+
+  for (const [datum, newTuny] of Object.entries(dayTuny)) {
+    const cap   = _dayCapCache[datum];
+    const wkTuny    = cap ? cap.harmonogram : daySum(_entries, datum);
+    const existTuny = cap
+      ? cap.orders.reduce((s, o) => s + (o.tuny || 0), 0)
+      : (_orders || [])
+          .filter(o => (o.datum || '').slice(0, 10) === datum &&
+                       ['pending','pre_approved','pre_rejected','approved'].includes(o.status))
+          .reduce((s, o) => s + (o.tuny || 0), 0);
+    const total  = wkTuny + existTuny + newTuny;
+    const maxD   = (cap && cap.maxDaily) || _maxDaily;
+    const minD   = (cap && cap.minDaily) || _minDaily;
+    const d      = new Date(datum + 'T00:00:00Z');
+    const dStr   = d.getUTCDate() + '.' + (d.getUTCMonth() + 1) + '.';
+    if (maxD && total > maxD) {
+      capErrors.push(dStr + ': kapacita překročena (' + total + ' t &gt; max ' + maxD + ' t)');
+    } else if (minD && total > 0 && total < minD) {
+      capWarns.push(dStr + ': pod minimem (' + total + ' t &lt; min ' + minD + ' t)');
+    }
+  }
+
+  const warn = document.getElementById('ppWarning');
+  const btn  = document.getElementById('ppSubmitBtn');
+
+  if (capErrors.length > 0) {
+    warn.innerHTML = '⚠ ' + capErrors.join('<br>');
+    warn.style.display   = 'block';
+    warn.style.background = '#fee2e2';
+    warn.style.color      = '#991b1b';
+    btn.disabled      = true;
+    btn.style.opacity = '0.4';
+  } else if (capWarns.length > 0) {
+    warn.innerHTML = 'ℹ ' + capWarns.join('<br>');
+    warn.style.display   = 'block';
+    warn.style.background = '#fefce8';
+    warn.style.color      = '#92400e';
+    btn.disabled      = false;
+    btn.style.opacity = '1';
+  } else {
+    warn.style.display = 'none';
+    btn.disabled       = false;
+    btn.style.opacity  = '1';
+  }
+}
+
+function ppShowWarnError(msg) {
+  const warn = document.getElementById('ppWarning');
+  warn.innerHTML = esc(msg);
+  warn.style.display = 'block';
+  warn.style.background = '#fee2e2';
+  warn.style.color = '#991b1b';
+}
+
+async function submitOrder() {
+  // Re-sync: pokud _ppLat/_ppLng nejsou nastaveny, zkus znovu načíst z zobrazovacího pole
+  // (obrana proti race condition nebo programovému nastavení hodnoty bez oninput)
+  if (_ppLat === null || _ppLng === null) {
+    const dispVal = (document.getElementById('ppGlobalCoordsDisp')?.value || '').trim();
+    if (dispVal) onGlobalCoordsInput();
+  }
+
+  const lokalitaName = (document.getElementById('ppGlobalLokalita')?.value || '').trim();
+
+  if (!lokalitaName) {
+    ppShowWarnError('Vyplňte název lokality.');
+    return;
+  }
+  if (_ppLat === null || _ppLng === null || isNaN(_ppLat) || isNaN(_ppLng)) {
+    ppShowWarnError('Nastavte GPS souřadnice lokality (tlačítko 🗺 Mapa nebo ruční zadání do pole Souřadnice, např. 49.195061, 16.606836).');
+    return;
+  }
+
+  const domRows = document.querySelectorAll('#ppOrderRows > div');
+  const items = [];
+  let hasPartial = false;
+
+  domRows.forEach(row => {
+    const idx = row.id.replace('ppRow', '');
+    const datum = document.getElementById('ppDate' + idx)?.value || '';
+    const smes = document.getElementById('ppSmes' + idx)?.value || '';
+    const itt = document.getElementById('ppItt' + idx)?.value || '';
+    const tuny = parseInt(document.getElementById('ppTuny' + idx)?.value || '0') || 0;
+    const kom = document.getElementById('ppKom' + idx)?.value || '';
+    // Zcela prázdný řádek přeskočíme
+    if (!datum && !smes && !tuny) return;
+    // Neúplný řádek = chyba
+    if (!datum || !smes || tuny <= 0) { hasPartial = true; return; }
+    items.push({ datum, smes, itt, tuny, komentar: kom || undefined });
+  });
+
+  if (hasPartial) {
+    ppShowWarnError('Každý řádek musí mít datum, směs a tuny (> 0). Odeberte nebo doplňte neúplné řádky.');
+    return;
+  }
+  if (items.length === 0) {
+    ppShowWarnError('Přidejte alespoň jeden kompletní řádek (datum, směs, tuny).');
+    return;
+  }
+
+  const btn = document.getElementById('ppSubmitBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Odesílám…';
+
+  try {
+    const r = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lokalita: lokalitaName, lat: _ppLat, lng: _ppLng, items })
+    });
+    const data = await r.json();
+    if (data.ok) {
+      if (data.warnings && data.warnings.length > 0) {
+        // Zavři popup, ale informuj o upozorněních
+        closeOrderPopup();
+        await loadOrders();
+        await renderMonth();
+      } else {
+        closeOrderPopup();
+        await loadOrders();
+        await renderMonth();
+      }
+    } else {
+      ppShowWarnError(data.error || 'Chyba při odesílání objednávky.');
+      btn.disabled = false;
+      btn.textContent = 'Odeslat požadavek';
+    }
+  } catch (e) {
+    ppShowWarnError('Chyba spojení: ' + esc(e.message));
+    btn.disabled = false;
+    btn.textContent = 'Odeslat požadavek';
   }
 }
 
 // ── INICIALIZACE ──
-setInterval(()=>{if(_accessOk)loadOrders().then(()=>renderMonth());},3*60*1000);
+setInterval(() => { if (_accessOk) loadOrders().then(() => renderMonth()); }, 3 * 60 * 1000);
 setMonthMin();
-monthPick.value=localStorage.getItem('hmg_view_month')||defaultMonth();
-checkAccess().then(ok=>{
-  if(ok){
-    Promise.all([loadSettings(),loadReceptury()]).then(()=>{
-      loadOrders().then(()=>renderMonth());
+monthPick.value = localStorage.getItem('hmg_view_month') || defaultMonth();
+checkAccess().then(ok => {
+  if (ok) {
+    Promise.all([loadSettings(), loadReceptury(), loadMapyCzKey()]).then(() => {
+      loadOrders().then(() => renderMonth());
     });
   }
 });
 </script>
-<!-- ── POPUP OBJEDNÁVKY ───────────────────────────────────────── -->
+
+<!-- ── POPUP NOVÁ OBJEDNÁVKA ───────────────────────────────────────── -->
 <div id="orderPopupOverlay" style="display:none">
-  <div style="background:#fff;border-radius:12px;width:100%;max-width:640px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden">
+  <div style="background:#fff;border-radius:12px;width:100%;max-width:680px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden">
 
     <!-- Hlavička -->
     <div style="padding:14px 20px;background:#1a1a2e;color:#fff;display:flex;align-items:center;gap:12px;flex-shrink:0">
       <div style="flex:1">
-        <div id="ppDateLabel" style="font-size:16px;font-weight:700"></div>
+        <div style="font-size:16px;font-weight:700">Nová objednávka</div>
       </div>
       <div id="ppUserLabel" style="font-size:12px;color:#94a3b8;text-align:right;line-height:1.6"></div>
       <button onclick="closeOrderPopup()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:20px;padding:2px 6px;line-height:1;font-family:Inter,sans-serif">✕</button>
@@ -594,55 +1073,111 @@ checkAccess().then(ok=>{
     <!-- Tělo -->
     <div style="overflow-y:auto;flex:1;padding:16px 20px">
 
-      <!-- Stav dne -->
-      <div style="margin-bottom:16px">
-        <div style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Stav dne — všechny firmy</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
-          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px;text-align:center">
-            <div id="ppStatApproved" style="font-size:22px;font-weight:700;color:#15803d">— t</div>
-            <div style="font-size:11px;color:#6b7280;margin-top:3px">Schváleno</div>
-          </div>
-          <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px;text-align:center">
-            <div id="ppStatPending" style="font-size:22px;font-weight:700;color:#d97706">— t</div>
-            <div style="font-size:11px;color:#6b7280;margin-top:3px">Čeká na schválení</div>
-          </div>
-          <div id="ppStatRemCard" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px;text-align:center">
-            <div id="ppStatRem" style="font-size:22px;font-weight:700;color:#1d4ed8">— t</div>
-            <div style="font-size:11px;color:#6b7280;margin-top:3px">Zbývá do maxima</div>
-          </div>
+      <!-- SEKCE: Lokalita (sdílená pro celou objednávku) -->
+      <div style="margin-bottom:16px;padding:14px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0">
+        <div style="font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px">
+          📍 Lokalita <span style="color:#dc2626">*</span>
+          <span style="font-size:10px;font-weight:400;color:#6b7280;text-transform:none;letter-spacing:0;margin-left:6px">platí pro celou objednávku</span>
         </div>
-        <div id="ppExistingTable"></div>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:8px;margin-bottom:8px;align-items:center">
+          <input id="ppGlobalLokalita" type="text" placeholder="Název lokality *"
+            oninput="updateOrderSum()"
+            style="height:36px;border:1px solid #d1d5db;border-radius:6px;padding:0 10px;font-size:13px;font-family:Inter,sans-serif;width:100%;min-width:0;outline:none"
+            title="Název lokality — mapa ho nikdy nepřepíše">
+          <button onclick="openMapForLokalita()"
+            style="height:36px;padding:0 14px;background:#0f766e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;font-family:Inter,sans-serif;white-space:nowrap;flex-shrink:0">🗺 Mapa</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="ppGlobalCoordsDisp" type="text"
+            placeholder="Souřadnice: lat, lng  (např. 49.195061, 16.606836)"
+            oninput="onGlobalCoordsInput()"
+            style="height:32px;border:1px solid #d1d5db;border-radius:6px;padding:0 10px;font-size:12px;font-family:monospace;flex:1;min-width:0;color:#374151;outline:none">
+          <span id="ppGpsStatus" style="font-size:11px;color:#6b7280;flex-shrink:0;min-width:60px"></span>
+        </div>
       </div>
 
-      <!-- Formulář -->
+      <!-- SEKCE: Řádky (směsi + dny) -->
       <div>
-        <div style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">
-          Můj požadavek — <span id="ppFirmaLabel" style="color:#5b21b6;text-transform:none;font-size:12px"></span>
+        <div style="font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">
+          📋 Směsi a dny
         </div>
-        <div style="display:grid;grid-template-columns:1.5fr 86px 66px 1fr 30px;gap:5px;margin-bottom:4px">
-          <div style="font-size:11px;font-weight:600;color:#9ca3af">Směs</div>
-          <div style="font-size:11px;font-weight:600;color:#9ca3af">ITT</div>
-          <div style="font-size:11px;font-weight:600;color:#9ca3af;text-align:center">Tuny</div>
-          <div style="font-size:11px;font-weight:600;color:#9ca3af">Komentář</div>
+        <!-- Záhlaví sloupců -->
+        <div style="display:grid;grid-template-columns:122px 1.6fr 82px 68px 1fr 32px;gap:5px;padding:0 4px;margin-bottom:3px">
+          <div style="font-size:10px;font-weight:600;color:#9ca3af">Den *</div>
+          <div style="font-size:10px;font-weight:600;color:#9ca3af">Směs *</div>
+          <div style="font-size:10px;font-weight:600;color:#9ca3af">ITT</div>
+          <div style="font-size:10px;font-weight:600;color:#9ca3af;text-align:center">Tuny *</div>
+          <div style="font-size:10px;font-weight:600;color:#9ca3af">Komentář</div>
           <div></div>
         </div>
         <div id="ppOrderRows"></div>
-        <button onclick="addOrderRow()" style="margin-top:6px;width:100%;font-size:12px;color:#2563eb;background:none;border:1px dashed #93c5fd;border-radius:6px;padding:7px 14px;cursor:pointer;font-family:Inter,sans-serif">+ Přidat další směs</button>
+        <button onclick="addOrderRow()"
+          style="margin-top:8px;width:100%;font-size:12px;color:#2563eb;background:none;border:1px dashed #93c5fd;border-radius:6px;padding:7px 14px;cursor:pointer;font-family:Inter,sans-serif">
+          + Přidat další směs / den
+        </button>
       </div>
+
     </div>
 
     <!-- Patička -->
     <div style="padding:12px 20px;border-top:1px solid #e5e7eb;background:#f9fafb;flex-shrink:0">
-      <div style="display:flex;gap:20px;align-items:center;margin-bottom:8px;font-size:13px;flex-wrap:wrap">
-        <span>Můj součet: <strong id="ppMySum" style="color:#1d4ed8">0 t</strong></span>
-        <span>Den celkem: <strong id="ppDayTotal">0 t</strong></span>
-        <span>Max: <strong id="ppMaxLabel">— t</strong></span>
+      <div style="font-size:13px;color:#374151;margin-bottom:8px">
+        <strong id="ppTotalSummary">Celkem objednávka: 0 t ve 0 dnech</strong>
       </div>
-      <div id="ppWarning" style="display:none;background:#fee2e2;color:#991b1b;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:500;margin-bottom:8px"></div>
+      <div id="ppWarning" style="display:none;background:#fee2e2;color:#991b1b;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:500;margin-bottom:8px;line-height:1.6"></div>
       <div style="display:flex;justify-content:flex-end;gap:8px">
         <button onclick="closeOrderPopup()" style="background:#6b7280;color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">Zrušit</button>
         <button id="ppSubmitBtn" onclick="submitOrder()" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">Odeslat požadavek</button>
       </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── MAPOVÝ PŘEKRYV (Leaflet – přetahovatelný praporek) ──────── -->
+<div id="ppMapOverlay" style="display:none">
+  <div style="background:#fff;border-radius:12px;width:100%;max-width:560px;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.4);overflow:hidden">
+
+    <!-- Hlavička -->
+    <div style="padding:12px 16px;background:#0f766e;color:#fff;display:flex;align-items:center;gap:10px;flex-shrink:0">
+      <div style="flex:1;font-size:14px;font-weight:700">📍 Vyberte polohu lokality</div>
+      <button onclick="closeMapPopup()" style="background:none;border:none;color:rgba(255,255,255,.8);cursor:pointer;font-size:18px;padding:2px 6px;line-height:1;font-family:Inter,sans-serif">✕</button>
+    </div>
+
+    <!-- Hledání -->
+    <div style="padding:10px 14px;border-bottom:1px solid #e5e7eb;flex-shrink:0">
+      <div style="display:flex;gap:6px">
+        <input id="ppMapSearch" type="text" placeholder="Název lokality (obec, adresa…)"
+          onkeydown="if(event.key==='Enter')ppMapGeoSearch()"
+          style="flex:1;height:34px;border:1px solid #d1d5db;border-radius:6px;padding:0 10px;font-size:13px;font-family:Inter,sans-serif;outline:none;min-width:0">
+        <button onclick="ppMapGeoSearch()" style="height:34px;padding:0 14px;background:#0f766e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;font-family:Inter,sans-serif;flex-shrink:0">Hledat</button>
+      </div>
+    </div>
+
+    <!-- Leaflet mapa (přetahovatelný praporek nebo klik pro přesun) -->
+    <div style="flex-shrink:0;border-bottom:1px solid #e5e7eb">
+      <div id="ppLeafletMap"></div>
+    </div>
+
+    <!-- Stav / nápověda + ruční souřadnice -->
+    <div style="padding:10px 14px;border-bottom:1px solid #e5e7eb;flex-shrink:0">
+      <div id="ppMapStatusText" style="font-size:11px;color:#6b7280;margin-bottom:6px">
+        Klikněte do mapy nebo přetáhněte 📍 praporek pro upřesnění polohy.
+      </div>
+      <div style="font-size:11px;color:#6b7280;margin-bottom:4px">Nebo zadejte souřadnice ručně:</div>
+      <div style="display:flex;gap:6px">
+        <input id="ppMapCoords" type="text" placeholder="lat, lng (např. 49.195061, 16.606836)"
+          onkeydown="if(event.key==='Enter')ppApplyManualCoords()"
+          oninput="ppApplyManualCoordsLive()"
+          style="flex:1;height:32px;border:1px solid #d1d5db;border-radius:6px;padding:0 10px;font-size:12px;font-family:monospace;outline:none;min-width:0">
+        <button onclick="ppApplyManualCoords()" style="height:32px;padding:0 10px;background:#475569;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;font-family:Inter,sans-serif;flex-shrink:0">↺ Zobrazit</button>
+      </div>
+    </div>
+
+    <!-- Patička -->
+    <div style="padding:10px 14px;background:#f9fafb;display:flex;justify-content:flex-end;gap:8px;flex-shrink:0">
+      <button onclick="closeMapPopup()" style="background:#6b7280;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">Zrušit</button>
+      <button onclick="ppSaveGpsCoords()" style="background:#0f766e;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">✓ Použít souřadnice</button>
     </div>
 
   </div>
