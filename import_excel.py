@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Jakub Kalousek. All rights reserved. Proprietary and confidential.
 import sys, json, openpyxl
 from datetime import datetime, date, timedelta
 

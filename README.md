@@ -17,3 +17,6 @@ Verze 2 aplikace pro řízení výroby obalovny.
 
 ## Nasazení
 Railway — napojeno na tento repozitář.
+
+## Licence
+This software is proprietary. See LICENSE file for details.

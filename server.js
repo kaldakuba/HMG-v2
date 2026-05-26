@@ -1,7 +1,9 @@
+// Copyright (c) 2026 Jakub Kalousek. All rights reserved. Proprietary and confidential.
 require('dotenv').config();
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const nodemailer = require('nodemailer');
+const ExcelJS = require('exceljs');
 const path = require('path');
 const crypto = require('crypto');
 const cookieParser = require('cookie-parser');
@@ -537,81 +539,167 @@ app.use((err, req, res, next) => {
 });
 
 
-// ── Emailová záloha ──
-async function sendBackup() {
-  try {
-    const [weeks, inputs, companies, settings] = await Promise.all([
-      pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start'),
-      pool.query('SELECT rows_json FROM inputs WHERE id=1'),
-      pool.query('SELECT data_json FROM companies WHERE id=1'),
-      pool.query('SELECT key,value FROM settings')
-    ]);
+// ── Sestavení styled Excel zálohy ──
+async function buildStyledExcel(weeks, inputs, companies) {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'HMG Záloha';
+  wb.created = new Date();
 
-    const settingsObj = {};
-    settings.rows.forEach(r => settingsObj[r.key] = r.value);
+  // Barvy čet — nejdřív z DB, pak fallback
+  const dbColors = {};
+  (companies || []).forEach(c => { if (c.name && c.color) dbColors[c.name] = c.color; });
+  const FALLBACK = { 'Colas': '#fff2a8', 'Firesta': '#d9ead3', 'Mi Roads': '#ffcccb', 'BKOM': '#fed7aa' };
+  function cetaArgb(ceta) {
+    const hex = ceta && (dbColors[ceta] || FALLBACK[ceta]);
+    return hex ? 'FF' + hex.replace('#', '').toUpperCase() : null;
+  }
 
-    const backup = {
-      version: 2,
-      created: new Date().toISOString(),
-      weeks: weeks.rows.map(r => ({ start: r.week_start, rows: JSON.parse(r.rows_json) })),
-      inputs: inputs.rows[0] ? JSON.parse(inputs.rows[0].rows_json) : [],
-      companies: companies.rows[0] ? JSON.parse(companies.rows[0].data_json) : [],
-      settings: settingsObj
-    };
+  const THIN = { style: 'thin' };
+  const BORDERS = { top: THIN, left: THIN, bottom: THIN, right: THIN };
+  const HDR_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
+  const HDR_FONT = { bold: true, size: 10, name: 'Calibri' };
+  const DATA_FONT = { size: 10, name: 'Calibri' };
 
-    const date = new Date().toISOString().slice(0, 10);
-    const filename = `hmg_zaloha_${date}.xlsx`;
+  function styleRow(row, argb, aligns, isHeader) {
+    row.height = isHeader ? 18 : 15;
+    row.eachCell({ includeEmpty: true }, (cell, col) => {
+      cell.font = isHeader ? HDR_FONT : DATA_FONT;
+      cell.border = BORDERS;
+      cell.alignment = { horizontal: aligns[col - 1] || 'center', vertical: 'middle' };
+      if (isHeader) cell.fill = HDR_FILL;
+      else if (argb) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
+    });
+  }
 
-    // Sestavit Excel soubor
-    const wb = XLSX.utils.book_new();
+  // ── Týdny ──
+  (weeks || []).forEach(w => {
+    const ws = wb.addWorksheet(w.start);
+    ws.columns = [
+      { header: 'Č.',         key: 'cislo',      width: 6  },
+      { header: 'Lokalita',   key: 'lokalita',   width: 22 },
+      { header: 'Objednávka', key: 'objednavka', width: 16 },
+      { header: 'Směs',       key: 'smes',       width: 32 },
+      { header: 'ITT',        key: 'itt',        width: 14 },
+      { header: 'Četa',       key: 'ceta',       width: 12 },
+      { header: 'Po', key: 'd0', width: 7 },
+      { header: 'Út', key: 'd1', width: 7 },
+      { header: 'St', key: 'd2', width: 7 },
+      { header: 'Čt', key: 'd3', width: 7 },
+      { header: 'Pá', key: 'd4', width: 7 },
+      { header: 'So', key: 'd5', width: 7 },
+      { header: 'Ne', key: 'd6', width: 7 },
+    ];
+    const aligns = ['center','left','left','left','left','center','center','center','center','center','center','center','center'];
+    styleRow(ws.getRow(1), null, aligns, true);
 
-    // List 1: Týdny
-    backup.weeks.forEach(w => {
-      const rows = w.rows.map(r => ({
+    (w.rows || []).forEach(r => {
+      const row = ws.addRow({
         cislo: r.cislo||'', lokalita: r.lokalita||'', objednavka: r.objednavka||'',
         smes: r.smes||'', itt: r.itt||'', ceta: r.ceta||'',
-        Po: r.d0||'', Ut: r.d1||'', St: r.d2||'', Ct: r.d3||'',
-        Pa: r.d4||'', So: r.d5||'', Ne: r.d6||''
-      }));
-      if (rows.length > 0) {
-        const ws = XLSX.utils.json_to_sheet(rows);
-        XLSX.utils.book_append_sheet(wb, ws, w.start.slice(5)); // MM-DD jako název listu
-      }
+        d0: r.d0||'', d1: r.d1||'', d2: r.d2||'', d3: r.d3||'',
+        d4: r.d4||'', d5: r.d5||'', d6: r.d6||''
+      });
+      styleRow(row, cetaArgb(r.ceta), aligns, false);
     });
+  });
 
-    // List 2: Receptury
-    if (backup.inputs.length > 0) {
-      const wsInputs = XLSX.utils.json_to_sheet(backup.inputs);
-      XLSX.utils.book_append_sheet(wb, wsInputs, 'Receptury');
-    }
-
-    const xlsxBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD
-      }
+  // ── Receptury ──
+  if (inputs && inputs.length > 0) {
+    const ws = wb.addWorksheet('Receptury');
+    ws.columns = [
+      { header: 'Č.',       key: 'cislo',   width: 6  },
+      { header: 'Směs',     key: 'smes',    width: 32 },
+      { header: 'ITT',      key: 'zt',      width: 14 },
+      { header: '0/4',      key: 'c04',     width: 7  },
+      { header: '2/4',      key: 'c24',     width: 7  },
+      { header: '4/8',      key: 'c48',     width: 7  },
+      { header: '8/11',     key: 'c811',    width: 8  },
+      { header: '11/16',    key: 'c1116',   width: 8  },
+      { header: '16/22',    key: 'c1622',   width: 8  },
+      { header: '50/70',    key: 'b5070',   width: 8  },
+      { header: '25/55-60', key: 'b255560', width: 11 },
+      { header: '45/80-65', key: 'b458065', width: 11 },
+      { header: '20/30',    key: 'b2030',   width: 8  },
+      { header: 'Prach',    key: 'prach',   width: 8  },
+      { header: 'Vápenec',  key: 'vapenec', width: 9  },
+      { header: 'Addbit',   key: 'addbit',  width: 8  },
+      { header: 'S-CEL',    key: 'scel',    width: 8  },
+      { header: '16RA',     key: 'ra16',    width: 8  },
+      { header: '22RA',     key: 'ra22',    width: 8  },
+      { header: 'Celkem',   key: 'celkem',  width: 9  },
+    ];
+    const aligns = ['center','left','left','center','center','center','center','center','center','center','center','center','center','center','center','center','center','center','center','center'];
+    styleRow(ws.getRow(1), null, aligns, true);
+    inputs.forEach(r => {
+      const row = ws.addRow(r);
+      styleRow(row, null, aligns, false);
     });
-
-    await transporter.sendMail({
-      from: `"HMG Záloha" <${process.env.GMAIL_USER}>`,
-      to: process.env.BACKUP_EMAIL,
-      subject: `HMG záloha ${date} — ${backup.weeks.length} týdnů`,
-      text: `Automatická záloha dat harmonogramu výroby.\n\nObsah:\n- Týdnů: ${backup.weeks.length}\n- Receptur: ${backup.inputs.length}\n- Datum: ${date}`,
-      attachments: [{
-        filename,
-        content: xlsxBuffer,
-        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      }]
-    });
-
-    console.log(`Záloha odeslána: ${filename}`);
-    await pool.query("INSERT INTO settings (key,value) VALUES ('last_backup',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value", [new Date().toISOString()]);
-  } catch (err) {
-    console.error('Chyba zálohy:', err.message);
   }
+
+  if (wb.worksheets.length === 0) {
+    const ws = wb.addWorksheet('Info');
+    ws.addRow(['Záloha neobsahuje data']);
+  }
+
+  return wb.xlsx.writeBuffer();
+}
+
+// ── Emailová záloha ──
+async function sendBackup() {
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD || !process.env.BACKUP_EMAIL) {
+    throw new Error('Chybí konfigurace emailu (GMAIL_USER, GMAIL_APP_PASSWORD, BACKUP_EMAIL)');
+  }
+
+  const [weeks, inputs, companies, settings] = await Promise.all([
+    pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start'),
+    pool.query('SELECT rows_json FROM inputs WHERE id=1'),
+    pool.query('SELECT data_json FROM companies WHERE id=1'),
+    pool.query('SELECT key,value FROM settings')
+  ]);
+
+  const settingsObj = {};
+  settings.rows.forEach(r => settingsObj[r.key] = r.value);
+
+  const backup = {
+    version: 2,
+    created: new Date().toISOString(),
+    weeks: weeks.rows.map(r => ({ start: r.week_start, rows: JSON.parse(r.rows_json) })),
+    inputs: inputs.rows[0] ? JSON.parse(inputs.rows[0].rows_json) : [],
+    companies: companies.rows[0] ? JSON.parse(companies.rows[0].data_json) : [],
+    settings: settingsObj
+  };
+
+  const date = new Date().toISOString().slice(0, 10);
+  const filename = `hmg_zaloha_${date}.xlsx`;
+
+  // Sestavit styled Excel soubor
+  const xlsxBuffer = await buildStyledExcel(backup.weeks, backup.inputs, backup.companies);
+
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASSWORD
+    }
+  });
+
+  await transporter.sendMail({
+    from: `"HMG Záloha" <${process.env.GMAIL_USER}>`,
+    to: process.env.BACKUP_EMAIL,
+    subject: `HMG záloha ${date} — ${backup.weeks.length} týdnů`,
+    text: `Automatická záloha dat harmonogramu výroby.\n\nObsah:\n- Týdnů: ${backup.weeks.length}\n- Receptur: ${backup.inputs.length}\n- Datum: ${date}`,
+    attachments: [{
+      filename,
+      content: xlsxBuffer,
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    }]
+  });
+
+  console.log(`Záloha odeslána: ${filename}`);
+  await pool.query(
+    "INSERT INTO settings (key,value) VALUES ('last_backup',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",
+    [new Date().toISOString()]
+  );
 }
 
 // Spustit zálohu každý den v 18:00 (UTC+2 = 16:00 UTC)
@@ -621,16 +709,23 @@ function scheduleBackup() {
   next.setUTCHours(16, 0, 0, 0);
   if (next <= now) next.setDate(next.getDate() + 1);
   const msUntil = next - now;
+  const runScheduled = () => sendBackup().catch(err => console.error('Chyba plánované zálohy:', err.message));
   setTimeout(() => {
-    sendBackup();
-    setInterval(sendBackup, 24 * 60 * 60 * 1000);
+    runScheduled();
+    setInterval(runScheduled, 24 * 60 * 60 * 1000);
   }, msUntil);
-  console.log(`Záloha naplánována za ${Math.round(msUntil/60000)} minut`);
+  console.log(`Záloha naplánována za ${Math.round(msUntil / 60000)} minut (každý den v 18:00)`);
 }
 
 // Manuální spuštění zálohy (jen pro admina)
 app.post('/api/backup/run', requireAuth, requireAdmin, async (req, res) => {
-  sendBackup().then(() => res.json({ ok: true })).catch(e => res.status(500).json({ error: e.message }));
+  try {
+    await sendBackup();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Manuální záloha selhala:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 app.get('/settings', requireAuth, requireAdmin, (req, res) => {

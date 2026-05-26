@@ -1,3 +1,4 @@
+<!-- Copyright (c) 2026 Jakub Kalousek. All rights reserved. Proprietary and confidential. -->
 <!doctype html>
 <html lang="cs">
 <head>
@@ -358,5 +359,7 @@ setMonthMin();
 monthPick.value=localStorage.getItem('hmg_view_month')||defaultMonth();
 checkAccess().then(ok => { if(ok) { loadSettings().then(() => renderMonth()); } });
 </script>
+<meta name="author" content="Jakub Kalousek">
+<meta name="copyright" content="Copyright 2026 Jakub Kalousek. All rights reserved.">
 </body>
 </html>
