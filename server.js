@@ -122,6 +122,7 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_orders_group_id ON orders(order_group_id);
     CREATE INDEX IF NOT EXISTS idx_orders_datum    ON orders(datum);
     CREATE INDEX IF NOT EXISTS idx_orders_status   ON orders(status);
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS reject_reason TEXT;
   `);
 
 
@@ -729,14 +730,31 @@ async function sendBackup() {
   );
 }
 
-// Spustit zálohu každý den v 18:00 (UTC+2 = 16:00 UTC)
+// Smaž zamítnuté objednávky starší 30 dní (auto-cleanup)
+async function cleanupRejectedOrders() {
+  try {
+    const r = await pool.query(
+      `DELETE FROM orders WHERE status='rejected' AND resolved_at < NOW() - INTERVAL '30 days'`
+    );
+    if (r.rowCount > 0) {
+      console.log(`Auto-cleanup: smazáno ${r.rowCount} zamítnutých objednávek starších 30 dní`);
+    }
+  } catch (err) {
+    console.error('Cleanup rejected orders error:', err.message);
+  }
+}
+
+// Spustit zálohu každý den v 18:00 (UTC+2 = 16:00 UTC) + cleanup rejected objednávek
 function scheduleBackup() {
   const now = new Date();
   const next = new Date();
   next.setUTCHours(16, 0, 0, 0);
   if (next <= now) next.setDate(next.getDate() + 1);
   const msUntil = next - now;
-  const runScheduled = () => sendBackup().catch(err => console.error('Chyba plánované zálohy:', err.message));
+  const runScheduled = () => {
+    sendBackup().catch(err => console.error('Chyba plánované zálohy:', err.message));
+    cleanupRejectedOrders();
+  };
   setTimeout(() => {
     runScheduled();
     setInterval(runScheduled, 24 * 60 * 60 * 1000);
@@ -924,10 +942,23 @@ app.get('/share/:token', async (req, res) => {
 
 // ── HMG V3 — Objednávky ─────────────────────────────────────────────────────
 
-// GET /api/orders?month=2026-06
+// GET /api/orders?month=2026-06  nebo  GET /api/orders?pending=1 (pouze admin)
 app.get('/api/orders', requireAuth, async (req, res) => {
   try {
-    const { month } = req.query;
+    const { month, pending } = req.query;
+
+    // Admin: načti všechny pending skupiny bez filtru měsíce
+    if (pending === '1' && req.session.role === 'admin') {
+      const r = await pool.query(
+        `SELECT o.*, u.username
+         FROM orders o
+         LEFT JOIN users u ON u.id = o.user_id
+         WHERE o.status = 'pending'
+         ORDER BY o.created_at ASC`
+      );
+      return res.json(r.rows);
+    }
+
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({ error: 'Neplatný formát měsíce (YYYY-MM)' });
     }
@@ -942,12 +973,18 @@ app.get('/api/orders', requireAuth, async (req, res) => {
       const firma = uRes.rows[0] ? uRes.rows[0].firma : null;
       if (!firma) return res.json([]);
       r = await pool.query(
-        `SELECT * FROM orders WHERE datum >= $1 AND datum <= $2 AND firma=$3 ORDER BY datum, created_at`,
+        `SELECT * FROM orders
+         WHERE datum >= $1 AND datum <= $2 AND firma=$3
+           AND status IN ('pending','approved')
+         ORDER BY datum, created_at`,
         [from, to, firma]
       );
     } else {
       r = await pool.query(
-        `SELECT * FROM orders WHERE datum >= $1 AND datum <= $2 ORDER BY datum, firma, created_at`,
+        `SELECT * FROM orders
+         WHERE datum >= $1 AND datum <= $2
+           AND status IN ('pending','approved')
+         ORDER BY datum, firma, created_at`,
         [from, to]
       );
     }
@@ -1030,9 +1067,9 @@ app.post('/api/orders', requireAuth, async (req, res) => {
         weekTuny = rows.reduce((s, r) => s + (parseInt(r[`d${di}`]) || 0), 0);
       }
 
-      // Čekající objednávky pro tento den
+      // Čekající + schválené objednávky pro tento den (rejected se nezapočítávají)
       const pRes = await pool.query(
-        "SELECT COALESCE(SUM(tuny),0) AS total FROM orders WHERE datum=$1 AND status='pending'",
+        "SELECT COALESCE(SUM(tuny),0) AS total FROM orders WHERE datum=$1 AND status IN ('pending','approved')",
         [datum]
       );
       const pendingTuny = parseInt(pRes.rows[0].total) || 0;
@@ -1087,35 +1124,123 @@ app.post('/api/orders', requireAuth, async (req, res) => {
 });
 
 // PATCH /api/orders/:groupId/approve — admin schválí skupinu
+// Bez body (nebo {confirm:false}): jen zkontroluje kapacitu, nic neschvaluje
+// S body {confirm:true}: skutečně schválí (vždy, i pokud překračuje max)
 app.patch('/api/orders/:groupId/approve', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { groupId } = req.params;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId)) {
       return res.status(400).json({ error: 'Neplatné ID skupiny' });
     }
+    const doConfirm = !!(req.body && req.body.confirm);
+
+    // Načti položky skupiny (jen pending)
+    const gRes = await pool.query(
+      `SELECT datum, SUM(tuny)::int AS group_tuny
+       FROM orders WHERE order_group_id=$1 AND status='pending'
+       GROUP BY datum`,
+      [groupId]
+    );
+    if (gRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Skupina nenalezena nebo již vyřešena' });
+    }
+
+    // Denní maximum
+    const sRes = await pool.query("SELECT value FROM settings WHERE key='hmg_max_daily'");
+    const maxDaily = sRes.rows[0] ? parseInt(sRes.rows[0].value) : null;
+
+    // Kapacitní kontrola per datum
+    let exceedsMax = false;
+    let exceedDetail = null;
+
+    if (maxDaily) {
+      for (const row of gRes.rows) {
+        const datum = row.datum instanceof Date
+          ? row.datum.toISOString().slice(0, 10)
+          : String(row.datum).slice(0, 10);
+        const thisGroupTuny = parseInt(row.group_tuny) || 0;
+
+        const d = new Date(datum + 'T00:00:00Z');
+        const dow = d.getUTCDay();
+        const daysFromMonday = (dow + 6) % 7;
+        const monday = new Date(d);
+        monday.setUTCDate(d.getUTCDate() - daysFromMonday);
+        const weekStart = monday.toISOString().slice(0, 10);
+        const di = daysFromMonday;
+
+        // Tuny z harmonogramu
+        const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1', [weekStart]);
+        let weekTuny = 0;
+        if (wRes.rows[0]) {
+          const weekRows = JSON.parse(wRes.rows[0].rows_json);
+          weekTuny = weekRows.reduce((s, r) => s + (parseInt(r[`d${di}`]) || 0), 0);
+        }
+
+        // Ostatní non-rejected objednávky pro tento den (bez této skupiny)
+        const otherRes = await pool.query(
+          `SELECT COALESCE(SUM(tuny),0)::int AS total FROM orders
+           WHERE datum=$1 AND status IN ('pending','approved') AND order_group_id != $2`,
+          [datum, groupId]
+        );
+        const otherTuny = parseInt(otherRes.rows[0].total) || 0;
+        const total = weekTuny + otherTuny + thisGroupTuny;
+
+        if (total > maxDaily) {
+          exceedsMax = true;
+          if (!exceedDetail || total > exceedDetail.total) {
+            exceedDetail = { datum, total, max: maxDaily };
+          }
+        }
+      }
+    }
+
+    // Bez potvrzení — vrátí jen výsledek kontroly, neschvaluje
+    if (!doConfirm) {
+      return res.json({
+        checked: true,
+        exceedsMax,
+        total:  exceedDetail ? exceedDetail.total : null,
+        max:    maxDaily,
+        datum:  exceedDetail ? exceedDetail.datum : null
+      });
+    }
+
+    // S potvrzením — schválit vždy
     const r = await pool.query(
       `UPDATE orders SET status='approved', resolved_at=NOW(), resolved_by=$1
        WHERE order_group_id=$2 AND status='pending' RETURNING id`,
       [req.session.userId, groupId]
     );
     if (r.rowCount === 0) return res.status(404).json({ error: 'Skupina nenalezena nebo již vyřešena' });
-    res.json({ ok: true, updated: r.rowCount });
+    console.log(`Objednávka ${groupId} schválena adminem ${req.session.username} (exceedsMax:${exceedsMax})`);
+    res.json({ ok: true, updated: r.rowCount, exceedsMax });
   } catch (err) {
     console.error('PATCH approve error:', err);
     res.status(500).json({ error: 'Chyba serveru' });
   }
 });
 
-// PATCH /api/orders/:groupId/reject — admin zamítne skupinu (smaže)
+// PATCH /api/orders/:groupId/reject — admin zamítne skupinu (soft reject, uchovává v DB)
 app.patch('/api/orders/:groupId/reject', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { groupId } = req.params;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId)) {
       return res.status(400).json({ error: 'Neplatné ID skupiny' });
     }
-    const r = await pool.query('DELETE FROM orders WHERE order_group_id=$1 RETURNING id', [groupId]);
-    if (r.rowCount === 0) return res.status(404).json({ error: 'Skupina nenalezena' });
-    res.json({ ok: true, deleted: r.rowCount });
+    const { reason } = req.body || {};
+    if (!reason || !String(reason).trim()) {
+      return res.status(400).json({ error: 'Důvod zamítnutí je povinný' });
+    }
+    const reasonStr = sanitizeStr(String(reason).trim(), 500);
+    const r = await pool.query(
+      `UPDATE orders
+       SET status='rejected', resolved_at=NOW(), resolved_by=$1, reject_reason=$2
+       WHERE order_group_id=$3 AND status='pending' RETURNING id`,
+      [req.session.userId, reasonStr, groupId]
+    );
+    if (r.rowCount === 0) return res.status(404).json({ error: 'Skupina nenalezena nebo již vyřešena' });
+    console.log(`Objednávka ${groupId} zamítnuta adminem ${req.session.username}: ${reasonStr}`);
+    res.json({ ok: true, rejected: r.rowCount });
   } catch (err) {
     console.error('PATCH reject error:', err);
     res.status(500).json({ error: 'Chyba serveru' });

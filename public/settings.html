@@ -109,6 +109,10 @@ hr{border:none;border-top:0.5px solid #e5e7eb;margin:14px 0}
       <div class="nav-item" onclick="showSection('backup')" id="nav-backup">
         <i class="ti ti-device-floppy" aria-hidden="true"></i> Zálohy
       </div>
+      <div class="nav-item" onclick="showSection('orders')" id="nav-orders">
+        <i class="ti ti-list" aria-hidden="true"></i> Objednávky
+        <span class="badge" id="badge-orders">—</span>
+      </div>
     </div>
   </nav>
 
@@ -227,6 +231,27 @@ hr{border:none;border-top:0.5px solid #e5e7eb;margin:14px 0}
       </div>
     </div>
 
+    <!-- OBJEDNÁVKY -->
+    <div class="section" id="sec-orders">
+      <div class="card">
+        <div class="card-head" style="justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div class="card-head-icon" style="background:#fef3c7"><i class="ti ti-list" style="font-size:18px;color:#92400e" aria-hidden="true"></i></div>
+            <div>
+              <div class="card-head h2">Čekající objednávky</div>
+              <div class="card-head sub">Objednávky od firem čekající na schválení</div>
+            </div>
+          </div>
+          <button class="btn gray sm" onclick="loadOrdersAdmin()" style="flex-shrink:0">
+            <i class="ti ti-refresh" style="font-size:12px" aria-hidden="true"></i> Obnovit
+          </button>
+        </div>
+        <div class="card-body" id="ordersAdminBody">
+          <div style="text-align:center;color:#9ca3af;padding:24px;font-size:13px">Načítám...</div>
+        </div>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -244,6 +269,7 @@ function showSection(name) {
   if (name === 'sessions') loadSessions();
   if (name === 'share') loadShareTokens();
   if (name === 'backup') loadBackupInfo();
+  if (name === 'orders') loadOrdersAdmin();
 }
 
 function fmtDate(iso) {
@@ -528,6 +554,171 @@ fetch('/api/me').then(r=>r.json()).then(d=>{
   const el=document.getElementById('footerUser');
   if(el&&d.username)el.textContent=d.username;
 }).catch(()=>{});
+
+// ════════════════════════════════════════════
+// OBJEDNÁVKY — Admin správa
+// ════════════════════════════════════════════
+
+function formatDatum(datum) {
+  const s = String(datum).slice(0, 10);
+  const [y, m, d] = s.split('-');
+  return `${parseInt(d)}.${parseInt(m)}.${y}`;
+}
+
+async function updateOrdersBadge() {
+  try {
+    const orders = await api('GET', '/api/orders?pending=1');
+    if (Array.isArray(orders)) {
+      const count = new Set(orders.map(o => o.order_group_id)).size;
+      const badge = document.getElementById('badge-orders');
+      if (badge) badge.textContent = String(count);
+    }
+  } catch (e) {}
+}
+
+async function loadOrdersAdmin() {
+  const body = document.getElementById('ordersAdminBody');
+  if (!body) return;
+  body.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:24px;font-size:13px">Načítám...</div>';
+  try {
+    const orders = await api('GET', '/api/orders?pending=1');
+    if (!Array.isArray(orders)) throw new Error('Neplatná odpověď serveru');
+    const count = new Set(orders.map(o => o.order_group_id)).size;
+    const badge = document.getElementById('badge-orders');
+    if (badge) badge.textContent = String(count);
+    if (orders.length === 0) {
+      body.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:32px;font-size:13px"><div style="font-size:28px;margin-bottom:8px">✓</div>Žádné čekající objednávky</div>';
+      return;
+    }
+    const groups = {};
+    for (const o of orders) {
+      if (!groups[o.order_group_id]) {
+        groups[o.order_group_id] = { order_group_id: o.order_group_id, firma: o.firma, username: o.username, created_at: o.created_at, items: [] };
+      }
+      groups[o.order_group_id].items.push(o);
+    }
+    const sorted = Object.values(groups).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    body.innerHTML = sorted.map(g => renderOrderGroupCard(g)).join('');
+  } catch (err) {
+    body.innerHTML = `<div style="text-align:center;color:#dc2626;padding:24px;font-size:13px">Chyba načítání: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderOrderGroupCard(group) {
+  const gid = group.order_group_id;
+  const totalTuny = group.items.reduce((s, i) => s + (parseInt(i.tuny) || 0), 0);
+  const datumSet = [...new Set(group.items.map(i => String(i.datum).slice(0, 10)))].sort();
+  const datumsStr = datumSet.map(formatDatum).join(', ');
+  const itemRows = group.items.map(item => `<tr>
+    <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;color:#6b7280;white-space:nowrap">${formatDatum(item.datum)}</td>
+    <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;font-size:12px">${esc(item.smes)}</td>
+    <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;font-family:monospace;font-size:11px;color:#6b7280">${esc(item.itt)}</td>
+    <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;text-align:right;font-weight:600;white-space:nowrap">${item.tuny} t</td>
+    <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;color:#9ca3af;font-size:11px">${esc(item.komentar || '')}</td>
+  </tr>`).join('');
+  return `<div id="ogrp-${gid}" style="border:0.5px solid #e5e7eb;border-radius:8px;margin-bottom:12px;overflow:hidden">
+    <div style="background:#f9fafb;padding:12px 14px;border-bottom:0.5px solid #e5e7eb;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:#111">${esc(group.firma)}</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px">${esc(group.username || '?')} · ${datumsStr} · Zadáno ${fmtDate(group.created_at)}</div>
+      </div>
+      <div style="font-size:15px;font-weight:700;color:#1d4ed8;white-space:nowrap;flex-shrink:0">${totalTuny} t celkem</div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn green sm" onclick="approveGroup('${gid}')">✓ Schválit</button>
+        <button class="btn red sm" onclick="showRejectPanel('${gid}')">✗ Zamítnout</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:400px">
+        <thead><tr style="background:#f9fafb">
+          <th style="text-align:left;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap">Datum</th>
+          <th style="text-align:left;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px">Směs</th>
+          <th style="text-align:left;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px">ITT</th>
+          <th style="text-align:right;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px">Tuny</th>
+          <th style="text-align:left;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px">Komentář</th>
+        </tr></thead>
+        <tbody>${itemRows}</tbody>
+      </table>
+    </div>
+    <div id="reject-panel-${gid}" style="display:none;padding:12px 14px;border-top:0.5px solid #fee2e2;background:#fff5f5">
+      <div style="font-size:12px;font-weight:600;color:#dc2626;margin-bottom:6px">Důvod zamítnutí <span style="color:#dc2626">*</span> (povinný):</div>
+      <textarea id="reject-reason-${gid}" rows="2" style="width:100%;border:0.5px solid #fca5a5;border-radius:6px;padding:6px 8px;font-size:12px;font-family:inherit;resize:vertical;outline:none;background:#fff" placeholder="Napište důvod zamítnutí..."></textarea>
+      <div style="display:flex;gap:6px;margin-top:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn red sm" onclick="confirmReject('${gid}')">Potvrdit zamítnutí</button>
+        <button class="btn gray sm" onclick="hideRejectPanel('${gid}')">Zrušit</button>
+        <span id="reject-msg-${gid}" style="font-size:12px;margin-left:4px"></span>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function approveGroup(groupId) {
+  // Krok 1: jen kontrola kapacity, nic neschvaluje (bez confirm)
+  const check = await api('PATCH', `/api/orders/${groupId}/approve`, {});
+  if (check.error) { alert('Chyba: ' + check.error); return; }
+  if (check.exceedsMax && check.datum) {
+    const ok = confirm(
+      `Schválením překročíš denní maximum!\n` +
+      `Den ${formatDatum(check.datum)}: ${check.total} t > max ${check.max} t\n\n` +
+      `Opravdu schválit?`
+    );
+    if (!ok) return;
+  }
+  // Krok 2: skutečné schválení
+  const r = await api('PATCH', `/api/orders/${groupId}/approve`, { confirm: true });
+  if (r.ok) {
+    const card = document.getElementById('ogrp-' + groupId);
+    if (card) card.remove();
+    updateOrdersBadge();
+    _checkEmptyOrders();
+  } else {
+    alert('Chyba schválení: ' + (r.error || 'Neznámá chyba'));
+  }
+}
+
+function showRejectPanel(groupId) {
+  const panel = document.getElementById('reject-panel-' + groupId);
+  if (panel) { panel.style.display = 'block'; const ta = document.getElementById('reject-reason-' + groupId); if (ta) ta.focus(); }
+}
+function hideRejectPanel(groupId) {
+  const panel = document.getElementById('reject-panel-' + groupId);
+  if (panel) panel.style.display = 'none';
+  const ta = document.getElementById('reject-reason-' + groupId); if (ta) ta.value = '';
+  const msg = document.getElementById('reject-msg-' + groupId); if (msg) msg.innerHTML = '';
+}
+async function confirmReject(groupId) {
+  const ta = document.getElementById('reject-reason-' + groupId);
+  const reason = ta ? ta.value.trim() : '';
+  if (!reason) {
+    const msg = document.getElementById('reject-msg-' + groupId);
+    if (msg) msg.innerHTML = '<span style="color:#dc2626">⚠ Zadejte důvod zamítnutí</span>';
+    return;
+  }
+  const r = await api('PATCH', `/api/orders/${groupId}/reject`, { reason });
+  if (r.ok) {
+    const card = document.getElementById('ogrp-' + groupId);
+    if (card) card.remove();
+    updateOrdersBadge();
+    _checkEmptyOrders();
+  } else {
+    const msg = document.getElementById('reject-msg-' + groupId);
+    if (msg) msg.innerHTML = `<span style="color:#dc2626">✗ ${esc(r.error || 'Chyba')}</span>`;
+  }
+}
+function _checkEmptyOrders() {
+  const body = document.getElementById('ordersAdminBody');
+  if (body && !body.querySelector('[id^="ogrp-"]')) {
+    body.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:32px;font-size:13px"><div style="font-size:28px;margin-bottom:8px">✓</div>Žádné čekající objednávky</div>';
+  }
+}
+
+// Badge + auto-refresh při otevřené sekci Objednávky
+updateOrdersBadge();
+setInterval(() => {
+  updateOrdersBadge();
+  const sec = document.getElementById('sec-orders');
+  if (sec && sec.classList.contains('active')) loadOrdersAdmin();
+}, 60 * 1000);
 
 async function confirmDelete(type) {
   const label = type === 'weeks' ? 'vsechna data tydnu a mesicu' : 'vsechny receptury smesi';
