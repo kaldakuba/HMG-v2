@@ -109,9 +109,8 @@ hr{border:none;border-top:0.5px solid #e5e7eb;margin:14px 0}
       <div class="nav-item" onclick="showSection('backup')" id="nav-backup">
         <i class="ti ti-device-floppy" aria-hidden="true"></i> Zálohy
       </div>
-      <div class="nav-item" onclick="showSection('orders')" id="nav-orders">
-        <i class="ti ti-list" aria-hidden="true"></i> Objednávky
-        <span class="badge" id="badge-orders">—</span>
+      <div class="nav-item" onclick="showSection('smtp')" id="nav-smtp">
+        <i class="ti ti-mail-cog" aria-hidden="true"></i> E-mail
       </div>
     </div>
   </nav>
@@ -143,6 +142,10 @@ hr{border:none;border-top:0.5px solid #e5e7eb;margin:14px 0}
               <button class="btn green sm" onclick="addUser()">Přidat</button>
               <button class="btn gray sm" onclick="toggleAddUser()">Zrušit</button>
             </div>
+          </div>
+          <div class="form-row" style="margin-bottom:4px">
+            <div class="form-group" style="max-width:300px"><label>Email <span style="font-weight:400;color:#9ca3af">(volitelný – notifikace)</span></label><input type="text" id="newEmail" placeholder="jmeno@firma.cz" autocomplete="off"></div>
+            <div style="align-self:flex-end;padding-bottom:6px;color:#9ca3af;font-size:11px;max-width:260px">Hlavně pro hmg_share – na tento email chodí notifikace o objednávkách.</div>
           </div>
           <div id="addUserMsg"></div>
         </div>
@@ -231,23 +234,45 @@ hr{border:none;border-top:0.5px solid #e5e7eb;margin:14px 0}
       </div>
     </div>
 
-    <!-- OBJEDNÁVKY -->
-    <div class="section" id="sec-orders">
+
+    <!-- SMTP NASTAVENÍ -->
+    <div class="section" id="sec-smtp">
       <div class="card">
-        <div class="card-head" style="justify-content:space-between">
-          <div style="display:flex;align-items:center;gap:10px">
-            <div class="card-head-icon" style="background:#fef3c7"><i class="ti ti-list" style="font-size:18px;color:#92400e" aria-hidden="true"></i></div>
-            <div>
-              <div class="card-head h2">Čekající objednávky</div>
-              <div class="card-head sub">Objednávky od firem čekající na schválení</div>
+        <div class="card-head">
+          <div class="card-head-icon" style="background:#eff6ff"><i class="ti ti-mail-cog" style="font-size:18px;color:#2563eb" aria-hidden="true"></i></div>
+          <div><div class="card-head h2">Nastavení emailů / SMTP</div><div class="card-head sub">Notifikace o objednávkách a schvalování</div></div>
+        </div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="form-group"><label>SMTP Host</label><input type="text" id="smtpHost" placeholder="smtp.gmail.com" autocomplete="off"></div>
+            <div class="form-group" style="max-width:110px"><label>SMTP Port</label><input type="text" id="smtpPort" placeholder="587" autocomplete="off"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>SMTP Uživatel (login)</label><input type="text" id="smtpUser" placeholder="muj@email.cz" autocomplete="off"></div>
+            <div class="form-group">
+              <label>SMTP Heslo</label>
+              <input type="password" id="smtpPassword" placeholder="zadejte heslo" autocomplete="new-password">
+              <div class="info" id="smtpPasswordHint"></div>
             </div>
           </div>
-          <button class="btn gray sm" onclick="loadOrdersAdmin()" style="flex-shrink:0">
-            <i class="ti ti-refresh" style="font-size:12px" aria-hidden="true"></i> Obnovit
-          </button>
-        </div>
-        <div class="card-body" id="ordersAdminBody">
-          <div style="text-align:center;color:#9ca3af;padding:24px;font-size:13px">Načítám...</div>
+          <div class="form-row">
+            <div class="form-group"><label>Adresa odesílatele (From)</label><input type="text" id="smtpFrom" placeholder='HMG Systém &lt;hmg@firma.cz&gt;' autocomplete="off"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Admin emaily pro notifikace <span style="font-weight:400;color:#9ca3af">(oddělte čárkou)</span></label><input type="text" id="smtpAdminEmails" placeholder="admin@firma.cz, dalsi@firma.cz" autocomplete="off"></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center">
+            <button class="btn blue" onclick="saveSmtpSettings()"><i class="ti ti-device-floppy" style="font-size:13px"></i> Uložit</button>
+            <button class="btn gray" onclick="testSmtpEmail()"><i class="ti ti-mail-forward" style="font-size:13px"></i> Otestovat odeslání</button>
+          </div>
+          <div id="smtpMsg" style="margin-top:10px"></div>
+          <hr>
+          <div class="info">
+            <strong>Popis typů notifikací:</strong><br>
+            • <strong>Při odeslání objednávky:</strong> admin dostane souhrn nové objednávky, uživatel potvrzení.<br>
+            • <strong>Při finálním vyřízení (finalize / reject-all):</strong> uživatel dostane souhrn se stavem každého dne.<br>
+            • <strong>Při selhání emailu</strong> se objednávka dokončí normálně — email je pouze bonus.
+          </div>
         </div>
       </div>
     </div>
@@ -257,7 +282,7 @@ hr{border:none;border-top:0.5px solid #e5e7eb;margin:14px 0}
 
 <footer style="border-top:0.5px solid #d1d5db;background:#f8fafc;padding:5px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
   <span style="font-size:11px;color:#9ca3af">Přihlášen jako <strong id="footerUser" style="color:#6b7280">admin</strong></span>
-  <span onclick="doLogout()" style="font-size:11px;color:#9ca3af;cursor:pointer;text-decoration:underline;text-underline-offset:2px">Odhlásit</span>
+  <button onclick="doLogout()" style="display:inline-flex;align-items:center;gap:6px;background:transparent;border:1px solid #fca5a5;border-radius:6px;color:#dc2626;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;padding:6px 14px;line-height:1;" onmouseenter="this.style.background='#fff1f2'" onmouseleave="this.style.background='transparent'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Odhlásit se</button>
 </footer>
 
 <script>
@@ -270,6 +295,7 @@ function showSection(name) {
   if (name === 'share') loadShareTokens();
   if (name === 'backup') loadBackupInfo();
   if (name === 'orders') loadOrdersAdmin();
+  if (name === 'smtp') loadSmtpSettings();
 }
 
 function fmtDate(iso) {
@@ -340,6 +366,9 @@ async function loadUsers() {
     const firmaCell = u.role === 'hmg_share'
       ? `<button class="btn gray sm" onclick="changeFirma(${u.id},'${esc(u.username)}','${esc(u.firma||'')}')" style="margin-right:4px" title="Změnit firmu">${u.firma ? `<span style="font-size:10px;background:#ede9fe;color:#5b21b6;border-radius:10px;padding:1px 7px">${esc(u.firma)}</span>` : '⚠ bez firmy'}</button>`
       : '<span style="color:#d1d5db;font-size:11px">—</span>';
+    const emailCell = u.email
+      ? `<button onclick="changeEmail(${u.id},'${esc(u.username)}','${esc(u.email)}')" style="background:none;border:1px solid #dbeafe;border-radius:4px;color:#2563eb;font-size:11px;cursor:pointer;padding:2px 7px;font-family:inherit">${esc(u.email)}</button>`
+      : `<button onclick="changeEmail(${u.id},'${esc(u.username)}')" style="background:none;border:1px dashed #d1d5db;border-radius:4px;color:#9ca3af;font-size:10px;cursor:pointer;padding:2px 7px;font-family:inherit">+ email</button>`;
     const actions = isAdmin
       ? `<button class="btn gray sm" onclick="resetPassword(${u.id},'${esc(u.username)}')" style="margin-right:4px">Heslo</button><span class="cant-delete">nelze smazat</span>`
       : `<button class="btn gray sm" onclick="resetPassword(${u.id},'${esc(u.username)}')" style="margin-right:4px">Heslo</button><button class="btn red sm" onclick="deleteUser(${u.id},'${esc(u.username)}')">Smazat</button>`;
@@ -347,6 +376,7 @@ async function loadUsers() {
       <td class="td-name">${esc(u.username)}</td>
       <td>${roleBadge(u.role)}</td>
       <td>${firmaCell}</td>
+      <td>${emailCell}</td>
       <td class="td-date">${fmtDateShort(u.created_at)}</td>
       <td class="td-actions">${actions}</td>
     </tr>`;
@@ -359,6 +389,7 @@ async function loadUsers() {
           <th>Jméno</th>
           <th>Role</th>
           <th>Firma</th>
+          <th>Email</th>
           <th>Vytvořen</th>
           <th>Akce</th>
         </tr>
@@ -402,12 +433,14 @@ async function addUser() {
   const password = document.getElementById('newPassword').value;
   const role = document.getElementById('newRole').value;
   const firma = document.getElementById('newFirma').value || undefined;
+  const email = document.getElementById('newEmail').value.trim() || undefined;
   const msg = document.getElementById('addUserMsg');
-  const r = await api('POST', '/api/users', {username, password, role, firma});
+  const r = await api('POST', '/api/users', {username, password, role, firma, email});
   if (r.ok) {
     msg.innerHTML = '<span class="msg-ok">✓ Uživatel přidán</span>';
     document.getElementById('newUsername').value = '';
     document.getElementById('newPassword').value = '';
+    document.getElementById('newEmail').value = '';
     setTimeout(() => {
       document.getElementById('addUserForm').style.display = 'none';
       document.getElementById('btnAddUser').textContent = '+ Přidat uživatele';
@@ -415,6 +448,12 @@ async function addUser() {
       loadUsers();
     }, 1000);
   } else { msg.innerHTML = `<span class="msg-err">✗ ${esc(r.error)}</span>`; }
+}
+async function changeEmail(id, name, currentEmail) {
+  const newEmail = prompt(`Email pro uživatele "${name}"\nAktuální: ${currentEmail || '—'}\n\nNový email (prázdné = odebrat):`);
+  if (newEmail === null) return;
+  const r = await api('PUT', `/api/users/${id}/email`, { email: newEmail.trim() });
+  if (r.ok) loadUsers(); else alert(r.error || 'Chyba');
 }
 async function changeFirma(id, name, currentFirma) {
   const companiesList = _companies.length ? _companies.map(c => c.name).join(', ') : 'nejdříve otevřete formulář přidání';
@@ -555,180 +594,6 @@ fetch('/api/me').then(r=>r.json()).then(d=>{
   if(el&&d.username)el.textContent=d.username;
 }).catch(()=>{});
 
-// ════════════════════════════════════════════
-// OBJEDNÁVKY — Admin správa
-// ════════════════════════════════════════════
-
-function formatDatum(datum) {
-  const s = String(datum).slice(0, 10);
-  const [y, m, d] = s.split('-');
-  return `${parseInt(d)}.${parseInt(m)}.${y}`;
-}
-
-async function updateOrdersBadge() {
-  try {
-    const orders = await api('GET', '/api/orders?pending=1');
-    if (Array.isArray(orders)) {
-      const count = new Set(orders.map(o => o.order_group_id)).size;
-      const badge = document.getElementById('badge-orders');
-      if (badge) badge.textContent = String(count);
-    }
-  } catch (e) {}
-}
-
-async function loadOrdersAdmin() {
-  const body = document.getElementById('ordersAdminBody');
-  if (!body) return;
-  body.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:24px;font-size:13px">Načítám...</div>';
-  try {
-    const orders = await api('GET', '/api/orders?pending=1');
-    if (!Array.isArray(orders)) throw new Error('Neplatná odpověď serveru');
-    const count = new Set(orders.map(o => o.order_group_id)).size;
-    const badge = document.getElementById('badge-orders');
-    if (badge) badge.textContent = String(count);
-    if (orders.length === 0) {
-      body.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:32px;font-size:13px"><div style="font-size:28px;margin-bottom:8px">✓</div>Žádné čekající objednávky</div>';
-      return;
-    }
-    const groups = {};
-    for (const o of orders) {
-      if (!groups[o.order_group_id]) {
-        groups[o.order_group_id] = { order_group_id: o.order_group_id, firma: o.firma, username: o.username, created_at: o.created_at, items: [] };
-      }
-      groups[o.order_group_id].items.push(o);
-    }
-    const sorted = Object.values(groups).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-    body.innerHTML = sorted.map(g => renderOrderGroupCard(g)).join('');
-  } catch (err) {
-    body.innerHTML = `<div style="text-align:center;color:#dc2626;padding:24px;font-size:13px">Chyba načítání: ${esc(err.message)}</div>`;
-  }
-}
-
-function renderOrderGroupCard(group) {
-  const gid = group.order_group_id;
-  const totalTuny = group.items.reduce((s, i) => s + (parseInt(i.tuny) || 0), 0);
-  const datumSet = [...new Set(group.items.map(i => String(i.datum).slice(0, 10)))].sort();
-  const datumsStr = datumSet.map(formatDatum).join(', ');
-  const itemRows = group.items.map(item => {
-    const gps = (item.lat != null && item.lng != null)
-      ? `<span style="font-family:monospace;font-size:10px;color:#0f766e">${parseFloat(item.lat).toFixed(4)}, ${parseFloat(item.lng).toFixed(4)}</span>`
-      : '<span style="color:#fbbf24;font-size:10px">—</span>';
-    return `<tr>
-    <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;color:#6b7280;white-space:nowrap">${formatDatum(item.datum)}</td>
-    <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;font-size:12px">${esc(item.smes)}</td>
-    <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;font-family:monospace;font-size:11px;color:#6b7280">${esc(item.itt)}</td>
-    <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;font-size:12px;color:#374151">${esc(item.lokalita || '')}</td>
-    <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;white-space:nowrap">${gps}</td>
-    <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;text-align:right;font-weight:600;white-space:nowrap">${item.tuny} t</td>
-    <td style="padding:7px 10px;border-bottom:0.5px solid #f3f4f6;color:#9ca3af;font-size:11px">${esc(item.komentar || '')}</td>
-  </tr>`;
-  }).join('');
-  return `<div id="ogrp-${gid}" style="border:0.5px solid #e5e7eb;border-radius:8px;margin-bottom:12px;overflow:hidden">
-    <div style="background:#f9fafb;padding:12px 14px;border-bottom:0.5px solid #e5e7eb;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:600;color:#111">${esc(group.firma)}</div>
-        <div style="font-size:11px;color:#6b7280;margin-top:2px">${esc(group.username || '?')} · ${datumsStr} · Zadáno ${fmtDate(group.created_at)}</div>
-      </div>
-      <div style="font-size:15px;font-weight:700;color:#1d4ed8;white-space:nowrap;flex-shrink:0">${totalTuny} t celkem</div>
-      <div style="display:flex;gap:6px;flex-shrink:0">
-        <button class="btn green sm" onclick="approveGroup('${gid}')">✓ Schválit</button>
-        <button class="btn red sm" onclick="showRejectPanel('${gid}')">✗ Zamítnout</button>
-      </div>
-    </div>
-    <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:400px">
-        <thead><tr style="background:#f9fafb">
-          <th style="text-align:left;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap">Datum</th>
-          <th style="text-align:left;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px">Směs</th>
-          <th style="text-align:left;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px">ITT</th>
-          <th style="text-align:left;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px">Lokalita</th>
-          <th style="text-align:left;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap">GPS</th>
-          <th style="text-align:right;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px">Tuny</th>
-          <th style="text-align:left;font-size:10px;font-weight:600;color:#9ca3af;padding:6px 10px;border-bottom:0.5px solid #e5e7eb;text-transform:uppercase;letter-spacing:.3px">Komentář</th>
-        </tr></thead>
-        <tbody>${itemRows}</tbody>
-      </table>
-    </div>
-    <div id="reject-panel-${gid}" style="display:none;padding:12px 14px;border-top:0.5px solid #fee2e2;background:#fff5f5">
-      <div style="font-size:12px;font-weight:600;color:#dc2626;margin-bottom:6px">Důvod zamítnutí <span style="color:#dc2626">*</span> (povinný):</div>
-      <textarea id="reject-reason-${gid}" rows="2" style="width:100%;border:0.5px solid #fca5a5;border-radius:6px;padding:6px 8px;font-size:12px;font-family:inherit;resize:vertical;outline:none;background:#fff" placeholder="Napište důvod zamítnutí..."></textarea>
-      <div style="display:flex;gap:6px;margin-top:8px;align-items:center;flex-wrap:wrap">
-        <button class="btn red sm" onclick="confirmReject('${gid}')">Potvrdit zamítnutí</button>
-        <button class="btn gray sm" onclick="hideRejectPanel('${gid}')">Zrušit</button>
-        <span id="reject-msg-${gid}" style="font-size:12px;margin-left:4px"></span>
-      </div>
-    </div>
-  </div>`;
-}
-
-async function approveGroup(groupId) {
-  // Krok 1: jen kontrola kapacity, nic neschvaluje (bez confirm)
-  const check = await api('PATCH', `/api/orders/${groupId}/approve`, {});
-  if (check.error) { alert('Chyba: ' + check.error); return; }
-  if (check.exceedsMax && check.datum) {
-    const ok = confirm(
-      `Schválením překročíš denní maximum!\n` +
-      `Den ${formatDatum(check.datum)}: ${check.total} t > max ${check.max} t\n\n` +
-      `Opravdu schválit?`
-    );
-    if (!ok) return;
-  }
-  // Krok 2: skutečné schválení
-  const r = await api('PATCH', `/api/orders/${groupId}/approve`, { confirm: true });
-  if (r.ok) {
-    const card = document.getElementById('ogrp-' + groupId);
-    if (card) card.remove();
-    updateOrdersBadge();
-    _checkEmptyOrders();
-  } else {
-    alert('Chyba schválení: ' + (r.error || 'Neznámá chyba'));
-  }
-}
-
-function showRejectPanel(groupId) {
-  const panel = document.getElementById('reject-panel-' + groupId);
-  if (panel) { panel.style.display = 'block'; const ta = document.getElementById('reject-reason-' + groupId); if (ta) ta.focus(); }
-}
-function hideRejectPanel(groupId) {
-  const panel = document.getElementById('reject-panel-' + groupId);
-  if (panel) panel.style.display = 'none';
-  const ta = document.getElementById('reject-reason-' + groupId); if (ta) ta.value = '';
-  const msg = document.getElementById('reject-msg-' + groupId); if (msg) msg.innerHTML = '';
-}
-async function confirmReject(groupId) {
-  const ta = document.getElementById('reject-reason-' + groupId);
-  const reason = ta ? ta.value.trim() : '';
-  if (!reason) {
-    const msg = document.getElementById('reject-msg-' + groupId);
-    if (msg) msg.innerHTML = '<span style="color:#dc2626">⚠ Zadejte důvod zamítnutí</span>';
-    return;
-  }
-  const r = await api('PATCH', `/api/orders/${groupId}/reject`, { reason });
-  if (r.ok) {
-    const card = document.getElementById('ogrp-' + groupId);
-    if (card) card.remove();
-    updateOrdersBadge();
-    _checkEmptyOrders();
-  } else {
-    const msg = document.getElementById('reject-msg-' + groupId);
-    if (msg) msg.innerHTML = `<span style="color:#dc2626">✗ ${esc(r.error || 'Chyba')}</span>`;
-  }
-}
-function _checkEmptyOrders() {
-  const body = document.getElementById('ordersAdminBody');
-  if (body && !body.querySelector('[id^="ogrp-"]')) {
-    body.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:32px;font-size:13px"><div style="font-size:28px;margin-bottom:8px">✓</div>Žádné čekající objednávky</div>';
-  }
-}
-
-// Badge + auto-refresh při otevřené sekci Objednávky
-updateOrdersBadge();
-setInterval(() => {
-  updateOrdersBadge();
-  const sec = document.getElementById('sec-orders');
-  if (sec && sec.classList.contains('active')) loadOrdersAdmin();
-}, 60 * 1000);
-
 async function confirmDelete(type) {
   const label = type === 'weeks' ? 'vsechna data tydnu a mesicu' : 'vsechny receptury smesi';
   const password = prompt('Tato akce je nevratna!\nZadejte heslo admina pro smazani: ' + label);
@@ -754,6 +619,57 @@ async function confirmDelete(type) {
 }
 
 loadUsers();
+
+// ── SMTP nastavení ──
+async function loadSmtpSettings() {
+  try {
+    const r = await api('GET', '/api/smtp-settings');
+    document.getElementById('smtpHost').value = r.smtp_host || '';
+    document.getElementById('smtpPort').value = r.smtp_port || '';
+    document.getElementById('smtpUser').value = r.smtp_user || '';
+    document.getElementById('smtpFrom').value = r.smtp_from || '';
+    document.getElementById('smtpAdminEmails').value = r.smtp_admin_emails || '';
+    const pwEl = document.getElementById('smtpPassword');
+    const pwHint = document.getElementById('smtpPasswordHint');
+    if (r.smtp_password_set) {
+      pwEl.placeholder = '•••• nastaveno (prázdné = ponechat beze změny)';
+      pwHint.innerHTML = '<span style="color:#9ca3af">Heslo je nastaveno. Prázdné pole = heslo se nezmění.</span>';
+    } else {
+      pwEl.placeholder = 'zadejte heslo';
+      pwHint.textContent = '';
+    }
+  } catch(e) { console.error('loadSmtpSettings:', e); }
+}
+async function saveSmtpSettings() {
+  const msg = document.getElementById('smtpMsg');
+  const body = {
+    smtp_host:         document.getElementById('smtpHost').value.trim(),
+    smtp_port:         document.getElementById('smtpPort').value.trim(),
+    smtp_user:         document.getElementById('smtpUser').value.trim(),
+    smtp_password:     document.getElementById('smtpPassword').value,
+    smtp_from:         document.getElementById('smtpFrom').value.trim(),
+    smtp_admin_emails: document.getElementById('smtpAdminEmails').value.trim()
+  };
+  const r = await api('POST', '/api/smtp-settings', body);
+  if (r.ok) {
+    msg.innerHTML = '<span class="msg-ok">✓ Nastavení uloženo</span>';
+    document.getElementById('smtpPassword').value = '';
+    loadSmtpSettings();
+    setTimeout(() => { msg.innerHTML = ''; }, 3000);
+  } else {
+    msg.innerHTML = `<span class="msg-err">✗ ${esc(r.error || 'Chyba')}</span>`;
+  }
+}
+async function testSmtpEmail() {
+  const msg = document.getElementById('smtpMsg');
+  msg.innerHTML = '<span style="color:#0369a1;font-weight:500">⏳ Odesílám testovací email...</span>';
+  const r = await api('POST', '/api/smtp-settings/test', {});
+  if (r.ok) {
+    msg.innerHTML = `<span class="msg-ok">✓ ${esc(r.message || 'Email odeslán')}</span>`;
+  } else {
+    msg.innerHTML = `<span class="msg-err">✗ ${esc(r.error || 'Chyba odeslání')}</span>`;
+  }
+}
 </script>
 <meta name="author" content="Jakub Kalousek">
 <meta name="copyright" content="Copyright 2026 Jakub Kalousek. All rights reserved.">

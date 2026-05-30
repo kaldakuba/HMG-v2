@@ -108,6 +108,7 @@ async function initDb() {
 
     -- HMG V3
     ALTER TABLE users ADD COLUMN IF NOT EXISTS firma TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
     CREATE TABLE IF NOT EXISTS orders (
       id              SERIAL PRIMARY KEY,
       order_group_id  UUID NOT NULL,
@@ -765,6 +766,188 @@ async function cleanupRejectedOrders() {
   }
 }
 
+// ── SMTP / Emailové notifikace ─────────────────────────────────────────────────
+
+async function getSmtpSettings() {
+  try {
+    const r = await pool.query(
+      "SELECT key,value FROM settings WHERE key IN ('smtp_host','smtp_port','smtp_user','smtp_password','smtp_from','smtp_admin_emails')"
+    );
+    const s = {};
+    r.rows.forEach(row => { s[row.key] = row.value; });
+    return s;
+  } catch(err) {
+    console.error('getSmtpSettings error:', err.message);
+    return {};
+  }
+}
+
+async function sendNotificationEmail(toAddr, subject, htmlContent, smtpSettings) {
+  if (!toAddr) return;
+  const settings = smtpSettings || (await getSmtpSettings());
+  if (!settings.smtp_host || !settings.smtp_user) {
+    console.log(`SMTP nenastaveno, email přeskočen (to: ${toAddr})`);
+    return;
+  }
+  try {
+    const transporter = nodemailer.createTransport({
+      host: settings.smtp_host,
+      port: parseInt(settings.smtp_port) || 587,
+      secure: parseInt(settings.smtp_port) === 465,
+      auth: { user: settings.smtp_user, pass: settings.smtp_password || '' },
+      tls: { rejectUnauthorized: false }
+    });
+    await transporter.sendMail({
+      from: settings.smtp_from || settings.smtp_user,
+      to: toAddr, subject,
+      html: htmlContent,
+      text: htmlContent.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+    });
+    console.log(`Email odeslán → ${toAddr}: ${subject}`);
+  } catch(err) {
+    console.error(`Email chyba (to:${toAddr}, subject:"${subject}"):`, err.message);
+  }
+}
+
+function fmtDateCz(d) {
+  const s = d instanceof Date ? d.toISOString().slice(0,10) : String(d||'').slice(0,10);
+  const [y,m,day] = s.split('-');
+  return `${parseInt(day)}.${parseInt(m)}.${y}`;
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function sendOrderCreatedEmails(groupId, firma, username, lokalita, lat, lng, items, userId) {
+  try {
+    const smtpSettings = await getSmtpSettings();
+    const smesMap = {};
+    items.forEach(item => { smesMap[item.smes] = (smesMap[item.smes]||0) + (parseInt(item.tuny)||0); });
+    const celkem = Object.values(smesMap).reduce((s,v)=>s+v,0);
+    const byDatum = {};
+    items.forEach(item => { if (!byDatum[item.datum]) byDatum[item.datum]=[]; byDatum[item.datum].push(item); });
+    const TS = 'width:100%;border-collapse:collapse;margin-bottom:12px;font-size:14px';
+    const TH = 'padding:6px 8px;border:1px solid #d1d5db;background:#f9fafb;text-align:left;font-size:12px;font-weight:600;color:#374151';
+    const dnyRows = Object.keys(byDatum).sort().map(datum => {
+      const di = byDatum[datum];
+      const dt = di.reduce((s,i)=>s+(parseInt(i.tuny)||0),0);
+      return `<tr><td style="padding:5px 8px;border:1px solid #e5e7eb">${fmtDateCz(datum)}</td><td style="padding:5px 8px;border:1px solid #e5e7eb">${di.map(i=>`${escHtml(i.smes)}: ${i.tuny} t`).join(', ')}</td><td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:right;font-weight:600">${dt} t</td></tr>`;
+    }).join('');
+    const smesRows = Object.entries(smesMap).map(([smes,tuny])=>
+      `<tr><td style="padding:5px 8px;border:1px solid #e5e7eb">${escHtml(smes)}</td><td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:right;font-weight:600">${tuny} t</td></tr>`
+    ).join('');
+    const gpsText = (lat&&lng)?`${parseFloat(lat).toFixed(6)}, ${parseFloat(lng).toFixed(6)}`:'—';
+    const now = new Date().toLocaleString('cs-CZ',{timeZone:'UTC'});
+
+    // A1 – email adminovi
+    const adminEmails = smtpSettings.smtp_admin_emails;
+    if (adminEmails) {
+      const html = `<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;color:#111">
+        <h2 style="background:#1a1a2e;color:#fff;padding:16px 20px;margin:0;font-size:18px">&#x1F69B; Nov&#225; objedn&#225;vka</h2>
+        <div style="padding:20px">
+          <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:14px">
+            <tr><td style="padding:5px 8px;font-weight:600;color:#374151;width:120px">Firma:</td><td style="padding:5px 8px"><strong>${escHtml(firma)}</strong></td></tr>
+            <tr><td style="padding:5px 8px;font-weight:600;color:#374151">U&#382;ivatel:</td><td style="padding:5px 8px">${escHtml(username)}</td></tr>
+            <tr><td style="padding:5px 8px;font-weight:600;color:#374151">Lokalita:</td><td style="padding:5px 8px">${escHtml(lokalita)}</td></tr>
+            <tr><td style="padding:5px 8px;font-weight:600;color:#374151">GPS:</td><td style="padding:5px 8px">${gpsText}</td></tr>
+            <tr><td style="padding:5px 8px;font-weight:600;color:#374151">&#268;as zad&#225;n&#237;:</td><td style="padding:5px 8px">${now}</td></tr>
+          </table>
+          <h3 style="font-size:14px;font-weight:600;color:#374151;margin:12px 0 6px">Dny a sm&#283;si</h3>
+          <table style="${TS}"><thead><tr><th style="${TH}">Datum</th><th style="${TH}">Sm&#283;si</th><th style="${TH};text-align:right">Tuny</th></tr></thead><tbody>${dnyRows}</tbody></table>
+          <h3 style="font-size:14px;font-weight:600;color:#374151;margin:12px 0 6px">Sou&#269;et sm&#283;s&#237;</h3>
+          <table style="${TS}"><thead><tr><th style="${TH}">Sm&#283;s</th><th style="${TH};text-align:right">Tuny celkem</th></tr></thead><tbody>${smesRows}</tbody></table>
+          <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:12px;margin-top:8px">
+            <span style="font-size:16px;font-weight:700;color:#1d4ed8">Celkem: ${celkem} t</span>
+          </div>
+        </div>
+      </div>`;
+      await sendNotificationEmail(adminEmails, `Nová objednávka - ${firma}`, html, smtpSettings);
+    }
+
+    // A2 – email uživateli
+    const uRes = await pool.query('SELECT email FROM users WHERE id=$1', [userId]);
+    const userEmail = uRes.rows[0] ? uRes.rows[0].email : null;
+    if (userEmail) {
+      const html = `<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;color:#111">
+        <h2 style="background:#16a34a;color:#fff;padding:16px 20px;margin:0;font-size:18px">&#x2713; Objedn&#225;vka odesl&#225;na</h2>
+        <div style="padding:20px">
+          <p>Va&#353;e objedn&#225;vka pro lokalitu <strong>${escHtml(lokalita)}</strong> byla &#250;sp&#283;&#353;n&#283; odesl&#225;na a &#269;ek&#225; na schv&#225;len&#237; adminem.</p>
+          <h3 style="font-size:14px;font-weight:600;color:#374151;margin:12px 0 6px">Dny a sm&#283;si</h3>
+          <table style="${TS}"><thead><tr><th style="${TH}">Datum</th><th style="${TH}">Sm&#283;si</th><th style="${TH};text-align:right">Tuny</th></tr></thead><tbody>${dnyRows}</tbody></table>
+          <h3 style="font-size:14px;font-weight:600;color:#374151;margin:12px 0 6px">Sou&#269;et sm&#283;s&#237;</h3>
+          <table style="${TS}"><thead><tr><th style="${TH}">Sm&#283;s</th><th style="${TH};text-align:right">Tuny celkem</th></tr></thead><tbody>${smesRows}</tbody></table>
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:12px;margin-top:8px">
+            <span style="font-size:16px;font-weight:700;color:#16a34a">Celkem: ${celkem} t</span>
+          </div>
+          <p style="color:#9ca3af;font-size:11px;margin-top:20px">Tato zpr&#225;va byla vygenerov&#225;na automaticky syst&#233;mem HMG.</p>
+        </div>
+      </div>`;
+      await sendNotificationEmail(userEmail, 'Vaše objednávka byla odeslána', html, smtpSettings);
+    }
+  } catch(err) {
+    console.error('sendOrderCreatedEmails error:', err.message);
+  }
+}
+
+async function sendOrderFinalizedEmail(groupId) {
+  try {
+    const smtpSettings = await getSmtpSettings();
+    const gRes = await pool.query(
+      `SELECT o.datum, o.smes, o.tuny, o.status, o.reject_reason, o.lokalita,
+              u.email, u.username
+       FROM orders o
+       LEFT JOIN users u ON u.id = o.user_id
+       WHERE o.order_group_id=$1
+       ORDER BY o.datum, o.smes`,
+      [groupId]
+    );
+    if (!gRes.rows.length) return;
+    const firstRow = gRes.rows[0];
+    const userEmail = firstRow.email;
+    if (!userEmail) { console.log(`sendOrderFinalizedEmail: ${firstRow.username} nemá email, přeskočeno`); return; }
+    const lokalita = firstRow.lokalita || '—';
+    const byDatum = {};
+    gRes.rows.forEach(row => {
+      const datum = row.datum instanceof Date ? row.datum.toISOString().slice(0,10) : String(row.datum).slice(0,10);
+      if (!byDatum[datum]) byDatum[datum]=[];
+      byDatum[datum].push({...row,datum});
+    });
+    const TS = 'width:100%;border-collapse:collapse;margin-bottom:12px;font-size:14px';
+    const TH = 'padding:6px 8px;border:1px solid #d1d5db;background:#f9fafb;text-align:left;font-size:12px;font-weight:600;color:#374151';
+    let approvedTotal = 0, rejectedTotal = 0;
+    const dnyRows = Object.keys(byDatum).sort().map(datum => {
+      const dr = byDatum[datum];
+      const dt = dr.reduce((s,r)=>s+(parseInt(r.tuny)||0),0);
+      const smesText = dr.map(r=>`${escHtml(r.smes)}: ${r.tuny} t`).join(', ');
+      const status = dr[0].status;
+      if (status==='approved') {
+        approvedTotal += dt;
+        return `<tr style="background:#f0fdf4"><td style="padding:5px 8px;border:1px solid #e5e7eb">${fmtDateCz(datum)}</td><td style="padding:5px 8px;border:1px solid #e5e7eb"><span style="color:#16a34a;font-weight:600">&#x2713; SCHV&#193;LENO</span></td><td style="padding:5px 8px;border:1px solid #e5e7eb">${smesText}</td><td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:right;font-weight:600">${dt} t</td></tr>`;
+      } else {
+        rejectedTotal += dt;
+        const reason = (dr.find(r=>r.reject_reason)||{}).reject_reason || '—';
+        return `<tr style="background:#fff5f5"><td style="padding:5px 8px;border:1px solid #e5e7eb">${fmtDateCz(datum)}</td><td style="padding:5px 8px;border:1px solid #e5e7eb"><span style="color:#dc2626;font-weight:600">&#x2717; ZAM&#205;TNUTO</span></td><td style="padding:5px 8px;border:1px solid #e5e7eb">${smesText}</td><td style="padding:5px 8px;border:1px solid #e5e7eb;color:#dc2626">Důvod: ${escHtml(reason)}</td></tr>`;
+      }
+    }).join('');
+    const summaryParts = [];
+    if (approvedTotal > 0) summaryParts.push(`<div style="flex:1;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:10px"><div style="font-size:12px;color:#16a34a">Schv&#225;leno</div><div style="font-size:18px;font-weight:700;color:#16a34a">${approvedTotal} t</div></div>`);
+    if (rejectedTotal > 0) summaryParts.push(`<div style="flex:1;background:#fff5f5;border:1px solid #fca5a5;border-radius:6px;padding:10px"><div style="font-size:12px;color:#dc2626">Zam&#237;tnuto</div><div style="font-size:18px;font-weight:700;color:#dc2626">${rejectedTotal} t</div></div>`);
+    const html = `<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;color:#111">
+      <h2 style="background:#2563eb;color:#fff;padding:16px 20px;margin:0;font-size:18px">&#x1F4CB; Objedn&#225;vka vy&#345;&#237;zena</h2>
+      <div style="padding:20px">
+        <p>Va&#353;e objedn&#225;vka pro lokalitu <strong>${escHtml(lokalita)}</strong> byla vy&#345;&#237;zena.</p>
+        <table style="${TS}"><thead><tr><th style="${TH}">Datum</th><th style="${TH}">Stav</th><th style="${TH}">Sm&#283;si</th><th style="${TH};text-align:right">Tuny / Důvod</th></tr></thead><tbody>${dnyRows}</tbody></table>
+        ${summaryParts.length ? `<div style="display:flex;gap:12px;margin-top:12px">${summaryParts.join('')}</div>` : ''}
+        <p style="color:#9ca3af;font-size:11px;margin-top:20px">Tato zpr&#225;va byla vygenerov&#225;na automaticky syst&#233;mem HMG.</p>
+      </div>
+    </div>`;
+    await sendNotificationEmail(userEmail, `Objednávka vyřízena - ${lokalita}`, html, smtpSettings);
+  } catch(err) {
+    console.error('sendOrderFinalizedEmail error:', err.message);
+  }
+}
+
 // Spustit zálohu každý den v 18:00 (UTC+2 = 16:00 UTC) + cleanup rejected objednávek
 function scheduleBackup() {
   const now = new Date();
@@ -838,7 +1021,7 @@ app.get('/api/export-excel', requireAuth, requireOperator, async (req, res) => {
 // ── Správa uživatelů ──
 app.get('/api/users', requireAuth, requireAdmin, async (req, res) => {
   const r = await pool.query(`
-    SELECT u.id, u.username, u.role, u.firma, u.created_at, u.last_seen,
+    SELECT u.id, u.username, u.role, u.firma, u.email, u.created_at, u.last_seen,
       (SELECT COUNT(*) FROM session s WHERE s.sess->>'userId' = u.id::text AND s.expire > NOW()) as session_count
     FROM users u ORDER BY u.created_at
   `);
@@ -847,16 +1030,20 @@ app.get('/api/users', requireAuth, requireAdmin, async (req, res) => {
 
 app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { username, password, role, firma } = req.body;
+    const { username, password, role, firma, email } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Vyplňte jméno a heslo' });
     if (!['admin','operator','hmg_share'].includes(role)) return res.status(400).json({ error: 'Neplatná role' });
     if (username.length < 3 || username.length > 50) return res.status(400).json({ error: 'Jméno 3-50 znaků' });
     if (password.length < 6) return res.status(400).json({ error: 'Heslo min. 6 znaků' });
+    const emailVal = email ? String(email).trim().slice(0, 255) : null;
+    if (emailVal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
+      return res.status(400).json({ error: 'Neplatný formát emailu' });
+    }
     const firmaVal = (role === 'hmg_share' && firma) ? sanitizeStr(firma, 100) : null;
     const hash = await bcrypt.hash(password, 12);
     const r = await pool.query(
-      'INSERT INTO users (username, password_hash, role, firma) VALUES ($1,$2,$3,$4) RETURNING id,username,role,firma',
-      [username.trim(), hash, role, firmaVal]
+      'INSERT INTO users (username, password_hash, role, firma, email) VALUES ($1,$2,$3,$4,$5) RETURNING id,username,role,firma,email',
+      [username.trim(), hash, role, firmaVal, emailVal]
     );
     res.json({ ok: true, user: r.rows[0] });
   } catch (err) {
@@ -897,6 +1084,17 @@ app.put('/api/users/:id/firma', requireAuth, requireAdmin, async (req, res) => {
   const { firma } = req.body;
   const firmaVal = firma ? sanitizeStr(String(firma), 100) : null;
   await pool.query('UPDATE users SET firma=$1 WHERE id=$2', [firmaVal, id]);
+  res.json({ ok: true });
+});
+
+app.put('/api/users/:id/email', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id);
+  const { email } = req.body;
+  const emailVal = email ? String(email).trim().slice(0, 255) : null;
+  if (emailVal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
+    return res.status(400).json({ error: 'Neplatný formát emailu' });
+  }
+  await pool.query('UPDATE users SET email=$1 WHERE id=$2', [emailVal, id]);
   res.json({ ok: true });
 });
 
@@ -1188,6 +1386,9 @@ app.post('/api/orders', requireAuth, async (req, res) => {
       await client.query('COMMIT');
       console.log(`Nová objednávka ${groupId} od ${firma} — lokalita: ${lokSafe} (${items.length} řádků)`);
       res.json({ ok: true, groupId, warnings });
+      // Emailové notifikace — fire & forget, chyba emailu NESMÍ shodit objednávku
+      sendOrderCreatedEmails(groupId, firma, req.session.username, lokSafe, groupLat, groupLng, items, req.session.userId)
+        .catch(err => console.error('sendOrderCreatedEmails error:', err.message));
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -1392,6 +1593,334 @@ app.delete('/api/orders/:groupId', requireAuth, requireAdmin, async (req, res) =
   }
 });
 
+// ── HMG V3 — Dvoufázové schvalování objednávek ──────────────────────────────
+
+// GET /api/orders/pending-groups — skupiny s nevyřízenými řádky (jen admin)
+app.get('/api/orders/pending-groups', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT
+        o.order_group_id,
+        MAX(o.firma)         AS firma,
+        MAX(u.username)      AS username,
+        MIN(o.created_at)    AS created_at,
+        MAX(o.lokalita)      AS lokalita,
+        MAX(o.lat::float)    AS lat,
+        MAX(o.lng::float)    AS lng,
+        json_agg(
+          json_build_object(
+            'id',o.id,'datum',o.datum,'smes',o.smes,'itt',o.itt,
+            'tuny',o.tuny,'komentar',o.komentar,'status',o.status,
+            'reject_reason',o.reject_reason
+          ) ORDER BY o.datum, o.smes
+        ) AS rows
+      FROM orders o
+      LEFT JOIN users u ON u.id = o.user_id
+      WHERE o.status IN ('pending','pre_approved','pre_rejected')
+      GROUP BY o.order_group_id
+      ORDER BY MIN(o.created_at)
+    `);
+    res.json(r.rows);
+  } catch(err) {
+    console.error('GET /api/orders/pending-groups error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+// PATCH /api/orders/:groupId/day/:datum/preapprove
+app.patch('/api/orders/:groupId/day/:datum/preapprove', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { groupId, datum } = req.params;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId))
+      return res.status(400).json({ error: 'Neplatné ID skupiny' });
+    if (!isIsoDate(datum)) return res.status(400).json({ error: 'Neplatné datum' });
+
+    const gRes = await pool.query(
+      `SELECT COALESCE(SUM(tuny),0)::int AS group_tuny FROM orders
+       WHERE order_group_id=$1 AND datum=$2 AND status IN ('pending','pre_rejected')`,
+      [groupId, datum]
+    );
+    const groupDayTuny = parseInt((gRes.rows[0]||{}).group_tuny) || 0;
+    if (groupDayTuny === 0)
+      return res.status(404).json({ error: 'Žádné pending/pre_rejected řádky pro tento den a skupinu' });
+
+    const sRes = await pool.query("SELECT value FROM settings WHERE key='hmg_max_daily'");
+    const maxDaily = sRes.rows[0] ? parseInt(sRes.rows[0].value) : null;
+    let exceedsMax = false, total = 0;
+    if (maxDaily) {
+      const d = new Date(datum + 'T00:00:00Z');
+      const daysFromMonday = (d.getUTCDay() + 6) % 7;
+      const monday = new Date(d);
+      monday.setUTCDate(d.getUTCDate() - daysFromMonday);
+      const weekStart = monday.toISOString().slice(0, 10);
+      const di = daysFromMonday;
+      const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1', [weekStart]);
+      let weekTuny = 0;
+      if (wRes.rows[0]) {
+        const rows = JSON.parse(wRes.rows[0].rows_json);
+        weekTuny = rows.reduce((s, r) => s + (parseInt(r[`d${di}`]) || 0), 0);
+      }
+      const otherRes = await pool.query(
+        `SELECT COALESCE(SUM(tuny),0)::int AS total FROM orders
+         WHERE datum=$1 AND status IN ('pending','pre_approved','pre_rejected','approved')
+         AND order_group_id != $2`,
+        [datum, groupId]
+      );
+      total = weekTuny + (parseInt(otherRes.rows[0].total)||0) + groupDayTuny;
+      exceedsMax = total > maxDaily;
+    }
+
+    await pool.query(
+      `UPDATE orders SET status='pre_approved'
+       WHERE order_group_id=$1 AND datum=$2 AND status IN ('pending','pre_rejected')`,
+      [groupId, datum]
+    );
+    res.json({ ok: true, exceedsMax, total, max: maxDaily });
+  } catch(err) {
+    console.error('PATCH preapprove error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+// PATCH /api/orders/:groupId/day/:datum/prereject
+app.patch('/api/orders/:groupId/day/:datum/prereject', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { groupId, datum } = req.params;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId))
+      return res.status(400).json({ error: 'Neplatné ID skupiny' });
+    if (!isIsoDate(datum)) return res.status(400).json({ error: 'Neplatné datum' });
+    const { reason } = req.body || {};
+    if (!reason || !String(reason).trim()) return res.status(400).json({ error: 'Důvod zamítnutí je povinný' });
+    const reasonStr = sanitizeStr(String(reason).trim(), 500);
+    const r = await pool.query(
+      `UPDATE orders SET status='pre_rejected', reject_reason=$1
+       WHERE order_group_id=$2 AND datum=$3 AND status IN ('pending','pre_approved') RETURNING id`,
+      [reasonStr, groupId, datum]
+    );
+    if (r.rowCount === 0) return res.status(404).json({ error: 'Žádné aktivní řádky pro tento den a skupinu' });
+    res.json({ ok: true, updated: r.rowCount });
+  } catch(err) {
+    console.error('PATCH prereject error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+// PATCH /api/orders/:groupId/day/:datum/reset
+app.patch('/api/orders/:groupId/day/:datum/reset', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { groupId, datum } = req.params;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId))
+      return res.status(400).json({ error: 'Neplatné ID skupiny' });
+    if (!isIsoDate(datum)) return res.status(400).json({ error: 'Neplatné datum' });
+    const r = await pool.query(
+      `UPDATE orders SET status='pending', reject_reason=NULL
+       WHERE order_group_id=$1 AND datum=$2 AND status IN ('pre_approved','pre_rejected') RETURNING id`,
+      [groupId, datum]
+    );
+    if (r.rowCount === 0) return res.status(404).json({ error: 'Žádné předběžně rozhodnuté řádky pro tento den' });
+    res.json({ ok: true, updated: r.rowCount });
+  } catch(err) {
+    console.error('PATCH reset error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+// PATCH /api/orders/:groupId/finalize
+app.patch('/api/orders/:groupId/finalize', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId))
+      return res.status(400).json({ error: 'Neplatné ID skupiny' });
+
+    const pCheck = await pool.query(
+      `SELECT COUNT(*)::int AS cnt FROM orders WHERE order_group_id=$1 AND status='pending'`, [groupId]
+    );
+    if (parseInt(pCheck.rows[0].cnt) > 0)
+      return res.status(400).json({ error: 'Nelze finalizovat: některé dny jsou stále pending' });
+
+    const activeCheck = await pool.query(
+      `SELECT COUNT(*)::int AS cnt FROM orders WHERE order_group_id=$1 AND status IN ('pre_approved','pre_rejected')`,
+      [groupId]
+    );
+    if (parseInt(activeCheck.rows[0].cnt) === 0)
+      return res.status(404).json({ error: 'Skupina nenalezena nebo již finalizována' });
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const approvedRows = await client.query(
+        `UPDATE orders SET status='approved', resolved_at=NOW(), resolved_by=$1
+         WHERE order_group_id=$2 AND status='pre_approved'
+         RETURNING datum,smes,itt,tuny,lokalita,lat,lng,firma`,
+        [req.session.userId, groupId]
+      );
+      await client.query(
+        `UPDATE orders SET status='rejected', resolved_at=NOW(), resolved_by=$1
+         WHERE order_group_id=$2 AND status='pre_rejected'`,
+        [req.session.userId, groupId]
+      );
+      await client.query('COMMIT');
+
+      // Propsat schválené do week_data
+      if (approvedRows.rows.length > 0) {
+        const byWeek = {};
+        for (const item of approvedRows.rows) {
+          const datum = item.datum instanceof Date ? item.datum.toISOString().slice(0,10) : String(item.datum).slice(0,10);
+          const d = new Date(datum + 'T00:00:00Z');
+          const daysFromMonday = (d.getUTCDay() + 6) % 7;
+          const monday = new Date(d);
+          monday.setUTCDate(d.getUTCDate() - daysFromMonday);
+          const weekStart = monday.toISOString().slice(0,10);
+          if (!byWeek[weekStart]) byWeek[weekStart] = [];
+          byWeek[weekStart].push({ ...item, datum, di: daysFromMonday });
+        }
+        for (const [weekStart, weekItems] of Object.entries(byWeek)) {
+          const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1', [weekStart]);
+          const rows = wRes.rows[0] ? JSON.parse(wRes.rows[0].rows_json) : [];
+          for (const item of weekItems) {
+            const newRow = {
+              checked:false,cislo:'',lokalita:item.lokalita||'',objednavka:item.firma||'',
+              smes:item.smes||'',itt:item.itt||'',ceta:item.firma||'',
+              lat:item.lat!=null?parseFloat(item.lat):null,lng:item.lng!=null?parseFloat(item.lng):null,
+              d0:0,d1:0,d2:0,d3:0,d4:0,d5:0,d6:0
+            };
+            newRow[`d${item.di}`] = parseInt(item.tuny)||0;
+            rows.push(newRow);
+          }
+          await pool.query(
+            `INSERT INTO week_data(week_start,rows_json,updated_at) VALUES($1,$2,NOW())
+             ON CONFLICT(week_start) DO UPDATE SET rows_json=EXCLUDED.rows_json,updated_at=NOW()`,
+            [weekStart, JSON.stringify(rows)]
+          );
+        }
+        console.log(`Objednávka ${groupId} finalizována: ${approvedRows.rows.length} řádků do harmonogramu`);
+      }
+      res.json({ ok: true, approved: approvedRows.rows.length });
+      // Email uživateli — fire & forget
+      sendOrderFinalizedEmail(groupId)
+        .catch(err => console.error('sendOrderFinalizedEmail (finalize) error:', err.message));
+    } catch(err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch(err) {
+    console.error('PATCH finalize error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+// PATCH /api/orders/:groupId/reject-all
+app.patch('/api/orders/:groupId/reject-all', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId))
+      return res.status(400).json({ error: 'Neplatné ID skupiny' });
+    const { reason } = req.body || {};
+    if (!reason || !String(reason).trim()) return res.status(400).json({ error: 'Důvod zamítnutí je povinný' });
+    const reasonStr = sanitizeStr(String(reason).trim(), 500);
+    const r = await pool.query(
+      `UPDATE orders SET status='rejected',resolved_at=NOW(),resolved_by=$1,reject_reason=$2
+       WHERE order_group_id=$3 AND status IN ('pending','pre_approved','pre_rejected') RETURNING id`,
+      [req.session.userId, reasonStr, groupId]
+    );
+    if (r.rowCount === 0) return res.status(404).json({ error: 'Skupina nenalezena nebo již vyřešena' });
+    console.log(`Objednávka ${groupId} celá zamítnuta adminem ${req.session.username}`);
+    res.json({ ok: true, rejected: r.rowCount });
+    // Email uživateli — fire & forget
+    sendOrderFinalizedEmail(groupId)
+      .catch(err => console.error('sendOrderFinalizedEmail (reject-all) error:', err.message));
+  } catch(err) {
+    console.error('PATCH reject-all error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+// ── SMTP nastavení (jen admin) ──
+app.get('/api/smtp-settings', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const r = await pool.query(
+      "SELECT key,value FROM settings WHERE key IN ('smtp_host','smtp_port','smtp_user','smtp_password','smtp_from','smtp_admin_emails')"
+    );
+    const s = {};
+    r.rows.forEach(row => {
+      if (row.key === 'smtp_password') {
+        s.smtp_password_set = !!row.value; // heslo nikdy nevracíme
+      } else {
+        s[row.key] = row.value;
+      }
+    });
+    res.json(s);
+  } catch(err) {
+    console.error('GET /api/smtp-settings error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+app.post('/api/smtp-settings', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { smtp_host, smtp_port, smtp_user, smtp_password, smtp_from, smtp_admin_emails } = req.body;
+    const fields = {
+      smtp_host:         smtp_host         != null ? sanitizeStr(String(smtp_host), 255)         : null,
+      smtp_port:         smtp_port         != null ? sanitizeStr(String(smtp_port), 10)           : null,
+      smtp_user:         smtp_user         != null ? sanitizeStr(String(smtp_user), 255)          : null,
+      smtp_from:         smtp_from         != null ? sanitizeStr(String(smtp_from), 255)          : null,
+      smtp_admin_emails: smtp_admin_emails != null ? sanitizeStr(String(smtp_admin_emails), 1000) : null,
+    };
+    for (const [k, v] of Object.entries(fields)) {
+      if (v === null) continue;
+      await pool.query(
+        "INSERT INTO settings (key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",
+        [k, v]
+      );
+    }
+    // Heslo — ukládáme jen pokud je neprázdné (prázdné pole = neměnit)
+    if (smtp_password && String(smtp_password).trim()) {
+      await pool.query(
+        "INSERT INTO settings (key,value) VALUES ('smtp_password',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",
+        [String(smtp_password).slice(0, 500)]
+      );
+    }
+    res.json({ ok: true });
+  } catch(err) {
+    console.error('POST /api/smtp-settings error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+app.post('/api/smtp-settings/test', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const settings = await getSmtpSettings();
+    if (!settings.smtp_host || !settings.smtp_user) {
+      return res.status(400).json({ ok: false, error: 'SMTP není nakonfigurováno (chybí host nebo uživatel)' });
+    }
+    const adminEmails = settings.smtp_admin_emails;
+    if (!adminEmails) {
+      return res.status(400).json({ ok: false, error: 'Nejsou nastaveny admin emaily — nevím kam poslat testovací email' });
+    }
+    const transporter = nodemailer.createTransport({
+      host: settings.smtp_host,
+      port: parseInt(settings.smtp_port) || 587,
+      secure: parseInt(settings.smtp_port) === 465,
+      auth: { user: settings.smtp_user, pass: settings.smtp_password || '' },
+      tls: { rejectUnauthorized: false }
+    });
+    const now = new Date().toLocaleString('cs-CZ', { timeZone: 'UTC' });
+    await transporter.sendMail({
+      from: settings.smtp_from || settings.smtp_user,
+      to: adminEmails,
+      subject: 'HMG – testovací email',
+      text: `Testovací email z HMG systému.\nOdesláno: ${now}`,
+      html: `<p>Testovací email z HMG systému.</p><p>Odesláno: <strong>${now}</strong></p>`
+    });
+    res.json({ ok: true, message: `Testovací email odeslán na: ${adminEmails}` });
+  } catch(err) {
+    console.error('POST /api/smtp-settings/test error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ── Záloha - poslední datum ──
 app.get('/api/backup/last', requireAuth, requireAdmin, async (req, res) => {
   const r = await pool.query("SELECT value FROM settings WHERE key='last_backup'");
@@ -1406,5 +1935,13 @@ app.get('*', requireAuth, (req, res) => {
 });
 
 initDb()
-  .then(() => { app.listen(PORT, () => console.log(`Server běží na portu ${PORT}`)); if(process.env.GMAIL_USER) scheduleBackup(); })
+  .then(() => {
+    app.listen(PORT, () => console.log(`Server běží na portu ${PORT}`));
+    if (process.env.GMAIL_USER) scheduleBackup();
+    // Auto-cleanup rejected objednávek — běží vždy, nezávisle na GMAIL
+    const MS_DAY = 24 * 60 * 60 * 1000;
+    cleanupRejectedOrders(); // jednou při startu
+    setInterval(cleanupRejectedOrders, MS_DAY); // pak každý den
+    console.log('Auto-cleanup rejected objednávek: nastaven (každých 24h)');
+  })
   .catch(err => { console.error('DB init error:', err); process.exit(1); });

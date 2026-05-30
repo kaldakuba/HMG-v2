@@ -5,6 +5,7 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.3,maximum-scale=5,user-scalable=yes">
 <title>HARMONOGRAM VÝROBY</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="/order-approval.js"></script>
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-size:100%}
@@ -174,6 +175,8 @@ let _mixes = [];
 let _companies = [{name:'Colas',color:'#fff2a8'},{name:'Firesta',color:'#d9ead3'},{name:'Mi Roads',color:'#ff7f86'}];
 let _settings = {hmg_plant_rate:'150',hmg_gas_capacity:'10 000',hmg_max_daily:'1000'};
 let _saveTimer = null;
+let _role = '';
+let _weekOrderDaySums = {d0:0,d1:0,d2:0,d3:0,d4:0,d5:0,d6:0};
 
 function showSaving(){const el=document.getElementById('savingIndicator');el.textContent='Ukládám...';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1500)}
 function showSaved(){const el=document.getElementById('savingIndicator');el.textContent='✓ Uloženo';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1500)}
@@ -242,16 +245,46 @@ function renderHead(){
   const start=_weekStart;const rows=_rows||[];const dates=dayKeys.map((_,i)=>isoDateFromStart(start,i));
   const week=isoWeek(new Date(start));
   const twt=document.getElementById('topWeekTitle');if(twt)twt.textContent='Kalendářní týden č. '+week+' | '+fmtTitleRange(start);
-  const total=dayKeys.reduce((s,k)=>s+daySum(rows,k),0);
+  const _ds=k=>daySum(rows,k)+(_weekOrderDaySums[k]||0);
+  const total=dayKeys.reduce((s,k)=>s+_ds(k),0);
   const maxDaily=parseInt(_settings.hmg_max_daily||'1000');
+  const minDaily=parseInt(_settings.hmg_min_daily||'0')||0;
   const cap=_settings.hmg_gas_capacity||'10 000';
-  thead.innerHTML=`<tr><th class="cap-label" colspan="2">Denní kapacita plynu:</th><th class="cap-value">${cap} m3</th><th></th><th class="sum-label" colspan="2">Součet t/den:</th>${dayKeys.map(k=>`<th class="sum-head" style="${daySum(rows,k)>=maxDaily&&daySum(rows,k)>0?'background:#fee2e2!important;color:#991b1b!important;':''}">  ${fmtNum(daySum(rows,k))}</th>`).join('')}<th class="sum-head">${fmtNum(total)}</th><th class="sel-col"></th></tr><tr style='height:38px'><th>č.</th><th>lokalita</th><th>objednávka</th><th>Směs a průkazná zk. typu</th><th>ITT</th><th>četa</th>${dates.map((d,i)=>`<th class="${i>=5?'gray-day':'blue-day'}" style="${i>=5?'color:#6b7280':'color:#1d4ed8'}">${fmtShort(d)}</th>`).join('')}<th>souhrn</th><th class='sel-col'>✓</th></tr>`;
+  thead.innerHTML=`<tr><th class="cap-label" colspan="2">Denní kapacita plynu:</th><th class="cap-value">${cap} m3</th><th></th><th class="sum-label" colspan="2">Součet t/den:</th>${dayKeys.map(k=>`<th class="sum-head" style="${(_ds(k)>maxDaily)||(_ds(k)>0&&minDaily>0&&_ds(k)<minDaily)?'background:#fee2e2!important;color:#991b1b!important;':''}">  ${fmtNum(_ds(k))}</th>`).join('')}<th class="sum-head">${fmtNum(total)}</th><th class="sel-col"></th></tr><tr style='height:38px'><th>č.</th><th>lokalita</th><th>objednávka</th><th>Směs a průkazná zk. typu</th><th>ITT</th><th>četa</th>${dates.map((d,i)=>`<th class="${i>=5?'gray-day':'blue-day'}" style="${i>=5?'color:#6b7280':'color:#1d4ed8'}">${fmtShort(d)}</th>`).join('')}<th>souhrn</th><th class='sel-col'>✓</th></tr>`;
 }
 
 function selectOptions(values,current){return `<option value=""></option>${values.map(v=>`<option value="${esc(v)}" ${String(v)===String(current||'')?'selected':''}>${esc(v)}</option>`).join('')}`}
 
+function buildWeekOrderRowsHtml(){
+  // Reset per-day order sums (also clears them when non-admin)
+  dayKeys.forEach(k=>{_weekOrderDaySums[k]=0;});
+  if(IS_MOBILE||_role!=='admin'||typeof OA==='undefined')return '';
+  const weekDates=dayKeys.map((_,i)=>isoDateFromStart(_weekStart,i));
+  let html='';
+  for(const g of OA.getPendingGroups()){
+    const weekRows=(g.rows||[]).filter(r=>weekDates.indexOf(String(r.datum).slice(0,10))>=0);
+    if(!weekRows.length)continue;
+    const byMix={};
+    weekRows.forEach(r=>{
+      const key=(r.smes||'')+'|'+(r.itt||'');
+      if(!byMix[key])byMix[key]={smes:r.smes||'',itt:r.itt||'',daysMap:{},statusMap:{}};
+      const d=String(r.datum).slice(0,10);
+      byMix[key].daysMap[d]=(byMix[key].daysMap[d]||0)+(parseInt(r.tuny)||0);
+      const ord=['pre_rejected','pre_approved','pending'];
+      const cur=byMix[key].statusMap[d];
+      if(!cur||ord.indexOf(r.status)>ord.indexOf(cur))byMix[key].statusMap[d]=r.status;
+    });
+    for(const[mixKey,mx]of Object.entries(byMix)){
+      weekDates.forEach((d,di)=>{if(mx.daysMap[d])_weekOrderDaySums[dayKeys[di]]+=mx.daysMap[d];});
+      html+=OA.buildWeekOrderRow(g,mixKey,mx.smes,mx.itt,mx.daysMap,mx.statusMap,weekDates);
+    }
+  }
+  return html;
+}
+
 function render(){
   if(!_rows)return;
+  const orderHtml=buildWeekOrderRowsHtml(); // updates _weekOrderDaySums for renderHead
   renderHead();
   const rows=_rows;const nums=uniq(_mixes.map(x=>x.cislo));const smesi=uniq(_mixes.map(x=>x.smes));const itts=uniq(_mixes.map(x=>x.zt||x.itt));
   let html='';
@@ -261,7 +294,7 @@ function render(){
     dayKeys.forEach((k,di)=>{const dv=r[k]?fmtNum(n(r[k])||0)||"":"";html+=`<td class="${di>=5?'gray-day':'blue-day'}"><input class="day-input" inputmode="numeric" value="${esc(dv)}" onfocus="this.value=String(n(this.value.replace(/ /g,''))||this.value)" onchange="updateCell(${i},'${k}',this.value,false,true)"></td>`;});
     html+=`<td class="row-total">${fmtNum(rowSum(r))}</td><td class="sel-col" style="background:#f8fafc"><input type="checkbox" ${r.checked?'checked':''} onchange="updateCheck(${i},this.checked)"></td></tr>`;
   });
-  tbody.innerHTML=html;renderFoot(rows);renderPanels();updateSelectedInfo();
+  tbody.innerHTML=html+orderHtml;renderFoot(rows);renderPanels();updateSelectedInfo();
 }
 
 function renderFoot(rows){
@@ -283,9 +316,15 @@ function undoLast(){if(!undoStack.length){alert('Není co vrátit zpět.');retur
 async function shiftWeek(delta){
   const d=new Date(_weekStart);d.setDate(d.getDate()+delta*7);
   _weekStart=d.toISOString().slice(0,10);
-  await loadWeek(_weekStart);if(IS_MOBILE)renderMobile();else render();
+  await loadWeek(_weekStart);
+  if(_role==='admin'&&typeof OA!=='undefined')await OA.loadPendingGroups();
+  if(IS_MOBILE)renderMobile();else render();
 }
-async function currentWeek(){_weekStart=defaultMonday();await loadWeek(_weekStart);if(IS_MOBILE)renderMobile();else render();}
+async function currentWeek(){
+  _weekStart=defaultMonday();await loadWeek(_weekStart);
+  if(_role==='admin'&&typeof OA!=='undefined')await OA.loadPendingGroups();
+  if(IS_MOBILE)renderMobile();else render();
+}
 
 function setPlantRate(v){
   _settings.hmg_plant_rate=v;
@@ -396,10 +435,11 @@ function renderMobileHead(){
   const twt=document.getElementById('topWeekTitle');if(twt)twt.textContent='KT '+week+' | '+fmtTitleRange(start);
   const total=dayKeys.reduce((s,k)=>s+daySum(rows,k),0);
   const maxDaily=parseInt(_settings.hmg_max_daily||'1000');
+  const minDaily=parseInt(_settings.hmg_min_daily||'0')||0;
   // Řádek součtů + řádek datumů
   thead.innerHTML=
     `<tr><th class="sum-label" colspan="4" style="text-align:left;padding-left:6px">Součet t/den:</th>`+
-    dayKeys.map(k=>{const s=daySum(rows,k);const over=s>0&&s>=maxDaily;return`<th class="sum-head" style="${over?'background:#fee2e2!important;color:#991b1b!important;':''}">${s||''}</th>`}).join('')+
+    dayKeys.map(k=>{const s=daySum(rows,k);const over=(s>maxDaily)||(s>0&&minDaily>0&&s<minDaily);return`<th class="sum-head" style="${over?'background:#fee2e2!important;color:#991b1b!important;':''}">${s||''}</th>`}).join('')+
     `<th class="sum-head">${fmtNum(total)}</th></tr>`+
     `<tr><th>č.</th><th>lokalita</th><th>směs</th><th>četa</th>`+
     dates.map((d,i)=>`<th class="${i>=5?'gray-day':'blue-day'}" style="${i>=5?'color:#6b7280':'color:#1d4ed8'}">${fmtShort(d)}</th>`).join('')+
@@ -556,6 +596,7 @@ async function checkOperatorRole() {
   try {
     const me = await fetch('/api/me').then(r=>r.json());
     const role = me.role;
+    _role = role;
     // Zobrazit Nastavení jen adminovi
     const sb = document.getElementById('settingsBtn');
     if (sb && role === 'admin') sb.style.display = '';
@@ -593,9 +634,40 @@ async function init(){
   if(companies)_companies=companies;
   // Načti týden
   await loadWeek(_weekStart);
+  // Zjisti roli (před renderem, aby order řádky věděly zda admin)
+  if(!IS_MOBILE) await checkOperatorRole();
   if(IS_MOBILE) renderMobile(); else render();
-  if(!IS_MOBILE) checkOperatorRole();
+  // Objednávky — jen admin, desktop
+  if(!IS_MOBILE && _role==='admin' && typeof OA!=='undefined'){
+    OA.initBanner(document.querySelector('.actions'), true);
+    await OA.loadPendingGroups();
+    OA.updateBanner(OA.getPendingGroups().length);
+    OA.setOnAfterAction(async(fullReload)=>{
+      if(fullReload)await loadWeek(_weekStart);
+      render();
+    });
+    OA.setNavigateToDate(async(datum)=>{
+      // Najdi pondělí týdne obsahujícího datum
+      const d=new Date(datum+'T00:00:00');
+      const day=d.getDay()||7;
+      d.setDate(d.getDate()-day+1);
+      const targetWeek=localIso(d);
+      if(targetWeek!==_weekStart){
+        _weekStart=targetWeek;
+        await loadWeek(_weekStart);
+        await OA.loadPendingGroups();
+        render();
+      }
+    });
+    render(); // překresli s order řádky
+    setInterval(async()=>{await OA.refreshBanner();render();},60000);
+  }
 }
 init();
 fetch('/api/me').then(r=>r.json()).then(d=>{if(d.role==='hmg_share')window.location.replace('/month');}).catch(()=>{});
-</script><meta name="author" content="Jakub Kalousek"><meta name="copyright" content="Copyright 2026 Jakub Kalousek. All rights reserved."></body></html>
+async function doLogout(){await fetch('/api/logout',{method:'POST'}).catch(()=>{});window.location.href='/login';}
+</script><meta name="author" content="Jakub Kalousek"><meta name="copyright" content="Copyright 2026 Jakub Kalousek. All rights reserved.">
+<div style="border-top:1px solid #e5e7eb;padding:12px 20px;display:flex;justify-content:flex-end;background:#f8fafc;">
+  <button onclick="doLogout()" style="display:inline-flex;align-items:center;gap:6px;background:transparent;border:1px solid #fca5a5;border-radius:6px;color:#dc2626;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;padding:6px 14px;line-height:1;" onmouseenter="this.style.background='#fff1f2'" onmouseleave="this.style.background='transparent'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Odhlásit se</button>
+</div>
+</body></html>
