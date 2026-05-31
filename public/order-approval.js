@@ -48,25 +48,26 @@ window.OA = (() => {
     if (s==='pre_rejected') return 'pre zamít.';
     return 'OK';
   }
-  function statusBadgeHtml(s) {
-    if (s==='pending')
-      return '<span style="background:#fef9c3;color:#d97706;border:1px solid #fde68a;border-radius:3px;padding:1px 6px;font-size:10px;font-weight:700;white-space:nowrap">ČEKÁ</span>';
-    if (s==='pre_approved')
-      return '<span style="background:#dcfce7;color:#15803d;border:1px dashed #6ee7b7;border-radius:3px;padding:1px 6px;font-size:10px;font-weight:700;white-space:nowrap">PRE OK</span>';
-    if (s==='pre_rejected')
-      return '<span style="background:#fee2e2;color:#dc2626;border:1px dashed #fca5a5;border-radius:3px;padding:1px 6px;font-size:10px;font-weight:700;white-space:nowrap">PRE ZAMÍT.</span>';
-    return '<span style="background:#dcfce7;color:#15803d;border-radius:3px;padding:1px 6px;font-size:10px;font-weight:700">OK</span>';
+  // Sdílený základ pro všechny odznaky stavu – jednotná velikost a tvar
+  function _mkBadge(bg, col, text) {
+    return '<span style="background:'+bg+';color:'+col+
+      ';border-radius:4px;padding:2px 7px;font-size:12px;font-weight:600'+
+      ';white-space:nowrap;display:inline-block;line-height:1.4">'+text+'</span>';
   }
+  // Odznaky pro tabulky objednávek (weekly / monthly)
+  function statusBadgeHtml(s) {
+    if (s==='pending')      return _mkBadge('#fef9c3','#92400e','ČEKÁ');
+    if (s==='pre_approved') return _mkBadge('#dcfce7','#15803d','PRE OK');
+    if (s==='pre_rejected') return _mkBadge('#fee2e2','#991b1b','PRE ZAMÍT.');
+    return _mkBadge('#dcfce7','#15803d','OK');
+  }
+  // Odznaky pro popup (Ostatní na tento den) – stejný styl, lokalizované texty
   function _ctxStatusBadge(s) {
-    if (s==='pending')
-      return '<span style="background:#fef9c3;color:#d97706;border-radius:3px;padding:1px 5px;font-size:10px;font-weight:700">čeká</span>';
-    if (s==='pre_approved')
-      return '<span style="background:#dcfce7;color:#15803d;border-radius:3px;padding:1px 5px;font-size:10px;font-weight:700">pre OK</span>';
-    if (s==='pre_rejected')
-      return '<span style="background:#fee2e2;color:#dc2626;border-radius:3px;padding:1px 5px;font-size:10px;font-weight:700">zamít.</span>';
-    if (s==='approved')
-      return '<span style="background:#dcfce7;color:#15803d;border-radius:3px;padding:1px 5px;font-size:10px;font-weight:700">HMG</span>';
-    return '<span style="background:#f3f4f6;color:#6b7280;border-radius:3px;padding:1px 5px;font-size:10px">—</span>';
+    if (s==='pending')      return _mkBadge('#fef9c3','#92400e','čeká');
+    if (s==='pre_approved') return _mkBadge('#dcfce7','#15803d','pre OK');
+    if (s==='pre_rejected') return _mkBadge('#fee2e2','#991b1b','pre zamít.');
+    if (s==='approved')     return _mkBadge('#f1f5f9','#64748b','HMG');
+    return _mkBadge('#f1f5f9','#94a3b8','—');
   }
   function dayCellStyle(status) {
     if (status==='pending')      return 'border:2px dashed #f59e0b;background:#fffbeb;color:#92400e;font-weight:700';
@@ -397,12 +398,16 @@ window.OA = (() => {
 
   async function _loadDayContext(datum, curGid) {
     try {
-      // Vypočti pondělí daného týdne
-      const dt = new Date(datum + 'T00:00:00');
+      // OPRAVA: weekStart musí být formátován v lokálním čase!
+      // toISOString() konvertuje LOCAL→UTC, v CEST (UTC+2) by posunulo datum o den zpět.
+      const dt = new Date(datum + 'T00:00:00'); // lokální půlnoc
       const dow = dt.getDay(); // 0=Ne, 1=Po, ...
       const toMon = dow === 0 ? -6 : 1 - dow;
       dt.setDate(dt.getDate() + toMon);
-      const weekStart = dt.toISOString().slice(0, 10);
+      // Lokální formátování (NE toISOString – to vrací UTC!):
+      const weekStart = dt.getFullYear() + '-' +
+        String(dt.getMonth() + 1).padStart(2, '0') + '-' +
+        String(dt.getDate()).padStart(2, '0');
       const dayIdx = dow === 0 ? 6 : dow - 1; // 0=Po ... 6=Ne
       const dayKey = 'd' + dayIdx;
 
@@ -411,7 +416,7 @@ window.OA = (() => {
         apiCall('GET', '/api/week/' + weekStart).catch(() => [])
       ]);
 
-      // Ostatní objednávky (ne ta schvalovaná) s řádky na tento den
+      // Ostatní pending/pre objednávky (ne ta schvalovaná) s řádky na tento den
       const otherOrders = [];
       (_pendingGroups || []).forEach(g => {
         if (g.order_group_id === curGid) return;
@@ -428,13 +433,13 @@ window.OA = (() => {
         });
       });
 
-      // Harmonogram řádky pro tento den (z týdenních dat)
+      // Harmonogram řádky pro tento den (z týdenních dat) – pro Part B zobrazení
       const hmgRows = [];
       (Array.isArray(weekRows) ? weekRows : []).forEach(row => {
         const t = parseInt(row[dayKey]) || 0;
         if (t > 0) {
           hmgRows.push({
-            firma: row.objednavka || row.ceta || '—',
+            firma: row.ceta || '—',   // četa = firma, NIKOLI číslo objednávky (row.objednavka)
             lokalita: row.lokalita || '—',
             smes: row.smes || '—',
             status: 'approved',
@@ -445,12 +450,24 @@ window.OA = (() => {
 
       const maxDaily = cap.maxDaily != null ? cap.maxDaily
                      : cap.max_daily != null ? cap.max_daily : null;
-      const harmTotal = hmgRows.reduce((s, r) => s + r.tuny, 0);
+
+      // harmTotal: primárně z day-capacity.harmonogram (server ho počítá UTC-správně),
+      // záloha ze součtu hmgRows (kdyby day-capacity selhal)
+      const harmTotal = typeof cap.harmonogram === 'number'
+        ? cap.harmonogram
+        : hmgRows.reduce((s, r) => s + r.tuny, 0);
+
+      // capOrdersTotal: součet VŠECH objednávek na tento den (všechny statusy)
+      // = používá stejný zdroj jako dayTotalWithOrders v month-view.html
+      // → "Den po schválení" MUSÍ se rovnat "Součet t/den" v harmonogramu
+      const capOrdersTotal = (cap.orders || [])
+        .reduce((s, o) => s + (parseInt(o.tuny) || 0), 0);
+
       const otherApprovedTotal = otherOrders
         .filter(o => o.status === 'pre_approved' || o.status === 'approved')
         .reduce((s, o) => s + o.tuny, 0);
 
-      return { otherOrders, hmgRows, maxDaily, harmTotal, otherApprovedTotal };
+      return { otherOrders, hmgRows, maxDaily, harmTotal, otherApprovedTotal, capOrdersTotal };
     } catch (e) {
       console.warn('[OA] _loadDayContext failed:', e);
       return null;
@@ -527,7 +544,7 @@ window.OA = (() => {
       }
       const dSafe = esc(d);
       const curSafe = esc(datum);
-      return '<span style="display:inline-block;margin:2px 3px 2px 0;padding:3px 10px;border-radius:4px;font-size:11px;'+
+      return '<span style="display:inline-block;margin:2px 3px 2px 0;padding:3px 10px;border-radius:4px;font-size:12px;'+
         'background:'+bg+';color:'+col+';font-weight:'+fw+';cursor:pointer;user-select:none;'+
         (brd !== 'none' ? 'border:'+brd+';' : '')+
         'transition:opacity .12s;" '+
@@ -574,57 +591,57 @@ window.OA = (() => {
       ? parseFloat(g.lat).toFixed(4)+', '+parseFloat(g.lng).toFixed(4) : '—';
 
     // ── ČÁST B – Ostatní na tento den ──
+    const _BLBL = 'font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px';
     let partBHtml;
     if (!_curDayCtx) {
       partBHtml =
         '<div style="margin-bottom:14px">'+
-          '<div style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Ostatní na tento den</div>'+
-          '<div style="font-size:12px;color:#94a3b8;padding:4px 0;font-style:italic">Načítám…</div>'+
+          '<div style="'+_BLBL+'">Ostatní na tento den</div>'+
+          '<div style="font-size:13px;color:#94a3b8;padding:4px 0;font-style:italic">Načítám…</div>'+
         '</div>';
     } else {
       const allOther = [...(_curDayCtx.hmgRows||[]), ...(_curDayCtx.otherOrders||[])];
       if (!allOther.length) {
         partBHtml =
           '<div style="margin-bottom:14px">'+
-            '<div style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Ostatní na tento den</div>'+
-            '<div style="font-size:12px;color:#9ca3af;padding:4px 0">Žádné ostatní objednávky ani harmonogram pro tento den.</div>'+
+            '<div style="'+_BLBL+'">Ostatní na tento den</div>'+
+            '<div style="font-size:13px;color:#9ca3af;padding:4px 0">Žádné ostatní objednávky ani harmonogram pro tento den.</div>'+
           '</div>';
       } else {
-        const bRows = allOther.map(o =>
-          '<tr>'+
-            '<td style="padding:4px 8px;font-size:12px;border-bottom:1px solid #f3f4f6;white-space:nowrap">'+esc(o.firma)+'</td>'+
-            '<td style="padding:4px 8px;font-size:11px;color:#6b7280;border-bottom:1px solid #f3f4f6;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(o.lokalita)+'">'+esc(o.lokalita)+'</td>'+
-            '<td style="padding:4px 8px;font-size:11px;border-bottom:1px solid #f3f4f6;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(o.smes)+'">'+esc(o.smes)+'</td>'+
-            '<td style="padding:4px 8px;border-bottom:1px solid #f3f4f6">'+_ctxStatusBadge(o.status)+'</td>'+
-            '<td style="padding:4px 8px;font-weight:700;text-align:right;font-size:12px;border-bottom:1px solid #f3f4f6;white-space:nowrap">'+o.tuny+' t</td>'+
-          '</tr>'
+        const otherTotal = allOther.reduce((s, o) => s + o.tuny, 0);
+        // Jeden řádek = FIRMA | LOKALITA | PRODUKT | STAV | TUNY (box-sizing, overflow:hidden)
+        const bItems = allOther.map(o =>
+          '<div style="display:flex;align-items:center;gap:5px;padding:6px 0;border-bottom:1px solid #f3f4f6;box-sizing:border-box;overflow:hidden;width:100%">'+
+            '<span style="flex:0 0 24%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600;color:#111827" title="'+esc(o.firma)+'">'+esc(o.firma)+'</span>'+
+            '<span style="flex:0 0 18%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#6b7280" title="'+esc(o.lokalita)+'">'+esc(o.lokalita)+'</span>'+
+            '<span style="flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#374151" title="'+esc(o.smes)+'">'+esc(o.smes)+'</span>'+
+            '<span style="flex:0 0 auto;flex-shrink:0">'+_ctxStatusBadge(o.status)+'</span>'+
+            '<span style="flex:0 0 auto;flex-shrink:0;font-size:13px;font-weight:700;color:#111827;white-space:nowrap;margin-left:2px">'+o.tuny+' t</span>'+
+          '</div>'
         ).join('');
         partBHtml =
           '<div style="margin-bottom:14px">'+
-            '<div style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Ostatní na tento den ('+allOther.length+')</div>'+
-            '<table style="width:100%;border-collapse:collapse">'+
-              '<thead><tr style="background:#f9fafb">'+
-                '<th style="text-align:left;padding:4px 8px;font-size:10px;font-weight:600;color:#9ca3af;border-bottom:1px solid #e5e7eb">Firma</th>'+
-                '<th style="text-align:left;padding:4px 8px;font-size:10px;font-weight:600;color:#9ca3af;border-bottom:1px solid #e5e7eb">Lokalita</th>'+
-                '<th style="text-align:left;padding:4px 8px;font-size:10px;font-weight:600;color:#9ca3af;border-bottom:1px solid #e5e7eb">Produkt</th>'+
-                '<th style="text-align:left;padding:4px 8px;font-size:10px;font-weight:600;color:#9ca3af;border-bottom:1px solid #e5e7eb">Stav</th>'+
-                '<th style="text-align:right;padding:4px 8px;font-size:10px;font-weight:600;color:#9ca3af;border-bottom:1px solid #e5e7eb">Tuny</th>'+
-              '</tr></thead>'+
-              '<tbody>'+bRows+'</tbody>'+
-            '</table>'+
+            '<div style="'+_BLBL+'">Ostatní na tento den ('+allOther.length+')</div>'+
+            '<div style="border:1px solid #f0f0f0;border-radius:6px;padding:0 10px;box-sizing:border-box;background:#fafafa;overflow:hidden">'+
+              bItems+
+            '</div>'+
+            '<div style="font-size:12px;color:#6b7280;text-align:right;margin-top:5px">Ostatní celkem na den: <b>'+otherTotal+' t</b></div>'+
           '</div>';
       }
     }
 
     // ── ČÁST C – Den po schválení ──
+    // projTotal = harmonogram (week_data) + VŠECHNY objednávky na ten den (všechny statusy)
+    // Shoduje se s dayTotalWithOrders() v month-view.html → musí se rovnat "Součet t/den"
     let partCHtml;
     if (!_curDayCtx || _curDayCtx.maxDaily == null) {
       partCHtml = _curDayCtx === null
-        ? '<div style="margin-bottom:14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;color:#94a3b8;font-size:12px;font-style:italic">Načítám kapacitu…</div>'
+        ? '<div style="margin-bottom:14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;color:#94a3b8;font-size:13px;font-style:italic">Načítám kapacitu…</div>'
         : '';
     } else {
-      const { harmTotal, otherApprovedTotal, maxDaily: mx } = _curDayCtx;
-      const projTotal = (harmTotal||0) + (otherApprovedTotal||0) + dayTuny;
+      const { harmTotal, maxDaily: mx, capOrdersTotal } = _curDayCtx;
+      // projTotal = harmonogram + sum(všechny objednávky) = stejný vzorec jako "Součet t/den"
+      const projTotal = (harmTotal||0) + (capOrdersTotal||0);
       const over = projTotal > mx;
       const cbg  = over ? '#fef2f2' : '#f0fdf4';
       const cbdr = over ? '#fca5a5' : '#86efac';
@@ -632,12 +649,14 @@ window.OA = (() => {
       const cicon = over ? '⚠' : '✓';
       partCHtml =
         '<div style="margin-bottom:14px;background:'+cbg+';border:1.5px solid '+cbdr+';border-radius:8px;padding:10px 14px">'+
-          '<div style="font-size:10px;font-weight:700;color:'+ccol+';text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Den po schválení</div>'+
-          '<div style="font-size:13px;font-weight:700;color:'+ccol+'">'+cicon+' '+projTotal+' t / max '+mx+' t</div>'+
-          '<div style="font-size:11px;color:#6b7280;margin-top:3px">'+
-            'Tato objednávka: '+dayTuny+' t &nbsp;·&nbsp; '+
-            'Ostatní schválené: '+(otherApprovedTotal||0)+' t &nbsp;·&nbsp; '+
-            'Harmonogram: '+(harmTotal||0)+' t'+
+          '<div style="font-size:11px;font-weight:700;color:'+ccol+';text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Množství po schválení</div>'+
+          '<div style="font-size:14px;font-weight:700;color:'+ccol+'">'+
+            cicon+' '+projTotal+' t / max '+mx+' t'+
+            ' &nbsp;—&nbsp; '+(over ? 'překročí o '+(projTotal-mx) : 'zbývá '+(mx-projTotal))+' t'+
+          '</div>'+
+          '<div style="font-size:12px;color:#6b7280;margin-top:3px">'+
+            'Harmonogram: '+(harmTotal||0)+' t &nbsp;·&nbsp; '+
+            'Objednávky: '+(capOrdersTotal||0)+' t (tato: '+dayTuny+' t)'+
           '</div>'+
         '</div>';
     }
@@ -646,7 +665,7 @@ window.OA = (() => {
       // Hlavička
       '<div style="background:#1a1a2e;color:#fff;padding:13px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px">'+
         '<div><div style="font-size:15px;font-weight:700">'+esc(g.firma)+' — '+fmtDatum(datum)+'</div>'+
-        '<div style="font-size:11px;color:#94a3b8;margin-top:2px">'+esc(g.username||'?')+' · '+esc(g.lokalita||'—')+' · GPS: '+esc(gps)+'</div></div>'+
+        '<div style="font-size:12px;color:#94a3b8;margin-top:2px">'+esc(g.username||'?')+' · '+esc(g.lokalita||'—')+' · GPS: '+esc(gps)+'</div></div>'+
         '<button onclick="OA.closeDayPopup()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:20px;line-height:1;padding:2px 6px;font-family:Inter,sans-serif">✕</button>'+
       '</div>'+
 
@@ -655,31 +674,25 @@ window.OA = (() => {
 
         // Přehled dnů
         '<div style="margin-bottom:14px">'+
-          '<div style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Všechny dny objednávky</div>'+
+          '<div style="font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Všechny dny objednávky</div>'+
           '<div>'+daysHtml+'</div>'+
         '</div>'+
 
         // ČÁST A – Schvaluješ
-        '<div style="margin-bottom:14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:12px 14px">'+
-          '<div style="font-size:10px;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">'+
-            'Schvaluješ — '+fmtDatumShort(datum)+' · '+dayTuny+' t celkem</div>'+
-          '<div style="font-size:11px;color:#1e3a8a;font-weight:600;margin-bottom:8px">'+esc(g.firma)+' · '+esc(g.lokalita||'—')+'</div>'+
+        '<div style="margin-bottom:14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:12px 14px;box-sizing:border-box;overflow:hidden;width:100%">'+
+          '<div style="font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Schvaluješ — '+fmtDatumShort(datum)+'</div>'+
+          '<div style="font-size:13px;color:#111827;font-weight:600;margin-bottom:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(g.firma)+' · '+esc(g.lokalita||'—')+'</div>'+
           (dayRows.length
-            ? '<table style="width:100%;border-collapse:collapse;font-size:12px">'+
-                '<thead><tr style="background:rgba(29,78,216,.07)">'+
-                  '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #bfdbfe;font-size:10px;font-weight:600;color:#1d4ed8">Směs</th>'+
-                  '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #bfdbfe;font-size:10px;font-weight:600;color:#1d4ed8">ITT</th>'+
-                  '<th style="text-align:right;padding:4px 8px;border-bottom:1px solid #bfdbfe;font-size:10px;font-weight:600;color:#1d4ed8">Tuny</th>'+
-                '</tr></thead><tbody>'+
-                dayRows.map(r =>
-                  '<tr>'+
-                    '<td style="padding:4px 8px;border-bottom:1px solid #dbeafe;font-size:12px;color:#1e3a8a">'+esc(r.smes)+'</td>'+
-                    '<td style="padding:4px 8px;border-bottom:1px solid #dbeafe;font-size:11px;color:#3b82f6">'+esc(r.itt||'')+'</td>'+
-                    '<td style="padding:4px 8px;border-bottom:1px solid #dbeafe;font-weight:700;text-align:right;color:#1d4ed8;white-space:nowrap">'+r.tuny+' t</td>'+
-                  '</tr>'
-                ).join('')+
-                '</tbody></table>'
-            : '<div style="color:#6b7280;font-size:12px">Žádné řádky pro tento den.</div>')+
+            ? dayRows.map(r =>
+                '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid #dbeafe;gap:10px;box-sizing:border-box">'+
+                  '<span style="font-size:13px;color:#111827;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.smes)+'</span>'+
+                  '<span style="font-size:13px;font-weight:700;color:#111827;white-space:nowrap;flex-shrink:0">'+r.tuny+' t</span>'+
+                '</div>'
+              ).join('') +
+              '<div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:7px;font-size:12px;color:#111827;font-weight:700;gap:10px">'+
+                '<span>Tato objednávka celkem:</span><span>'+dayTuny+' t</span>'+
+              '</div>'
+            : '<div style="color:#6b7280;font-size:13px">Žádné řádky pro tento den.</div>')+
         '</div>'+
 
         // ČÁST B – Ostatní na tento den
@@ -693,30 +706,30 @@ window.OA = (() => {
 
         // Pole pro důvod (skryté)
         '<div id="oa-reason-wrap" style="display:none;background:#fff5f5;border:1px solid #fca5a5;border-radius:6px;padding:10px 12px;margin-bottom:10px">'+
-          '<div id="oa-reason-title" style="font-size:11px;font-weight:700;color:#dc2626;margin-bottom:5px">Důvod zamítnutí *</div>'+
-          '<textarea id="oa-reason-ta" rows="2" style="width:100%;border:1px solid #fca5a5;border-radius:6px;padding:5px 8px;font-size:12px;font-family:Inter,sans-serif;resize:vertical;outline:none"></textarea>'+
+          '<div id="oa-reason-title" style="font-size:12px;font-weight:700;color:#dc2626;margin-bottom:5px">Důvod zamítnutí *</div>'+
+          '<textarea id="oa-reason-ta" rows="2" style="width:100%;border:1px solid #fca5a5;border-radius:6px;padding:5px 8px;font-size:13px;font-family:Inter,sans-serif;resize:vertical;outline:none"></textarea>'+
           '<div style="display:flex;gap:6px;margin-top:7px;align-items:center">'+
             '<button onclick="OA._confirmReject()" style="'+_btnStyle('#dc2626')+'">Potvrdit</button>'+
             '<button onclick="document.getElementById(\'oa-reason-wrap\').style.display=\'none\'" style="'+_btnStyle('#6b7280')+'">Zrušit</button>'+
-            '<span id="oa-reason-msg" style="font-size:12px;color:#dc2626"></span>'+
+            '<span id="oa-reason-msg" style="font-size:13px;color:#dc2626"></span>'+
           '</div>'+
         '</div>'+
 
         // Zpráva akce
-        '<div id="oa-action-msg" style="font-size:12px;margin-bottom:8px;color:#dc2626;min-height:16px"></div>'+
+        '<div id="oa-action-msg" style="font-size:13px;margin-bottom:8px;color:#dc2626;min-height:16px"></div>'+
 
         // Finální sekce
         '<div style="padding-top:12px;border-top:1px solid #e5e7eb">'+
-          '<div style="font-size:11px;color:#6b7280;margin-bottom:7px">Finální rozhodnutí celé objednávky:</div>'+
+          '<div style="font-size:12px;color:#6b7280;margin-bottom:7px">Finální rozhodnutí celé objednávky:</div>'+
           '<div style="display:flex;gap:8px;flex-wrap:wrap">'+finalBtns+'</div>'+
-          (!allDecided ? '<div style="font-size:11px;color:#f59e0b;margin-top:5px">⚠ Nejdřív rozhodni všechny dny</div>' : '')+
+          (!allDecided ? '<div style="font-size:12px;color:#f59e0b;margin-top:5px">⚠ Nejdřív rozhodni všechny dny</div>' : '')+
         '</div>'+
 
       '</div>'; // /tělo
   }
 
   function _btnStyle(bg) {
-    return 'background:'+bg+';color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;white-space:nowrap;';
+    return 'background:'+bg+';color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;white-space:nowrap;';
   }
 
   // ── Akce ──

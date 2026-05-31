@@ -95,7 +95,7 @@ body.mobile-ro .weekbar{padding:3px 4px;gap:2px;flex-wrap:nowrap;justify-content
 body.mobile-ro .btn.top-orange{display:none!important}
 body.mobile-ro #calToggleBtn{display:none!important}
 body.mobile-ro .weeknav{gap:2px;flex-wrap:nowrap;justify-content:center;width:100%}
-body.mobile-ro .weeknav .btn{padding:2px 10px;font-size:9px;min-width:0!important;flex:1;text-align:center}
+body.mobile-ro .weeknav .btn{padding:9px 4px;font-size:11px;font-weight:700;min-width:0!important;flex:1;text-align:center;line-height:1.3}
 /* Skrýt celý controls panel (přidání řádků, označit, zpět, export) */
 body.mobile-ro .controls{display:none!important}
 /* Skrýt panely spotřeby a směsí */
@@ -103,8 +103,8 @@ body.mobile-ro #panelsRow{display:none!important}
 /* Skrýt saving indicator */
 body.mobile-ro .saving-indicator{display:none!important}
 /* Tabulka - kompaktní */
-body.mobile-ro .wrap{padding:1px 2px}
-body.mobile-ro .card{border-radius:3px}
+body.mobile-ro .wrap{padding:0}
+body.mobile-ro .card{border-radius:0;border-left:none;border-right:none}
 body.mobile-ro table{font-size:10px}
 body.mobile-ro th,body.mobile-ro td{height:20px;padding:0 2px;font-size:10px}
 body.mobile-ro th{height:21px;font-size:9px;letter-spacing:0}
@@ -118,7 +118,7 @@ body.mobile-ro .hours-row td{height:18px;font-size:9px}
   body.mobile-ro .topbar{height:22px;min-height:22px}
   body.mobile-ro .topbar h1{font-size:8px}
   body.mobile-ro .top-left{display:none}
-  body.mobile-ro .wrap{padding:1px}
+  body.mobile-ro .wrap{padding:0}
   body.mobile-ro .weekbar{padding:2px 3px}
   body.mobile-ro table{font-size:9px}
   body.mobile-ro th,body.mobile-ro td{height:17px;padding:0 1px;font-size:9px}
@@ -130,7 +130,7 @@ body.mobile-ro .hours-row td{height:18px;font-size:9px}
 <div class="saving-indicator" id="savingIndicator">Ukládám...</div>
 <header class="topbar"><div class="top-left"><span id="topWeekTitle" style="font-size:18px;font-weight:700;">Kalendářní týden</span></div><h1 id="mainTitle">HARMONOGRAM VÝROBY</h1><div class="actions"><a class="btn month" href="/month">Měsíční přehled</a><a class="btn inputs" href="/inputs">Vstupy</a></div></header>
 <main class="wrap"><section class="card">
-<div class="weekbar"><div style="display:flex;align-items:center;gap:8px;"><span id="weekTitle" style="display:none"></span><button class="btn export" onclick="exportWeeks()">Export dat</button></div><div class="weeknav"><button class="btn gray" style="min-width:130px;" onclick="shiftWeek(-1)">‹ Předchozí týden</button><button class="btn blue" style="min-width:130px;" onclick="currentWeek()">Aktuální týden</button><button class="btn gray" style="min-width:130px;" onclick="shiftWeek(1)">Další týden ›</button><div style="position:relative;display:inline-block;"><button class="btn gray" onclick="toggleMiniCal()" id="calToggleBtn">📅 Kalendář</button><div id="miniCal" style="display:none;position:absolute;right:0;top:38px;z-index:9999;background:#fff;border:1px solid #d1d5db;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,.12);padding:14px;width:300px;font-family:'Inter',sans-serif;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><button onclick="shiftMiniCal(-1)" style="border:none;background:none;cursor:pointer;font-size:20px;font-weight:900;color:#374151;line-height:1;">‹</button><span id="miniCalHeader" style="font-weight:700;font-size:14px;color:#111;"></span><button onclick="shiftMiniCal(1)" style="border:none;background:none;cursor:pointer;font-size:20px;font-weight:900;color:#374151;line-height:1;">›</button></div><div id="miniCalGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center;"><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Po</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Út</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">St</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Čt</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Pá</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">So</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Ne</div></div></div></div></div></div>
+<div class="weekbar"><div style="display:flex;align-items:center;gap:8px;"><span id="weekTitle" style="display:none"></span><button class="btn export" onclick="exportWeeks()">Export dat</button></div><div class="weeknav"><button class="btn gray" style="min-width:130px;" onclick="shiftWeek(-1)">‹ Předchozí týden</button><button class="btn blue" id="currentWeekBtn" style="min-width:140px;line-height:1.3" onclick="currentWeek()">Aktuální týden</button><button class="btn gray" style="min-width:130px;" onclick="shiftWeek(1)">Další týden ›</button><div style="position:relative;display:inline-block;"><button class="btn gray" onclick="toggleMiniCal()" id="calToggleBtn">📅 Kalendář</button><div id="miniCal" style="display:none;position:absolute;right:0;top:38px;z-index:9999;background:#fff;border:1px solid #d1d5db;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,.12);padding:14px;width:300px;font-family:'Inter',sans-serif;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><button onclick="shiftMiniCal(-1)" style="border:none;background:none;cursor:pointer;font-size:20px;font-weight:900;color:#374151;line-height:1;">‹</button><span id="miniCalHeader" style="font-weight:700;font-size:14px;color:#111;"></span><button onclick="shiftMiniCal(1)" style="border:none;background:none;cursor:pointer;font-size:20px;font-weight:900;color:#374151;line-height:1;">›</button></div><div id="miniCalGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center;"><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Po</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Út</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">St</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Čt</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Pá</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">So</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Ne</div></div></div></div></div></div>
 <div class="table-wrap"><table id="weekTable" class="sel-hidden"><colgroup><col class="num"><col class="lok"><col class="obj"><col class="smes"><col class="itt"><col class="ceta"><col class="day"><col class="day"><col class="day"><col class="day"><col class="day"><col class="day"><col class="day"><col class="souhrn"><col class="sel"></colgroup><thead id="thead"></thead><tbody id="tbody"></tbody><tfoot id="tfoot"></tfoot></table></div>
 <div class="controls"><input id="plantRate" type="number" step="1" value="150" style="display:none" onchange="setPlantRate(this.value);render()"><div style="margin-right:auto;display:flex;gap:8px;"><button class="btn top-orange" onclick="togglePanel('materialsPanel')">Spotřeba materiálu</button><button class="btn top-orange" onclick="togglePanel('mixesPanel')">Seznam směsí</button></div><button class="btn green" onclick="addRow()">Přidat nový řádek</button><button class="btn gray" onclick="toggleSelMode()" id="selModeBtn">Označit</button><button class="btn red delete-btn" onclick="deleteCheckedRows()" style="display:none">Smazat vybrané řádky</button><button class="btn gray" onclick="undoLast()">Zpět</button><span id="selectedInfo" style="display:none"></span></div>
 <div id="panelsRow" style="display:none;gap:16px;align-items:flex-start;flex-wrap:wrap;padding:12px;"><div id="materialsPanel" style="display:none"><h2 style="font-size:14px;font-weight:700;margin:0 0 8px">Spotřeba materiálu</h2><div class="panel-wrap" id="materialsArea"></div></div><div id="mixesPanel" style="display:none"><h2 style="font-size:14px;font-weight:700;margin:0 0 8px">Seznam směsí</h2><div class="panel-wrap" id="mixesArea"></div></div>
@@ -188,7 +188,15 @@ function setWeekStart(v){_weekStart=v;_rows=null}
 function localIso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function isoDateFromStart(startIso,i){const d=new Date(startIso);d.setDate(d.getDate()+i);return localIso(d)}
 function fmtShort(iso){const d=new Date(iso);return d.getDate()+'.'+(d.getMonth()+1)+'.'}
-function fmtTitleRange(start){const a=new Date(start),b=new Date(start);b.setDate(a.getDate()+6);return a.getDate()+'.'+(a.getMonth()+1)+'. - '+b.getDate()+'.'+(b.getMonth()+1)+'.'+b.getFullYear()}
+function fmtTitleRange(start){const a=new Date(start),b=new Date(start);b.setDate(a.getDate()+6);return a.getDate()+'.'+(a.getMonth()+1)+'. – '+b.getDate()+'.'+(b.getMonth()+1)+'.'+b.getFullYear()}
+function updateWeekNavBtn(){
+  const btn=document.getElementById('currentWeekBtn');if(!btn)return;
+  const week=isoWeek(new Date(_weekStart));
+  const range=fmtTitleRange(_weekStart);
+  const isCurrent=(_weekStart===defaultMonday());
+  btn.innerHTML='<span style="display:block;font-size:13px;font-weight:800">Týden '+week+(isCurrent?' ·&nbsp;aktuální':'')+
+    '</span><span style="display:block;font-size:10px;font-weight:500;letter-spacing:0;opacity:.9">'+range+'</span>';
+}
 function isoWeek(date){const d=new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate()));const day=d.getUTCDay()||7;d.setUTCDate(d.getUTCDate()+4-day);const yearStart=new Date(Date.UTC(d.getUTCFullYear(),0,1));return Math.ceil((((d-yearStart)/86400000)+1)/7)}
 function fmtNum(v,dec){if(v===0||v==="0")return "0";if(!v)return "";const num=parseFloat(String(v).replace(",","."));if(isNaN(num))return v;if(dec!==undefined)return num.toLocaleString("cs-CZ",{minimumFractionDigits:dec,maximumFractionDigits:dec}).replace(/ /g," ");return num.toLocaleString("cs-CZ").replace(/ /g," ");}
 function n(v){const x=parseInt(String(v||'').replace(/\D+/g,''),10);return isNaN(x)?0:x}
@@ -245,12 +253,13 @@ function renderHead(){
   const start=_weekStart;const rows=_rows||[];const dates=dayKeys.map((_,i)=>isoDateFromStart(start,i));
   const week=isoWeek(new Date(start));
   const twt=document.getElementById('topWeekTitle');if(twt)twt.textContent='Kalendářní týden č. '+week+' | '+fmtTitleRange(start);
+  updateWeekNavBtn();
   const _ds=k=>daySum(rows,k)+(_weekOrderDaySums[k]||0);
   const total=dayKeys.reduce((s,k)=>s+_ds(k),0);
   const maxDaily=parseInt(_settings.hmg_max_daily||'1000');
   const minDaily=parseInt(_settings.hmg_min_daily||'0')||0;
   const cap=_settings.hmg_gas_capacity||'10 000';
-  thead.innerHTML=`<tr><th class="cap-label" colspan="2">Denní kapacita plynu:</th><th class="cap-value">${cap} m3</th><th></th><th class="sum-label" colspan="2">Součet t/den:</th>${dayKeys.map(k=>`<th class="sum-head" style="${(_ds(k)>maxDaily)||(_ds(k)>0&&minDaily>0&&_ds(k)<minDaily)?'background:#fee2e2!important;color:#991b1b!important;':''}">  ${fmtNum(_ds(k))}</th>`).join('')}<th class="sum-head">${fmtNum(total)}</th><th class="sel-col"></th></tr><tr style='height:38px'><th>č.</th><th>lokalita</th><th>objednávka</th><th>Směs a průkazná zk. typu</th><th>ITT</th><th>četa</th>${dates.map((d,i)=>`<th class="${i>=5?'gray-day':'blue-day'}" style="${i>=5?'color:#6b7280':'color:#1d4ed8'}">${fmtShort(d)}</th>`).join('')}<th>souhrn</th><th class='sel-col'>✓</th></tr>`;
+  thead.innerHTML=`<tr><th class="cap-label" colspan="2">Denní kapacita plynu:</th><th class="cap-value">${cap} m3</th><th></th><th class="sum-label" colspan="2">Součet t/den:</th>${dayKeys.map(k=>{const _v=_ds(k);const _oM=_v>maxDaily;const _uM=_v>0&&minDaily>0&&_v<minDaily;return`<th class="sum-head" style="${_oM?'background:#fee2e2!important;color:#991b1b!important;':_uM?'background:#fef9c3!important;color:#92400e!important;':''}">  ${fmtNum(_v)}</th>`;}).join('')}<th class="sum-head">${fmtNum(total)}</th><th class="sel-col"></th></tr><tr style='height:38px'><th>č.</th><th>lokalita</th><th>objednávka</th><th>Směs a průkazná zk. typu</th><th>ITT</th><th>četa</th>${dates.map((d,i)=>`<th class="${i>=5?'gray-day':'blue-day'}" style="${i>=5?'color:#6b7280':'color:#1d4ed8'}">${fmtShort(d)}</th>`).join('')}<th>souhrn</th><th class='sel-col'>✓</th></tr>`;
 }
 
 function selectOptions(values,current){return `<option value=""></option>${values.map(v=>`<option value="${esc(v)}" ${String(v)===String(current||'')?'selected':''}>${esc(v)}</option>`).join('')}`}
@@ -433,13 +442,14 @@ function renderMobileHead(){
   const start=_weekStart;const rows=_rows||[];const dates=dayKeys.map((_,i)=>isoDateFromStart(start,i));
   const week=isoWeek(new Date(start));
   const twt=document.getElementById('topWeekTitle');if(twt)twt.textContent='KT '+week+' | '+fmtTitleRange(start);
+  updateWeekNavBtn();
   const total=dayKeys.reduce((s,k)=>s+daySum(rows,k),0);
   const maxDaily=parseInt(_settings.hmg_max_daily||'1000');
   const minDaily=parseInt(_settings.hmg_min_daily||'0')||0;
   // Řádek součtů + řádek datumů
   thead.innerHTML=
     `<tr><th class="sum-label" colspan="4" style="text-align:left;padding-left:6px">Součet t/den:</th>`+
-    dayKeys.map(k=>{const s=daySum(rows,k);const over=(s>maxDaily)||(s>0&&minDaily>0&&s<minDaily);return`<th class="sum-head" style="${over?'background:#fee2e2!important;color:#991b1b!important;':''}">${s||''}</th>`}).join('')+
+    dayKeys.map(k=>{const s=daySum(rows,k);const overMax=s>maxDaily;const underMin=s>0&&minDaily>0&&s<minDaily;return`<th class="sum-head" style="${overMax?'background:#fee2e2!important;color:#991b1b!important;':underMin?'background:#fef9c3!important;color:#92400e!important;':''}">${s||''}</th>`}).join('')+
     `<th class="sum-head">${fmtNum(total)}</th></tr>`+
     `<tr><th>č.</th><th>lokalita</th><th>směs</th><th>četa</th>`+
     dates.map((d,i)=>`<th class="${i>=5?'gray-day':'blue-day'}" style="${i>=5?'color:#6b7280':'color:#1d4ed8'}">${fmtShort(d)}</th>`).join('')+
@@ -667,7 +677,8 @@ init();
 fetch('/api/me').then(r=>r.json()).then(d=>{if(d.role==='hmg_share')window.location.replace('/month');}).catch(()=>{});
 async function doLogout(){await fetch('/api/logout',{method:'POST'}).catch(()=>{});window.location.href='/login';}
 </script><meta name="author" content="Jakub Kalousek"><meta name="copyright" content="Copyright 2026 Jakub Kalousek. All rights reserved.">
-<div style="border-top:1px solid #e5e7eb;padding:12px 20px;display:flex;justify-content:flex-end;background:#f8fafc;">
+<div style="border-top:1px solid #e5e7eb;padding:12px 20px;display:flex;justify-content:flex-end;align-items:center;gap:16px;background:#f8fafc;">
+  <span style="font-size:13px;font-weight:500;color:#9ca3af;letter-spacing:1.5px">TAXIS v.3 2026</span>
   <button onclick="doLogout()" style="display:inline-flex;align-items:center;gap:6px;background:transparent;border:1px solid #fca5a5;border-radius:6px;color:#dc2626;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;padding:6px 14px;line-height:1;" onmouseenter="this.style.background='#fff1f2'" onmouseleave="this.style.background='transparent'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Odhlásit se</button>
 </div>
 </body></html>
