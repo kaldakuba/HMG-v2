@@ -112,6 +112,7 @@ let _maxDaily = 1000;
 let _minDaily = 0;
 let _weekStarts = []; // seřazené pondělky pro určení hranic týdnů
 let _isAdmin = false;
+let _ordersEnabled = true; // přepínač objednávkového systému (načteno ze settings)
 let _monthOrderDaySums = {}; // keyed by iso date – přidané tuny z pending objednávek
 
 function n(v){const x=parseInt(String(v||'').replace(/\D+/g,''),10);return isNaN(x)?0:x}
@@ -180,7 +181,7 @@ function rowsForMonth(y,m){
 
 function buildMonthOrderRowsHtml(y,m,days){
   _monthOrderDaySums={};
-  if(!_isAdmin||typeof OA==='undefined')return '';
+  if(!_isAdmin||typeof OA==='undefined'||_ordersEnabled===false)return '';
   const visibleDays=Array.from({length:days},(_,i)=>i+1);
   const monthStart=iso(y,m,1),monthEnd=iso(y,m,days);
   let html='';
@@ -344,6 +345,9 @@ async function init(){
       _minDaily=parseInt(settings.hmg_min_daily,10);
       if(isNaN(_minDaily)||_minDaily<0)_minDaily=0;
     }
+    if(settings&&settings.orders_enabled!==undefined){
+      _ordersEnabled=(settings.orders_enabled!=='false');
+    }
     _entries={};
     (weeks||[]).forEach(w=>{
       const start=w.start;
@@ -360,8 +364,8 @@ async function init(){
   await checkViewerRole();
   // Viewer začíná na aktuálním měsíci
   monthPick.value = _isViewer ? defaultMonth() : savedMonth;
-  // Objednávky – jen admin
-  if(_isAdmin && typeof OA!=='undefined'){
+  // Objednávky – jen admin, jen když je systém zapnut
+  if(_isAdmin && typeof OA!=='undefined' && _ordersEnabled){
     OA.initBanner(document.querySelector('.actions'), true);
     await OA.loadPendingGroups();
     OA.updateBanner(OA.getPendingGroups().length);

@@ -191,6 +191,8 @@ function fmtShort(iso){const d=new Date(iso);return d.getDate()+'.'+(d.getMonth(
 function fmtTitleRange(start){const a=new Date(start),b=new Date(start);b.setDate(a.getDate()+6);return a.getDate()+'.'+(a.getMonth()+1)+'. – '+b.getDate()+'.'+(b.getMonth()+1)+'.'+b.getFullYear()}
 function updateWeekNavBtn(){
   const btn=document.getElementById('currentWeekBtn');if(!btn)return;
+  // Na desktopu vždy původní popis, číslo týdne + rozsah dat jen na mobilu
+  if(!IS_MOBILE){btn.innerHTML='Aktuální týden';return;}
   const week=isoWeek(new Date(_weekStart));
   const range=fmtTitleRange(_weekStart);
   const isCurrent=(_weekStart===defaultMonday());
@@ -267,7 +269,8 @@ function selectOptions(values,current){return `<option value=""></option>${value
 function buildWeekOrderRowsHtml(){
   // Reset per-day order sums (also clears them when non-admin)
   dayKeys.forEach(k=>{_weekOrderDaySums[k]=0;});
-  if(IS_MOBILE||_role!=='admin'||typeof OA==='undefined')return '';
+  const _ordersEnabledNow=_settings.orders_enabled!=='false';
+  if(IS_MOBILE||_role!=='admin'||typeof OA==='undefined'||!_ordersEnabledNow)return '';
   const weekDates=dayKeys.map((_,i)=>isoDateFromStart(_weekStart,i));
   let html='';
   for(const g of OA.getPendingGroups()){
@@ -326,12 +329,12 @@ async function shiftWeek(delta){
   const d=new Date(_weekStart);d.setDate(d.getDate()+delta*7);
   _weekStart=d.toISOString().slice(0,10);
   await loadWeek(_weekStart);
-  if(_role==='admin'&&typeof OA!=='undefined')await OA.loadPendingGroups();
+  if(_role==='admin'&&typeof OA!=='undefined'&&_settings.orders_enabled!=='false')await OA.loadPendingGroups();
   if(IS_MOBILE)renderMobile();else render();
 }
 async function currentWeek(){
   _weekStart=defaultMonday();await loadWeek(_weekStart);
-  if(_role==='admin'&&typeof OA!=='undefined')await OA.loadPendingGroups();
+  if(_role==='admin'&&typeof OA!=='undefined'&&_settings.orders_enabled!=='false')await OA.loadPendingGroups();
   if(IS_MOBILE)renderMobile();else render();
 }
 
@@ -635,6 +638,7 @@ async function init(){
   // Načti nastavení
   const s=await fetch('/api/settings').then(r=>r.json()).catch(()=>({}));
   if(s&&Object.keys(s).length)_settings=s;
+  const _ordersEnabled=_settings.orders_enabled!=='false'; // výchozí true
   document.getElementById('plantRate').value=_settings.hmg_plant_rate||'150';
   // Načti směsi
   const mixes=await fetch('/api/inputs').then(r=>r.json()).catch(()=>null);
@@ -647,8 +651,8 @@ async function init(){
   // Zjisti roli (před renderem, aby order řádky věděly zda admin)
   if(!IS_MOBILE) await checkOperatorRole();
   if(IS_MOBILE) renderMobile(); else render();
-  // Objednávky — jen admin, desktop
-  if(!IS_MOBILE && _role==='admin' && typeof OA!=='undefined'){
+  // Objednávky — jen admin, desktop, jen když je systém zapnut
+  if(!IS_MOBILE && _role==='admin' && typeof OA!=='undefined' && _ordersEnabled){
     OA.initBanner(document.querySelector('.actions'), true);
     await OA.loadPendingGroups();
     OA.updateBanner(OA.getPendingGroups().length);

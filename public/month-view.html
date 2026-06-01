@@ -27,7 +27,7 @@ body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111
 .month-toolbar .right{margin-left:auto;display:flex;gap:8px;align-items:center}
 input[type=month]{height:34px;border:1px solid #a0aabb;border-radius:6px;padding:2px 10px;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;color:#374151;background:#f8fafc;cursor:pointer}
 input[type=month]:focus{outline:2px solid #3b82f6;border-color:#3b82f6}
-.table-wrap{overflow:auto;background:#fff}
+.table-wrap{overflow:auto;background:#fff;max-height:calc(100vh - 290px);min-height:200px}
 table{border-collapse:collapse;table-layout:fixed;min-width:100px;width:max-content;font-size:13px}
 th,td{border:1px solid #a0aabb;height:28px;padding:2px 4px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151;letter-spacing:.2px}
@@ -36,7 +36,7 @@ th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151;letter-spacin
 .blue{background:#eff6ff}.gray{background:#c8ccd4}
 .holiday{background:#f0fdf4!important;color:#15803d}
 .today-col{background:#fef9c3!important;color:#854d0e!important;font-weight:700}
-.group-top td{border-top:3px solid #a0aabb}
+.week-sep td{border-top:3px solid #1a1a2e!important}
 .sticky-head th{position:sticky;top:0;z-index:4}
 .sticky-head-2 th{position:sticky;top:28px;z-index:4}
 .left-head{background:#dbeafe!important;color:#1e3a8a!important}
@@ -102,6 +102,7 @@ tr.row-hover td,td.col-hover{background:#fefce8!important}
 <script>
 // ── GLOBÁLNÍ STAV ──
 let _maxDaily = 1500, _minDaily = 0, _accessOk = false;
+let _ordersEnabled = true; // přepínač objednávkového systému (načteno ze settings)
 let _meRole = '', _meFirma = '', _meUsername = '';
 let _receptury = [], _orders = [], _entries = {};
 let _orderRowCount = 0;
@@ -137,6 +138,7 @@ async function loadSettings() {
     const s = await fetch('/api/settings' + (_urlToken ? '?t=' + _urlToken : '')).then(r => r.json());
     if (s && s.hmg_max_daily) _maxDaily = parseInt(s.hmg_max_daily) || 1500;
     if (s && s.hmg_min_daily) _minDaily = parseInt(s.hmg_min_daily) || 0;
+    if (s && s.orders_enabled !== undefined) _ordersEnabled = (s.orders_enabled !== 'false');
   } catch(e) {}
 }
 
@@ -154,11 +156,8 @@ async function checkAccess() {
       if (me.role === 'hmg_share') {
         const badge = document.querySelector('.ro-badge');
         if (badge) { badge.style.background='#ede9fe'; badge.style.color='#5b21b6'; badge.innerHTML='🏢 ' + esc(_meFirma || 'firma'); }
-        // Zobraz tlačítko jen pro hmg_share s přiřazenou firmou
-        if (_meFirma) {
-          const btnNew = document.getElementById('btnNewOrder');
-          if (btnNew) btnNew.style.display = 'inline-block';
-        }
+        // Tlačítko "Nová objednávka" se NEZOBRAZUJE zde – až po načtení settings (viz inicializace)
+        // _meFirma je uložena, zobrazení rozhodne Promise.all().then() po ověření orders_enabled
       }
       return true;
     }
@@ -212,6 +211,8 @@ function monthName(m){return['LEDEN','ÚNOR','BŘEZEN','DUBEN','KVĚTEN','ČERVE
 function iso(y,m,d){return y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0')}
 function esc(v){return String(v||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function n(v){const x=parseInt(String(v||'').replace(/\D+/g,''),10);return isNaN(x)?0:x}
+// Vrátí pondělí (YYYY-MM-DD) pro daný datum – shodná logika jako v month.html
+function mondayOf(id){const d=new Date(id);const dow=d.getDay();const diff=(dow===0?-6:1-dow);d.setDate(d.getDate()+diff);return d.toISOString().slice(0,10)}
 
 function easterSunday(y){const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*m+114)/31),da=((h+l-7*m+114)%31)+1;return new Date(y,mo-1,da)}
 function addDays(date,days){const d=new Date(date);d.setDate(d.getDate()+days);return d}
@@ -233,8 +234,10 @@ function companyColor(name){const c=loadCompanies().find(x=>x.name===name);retur
 function daySum(entries,id){return(entries[id]||[]).reduce((s,e)=>s+n(e.tuny),0)}
 
 // Součet dne ze harmonogramu + live objednávky (approved jsou už v harmonogramu = necount dvakrát)
+// Pokud je orders_enabled = false, nezahrnuj objednávkové tuny (systém je vypnut)
 function dayTotalWithOrders(entries, orders, dateId) {
   const wk = daySum(entries, dateId);
+  if (!_ordersEnabled) return wk;
   const ord = (orders||[])
     .filter(o=>(o.datum||'').slice(0,10)===dateId && ['pending','pre_approved','pre_rejected'].includes(o.status))
     .reduce((s,o)=>s+(o.tuny||0),0);
@@ -242,25 +245,35 @@ function dayTotalWithOrders(entries, orders, dateId) {
 }
 
 const FIRMA_ORDER={'Colas':0,'Firesta':1,'Mi Roads':2};
+// Řadí řádky po týdnech – identická logika jako v month.html (admin měsíční)
 function rowsForMonth(y,m,entries){
-  const map={};
+  const weekMap={};
   Object.keys(entries).sort().forEach(id=>{
     const dt=new Date(id);
     if(dt.getFullYear()===y&&dt.getMonth()===m){
       (entries[id]||[]).forEach(e=>{
         if(!(e.smes||'').trim()||!(e.itt||'').trim()||!(e.ceta||'').trim())return;
+        const ws=mondayOf(id);
+        if(!weekMap[ws])weekMap[ws]={};
         const key=[e.lokalita||'',e.objednavka||'',e.smes||'',e.itt||'',e.ceta||''].join('|');
-        if(!map[key])map[key]={lokalita:e.lokalita||'',objednavka:e.objednavka||'',smes:e.smes||'',itt:e.itt||'',ceta:e.ceta||'',days:{}};
-        const d=dt.getDate();map[key].days[d]=(map[key].days[d]||0)+n(e.tuny);
+        if(!weekMap[ws][key])weekMap[ws][key]={lokalita:e.lokalita||'',objednavka:e.objednavka||'',smes:e.smes||'',itt:e.itt||'',ceta:e.ceta||'',weekStart:ws,days:{}};
+        const d=dt.getDate();
+        weekMap[ws][key].days[d]=(weekMap[ws][key].days[d]||0)+n(e.tuny);
       });
     }
   });
-  const result=Object.values(map);
-  result.sort((a,b)=>{
-    const oa=FIRMA_ORDER[a.ceta]!==undefined?FIRMA_ORDER[a.ceta]:99;
-    const ob=FIRMA_ORDER[b.ceta]!==undefined?FIRMA_ORDER[b.ceta]:99;
-    if(oa!==ob)return oa-ob;
-    return (a.lokalita||'').localeCompare(b.lokalita||'','cs');
+  // Seřadit týdny chronologicky, uvnitř každého týdne firmy dle FIRMA_ORDER + lokalita
+  const result=[];
+  Object.keys(weekMap).sort().forEach(ws=>{
+    const rows=Object.values(weekMap[ws]);
+    rows.sort((a,b)=>{
+      const oa=FIRMA_ORDER[a.ceta]!==undefined?FIRMA_ORDER[a.ceta]:99;
+      const ob=FIRMA_ORDER[b.ceta]!==undefined?FIRMA_ORDER[b.ceta]:99;
+      if(oa!==ob)return oa-ob;
+      return(a.lokalita||'').localeCompare(b.lokalita||'','cs');
+    });
+    rows.forEach((r,i)=>{r._firstInWeek=(i===0);});
+    result.push(...rows);
   });
   return result;
 }
@@ -346,7 +359,8 @@ async function renderMonth(){
   const rows=isCurrentMonth
     ? _allRows.filter(r=>visibleDays.some(d=>(r.days[d]||0)>0))
     : _allRows;
-  const orderRows=buildOrderRows(y,m,_orders);
+  // Objednávkové řádky jen pokud je systém zapnut
+  const orderRows=_ordersEnabled ? buildOrderRows(y,m,_orders) : [];
 
   if(isPastMonth||visibleDays.length===0){
     tableWrap.innerHTML='<div style="padding:40px;text-align:center;color:#6b7280;font-size:14px">Pro tento měsíc nejsou k dispozici žádná budoucí data.</div>';
@@ -379,10 +393,11 @@ async function renderMonth(){
       h+='</tr>';
     }
   } else {
-    // Standardní řádky HMG harmonogramu
-    rows.forEach((r,idx)=>{
+    // Standardní řádky HMG harmonogramu – řazené po týdnech, první řádek týdne oddělený silnou linkou
+    rows.forEach(r=>{
       const color=companyColor(r.ceta);
-      h+='<tr class="'+(idx%4===0?'group-top':'')+'" style="'+(color?'background:'+color:'')+'">';
+      const sepClass=r._firstInWeek?'week-sep':'';
+      h+='<tr class="'+sepClass+'" style="'+(color?'background:'+color:'')+'">';
       h+='<td class="sticky-lok" style="background:'+(color||'#fff')+';text-align:center;vertical-align:middle">'+esc(r.lokalita)+'</td>';
       h+='<td style="'+((!r.objednavka)?'background:#fff;border:1px solid #374151;':'')+'">'+esc(r.objednavka)+'</td>';
       h+='<td class="sticky-smes" style="background:'+(color||'#fff')+';text-align:left;padding-left:6px">'+esc(r.smes)+'</td>';
@@ -714,6 +729,7 @@ function onGlobalCoordsInput() {
 // ── POPUP — NOVÁ OBJEDNÁVKA ───────────────────────────────────────────────────
 
 function openOrderPopup() {
+  if (!_ordersEnabled) return; // pojistka: systém vypnut, žádná akce i kdyby se kliklo při načítání
   if (_meRole !== 'hmg_share') return;
   if (!_meFirma) { alert('Váš účet nemá přiřazenu firmu. Kontaktujte admina.'); return; }
 
@@ -1094,6 +1110,12 @@ monthPick.value = localStorage.getItem('hmg_view_month') || defaultMonth();
 checkAccess().then(ok => {
   if (ok) {
     Promise.all([loadSettings(), loadReceptury(), loadMapyCzKey()]).then(() => {
+      // Tlačítko "Nová objednávka": zobrazit JEDINĚ pokud orders_enabled=true AND hmg_share AND má firmu
+      // Výchozí stav je display:none (v HTML) – nikdy "zobrazit a pak schovat", vždy "až po ověření"
+      const btnNew = document.getElementById('btnNewOrder');
+      if (btnNew && _ordersEnabled && _meRole === 'hmg_share' && _meFirma) {
+        btnNew.style.display = 'inline-block';
+      }
       loadOrders().then(() => renderMonth());
     });
   }

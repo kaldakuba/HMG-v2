@@ -76,6 +76,13 @@ input:focus,select:focus{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,23
 .stat-label{font-size:11px;color:#6b7280;margin-top:2px}
 .add-form{background:#f9fafb;border:0.5px solid #e5e7eb;border-radius:8px;padding:14px;margin-bottom:14px;display:none}
 hr{border:none;border-top:0.5px solid #e5e7eb;margin:14px 0}
+/* Toggle přepínač */
+.toggle-sw{position:relative;display:inline-block;width:46px;height:26px;flex-shrink:0}
+.toggle-sw input{opacity:0;width:0;height:0}
+.toggle-sl{position:absolute;cursor:pointer;inset:0;background:#d1d5db;border-radius:26px;transition:.2s}
+.toggle-sl::before{position:absolute;content:'';height:20px;width:20px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+input:checked + .toggle-sl{background:#16a34a}
+input:checked + .toggle-sl::before{transform:translateX(20px)}
 @media(max-width:700px){
   .layout{flex-direction:column;padding:10px 8px;gap:10px}
   .sidenav{width:100%}
@@ -111,6 +118,9 @@ hr{border:none;border-top:0.5px solid #e5e7eb;margin:14px 0}
       </div>
       <div class="nav-item" onclick="showSection('smtp')" id="nav-smtp">
         <i class="ti ti-mail-cog" aria-hidden="true"></i> E-mail
+      </div>
+      <div class="nav-item" onclick="showSection('system')" id="nav-system">
+        <i class="ti ti-settings" aria-hidden="true"></i> Systém
       </div>
     </div>
   </nav>
@@ -277,6 +287,33 @@ hr{border:none;border-top:0.5px solid #e5e7eb;margin:14px 0}
       </div>
     </div>
 
+    <!-- SYSTÉM -->
+    <div class="section" id="sec-system">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-icon" style="background:#f0fdf4"><i class="ti ti-toggle-right" style="font-size:20px;color:#16a34a" aria-hidden="true"></i></div>
+          <div><div class="card-head h2">Objednávkový systém</div><div class="card-head sub">Zapnutí nebo vypnutí objednávkového modulu pro celou instalaci</div></div>
+        </div>
+        <div class="card-body">
+          <div style="display:flex;align-items:center;gap:16px;padding:14px 16px;background:#f9fafb;border:0.5px solid #e5e7eb;border-radius:8px">
+            <label class="toggle-sw" title="Přepnout objednávkový systém">
+              <input type="checkbox" id="ordersEnabledToggle" onchange="saveOrdersEnabled(this.checked)">
+              <span class="toggle-sl"></span>
+            </label>
+            <div>
+              <div id="ordersEnabledLabel" style="font-size:14px;font-weight:600;color:#111">Načítám…</div>
+              <div id="ordersEnabledDesc" style="font-size:12px;color:#6b7280;margin-top:2px">—</div>
+            </div>
+          </div>
+          <div id="ordersSystemMsg" style="margin-top:10px"></div>
+          <div class="info" style="margin-top:12px">
+            <strong>Zapnuto:</strong> Odběratelé (hmg_share) vidí tlačítko „Nová objednávka" a mohou podávat objednávky ke schválení adminem.<br>
+            <strong>Vypnuto:</strong> Objednávkový modul je skryt na všech stránkách. Existující (schválené) řádky v harmonogramu nejsou dotčeny. Rozpracované objednávky zůstávají v databázi a po opětovném zapnutí se zobrazí.
+          </div>
+        </div>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -299,6 +336,7 @@ function showSection(name) {
   if (name === 'backup') loadBackupInfo();
   if (name === 'orders') loadOrdersAdmin();
   if (name === 'smtp') loadSmtpSettings();
+  if (name === 'system') loadSystemSettings();
 }
 
 function fmtDate(iso) {
@@ -671,6 +709,43 @@ async function testSmtpEmail() {
     msg.innerHTML = `<span class="msg-ok">✓ ${esc(r.message || 'Email odeslán')}</span>`;
   } else {
     msg.innerHTML = `<span class="msg-err">✗ ${esc(r.error || 'Chyba odeslání')}</span>`;
+  }
+}
+
+// ── Objednávkový systém (přepínač) ──
+async function loadSystemSettings() {
+  try {
+    const s = await api('GET', '/api/settings');
+    const enabled = s.orders_enabled !== 'false'; // výchozí true
+    const toggle = document.getElementById('ordersEnabledToggle');
+    if (toggle) toggle.checked = enabled;
+    _updateOrdersEnabledUI(enabled);
+  } catch(e) {
+    console.error('loadSystemSettings:', e);
+  }
+}
+function _updateOrdersEnabledUI(enabled) {
+  const lbl  = document.getElementById('ordersEnabledLabel');
+  const desc = document.getElementById('ordersEnabledDesc');
+  if (lbl)  lbl.textContent  = enabled ? 'Zapnuto' : 'Vypnuto';
+  if (lbl)  lbl.style.color  = enabled ? '#16a34a' : '#dc2626';
+  if (desc) desc.textContent = enabled
+    ? 'Odběratelé mohou zadávat objednávky, admin schvaluje'
+    : 'Odběratelé mají jen prohlížení harmonogramu';
+}
+async function saveOrdersEnabled(enabled) {
+  _updateOrdersEnabledUI(enabled);
+  const msg = document.getElementById('ordersSystemMsg');
+  const r = await api('POST', '/api/settings', { orders_enabled: enabled ? 'true' : 'false' });
+  if (r.ok) {
+    msg.innerHTML = '<span class="msg-ok">✓ Nastavení uloženo</span>';
+    setTimeout(() => { msg.innerHTML = ''; }, 2500);
+  } else {
+    msg.innerHTML = `<span class="msg-err">✗ ${esc(r.error || 'Chyba')}</span>`;
+    // vrátit toggle na původní hodnotu
+    const toggle = document.getElementById('ordersEnabledToggle');
+    if (toggle) toggle.checked = !enabled;
+    _updateOrdersEnabledUI(!enabled);
   }
 }
 </script>

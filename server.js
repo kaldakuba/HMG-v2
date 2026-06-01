@@ -147,6 +147,10 @@ async function initDb() {
     END $$;
   `);
 
+  // HMG V4 — výchozí hodnota přepínače objednávkového systému
+  await pool.query(
+    `INSERT INTO settings (key, value) VALUES ('orders_enabled', 'true') ON CONFLICT (key) DO NOTHING`
+  );
 
   // Vytvoř výchozího admina pokud neexistuje
   const adminUser = process.env.ADMIN_USERNAME || 'admin';
@@ -166,16 +170,21 @@ app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
 // ── Sessions ──
+if (!process.env.SESSION_SECRET) {
+  console.error('CHYBA: Chybí SESSION_SECRET v .env. Server se nespustí bez nastaveného session secret.');
+  process.exit(1);
+}
 app.use(session({
   store: new pgSession({ pool, tableName: 'session' }),
-  secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 dní
     httpOnly: true,
     sameSite: 'lax',
-    secure: false  // Railway proxy řeší HTTPS
+    // secure: true pouze pokud běží za HTTPS (produkce); lokálně false
+    secure: process.env.NODE_ENV === 'production' || process.env.HTTPS === 'true'
   }
 }));
 
@@ -221,6 +230,18 @@ function requireViewer(req, res, next) {
     return res.status(403).json({ error: 'Nedostatečná oprávnění' });
   }
   res.redirect('/login');
+}
+
+// Pojistka: objednávkové endpointy odmítají požadavky, když orders_enabled = false
+async function requireOrdersEnabled(req, res, next) {
+  try {
+    const r = await pool.query("SELECT value FROM settings WHERE key='orders_enabled'");
+    const enabled = r.rows.length === 0 || r.rows[0].value !== 'false';
+    if (!enabled) return res.status(403).json({ error: 'Objednávkový systém je vypnut' });
+    next();
+  } catch(err) {
+    next(); // při chybě DB pokračuj (fail-open)
+  }
 }
 
 // ── Stránky ──
@@ -376,17 +397,26 @@ app.post('/api/companies', requireAuth, requireAdmin, async (req, res) => {
 app.get('/api/settings', requireAuth, async (req, res) => {
   const r = await pool.query('SELECT key,value FROM settings');
   const obj = {};
-  r.rows.forEach(row => obj[row.key] = row.value);
+  // Citlivé klíče (SMTP konfigurace vč. hesla) se nikdy nevracejí v obecném /api/settings.
+  // Slouží jen pro admina přes /api/smtp-settings, která má requireAdmin a heslo maskuje.
+  const SENSITIVE_PREFIXES = ['smtp_'];
+  r.rows.forEach(row => {
+    if (SENSITIVE_PREFIXES.some(p => row.key.startsWith(p))) return;
+    obj[row.key] = row.value;
+  });
   res.json(obj);
 });
 
 app.post('/api/settings', requireAuth, requireAdmin, async (req, res) => {
-  const allowed = ['hmg_max_daily', 'hmg_min_daily', 'plant_rate'];
+  const allowed = ['hmg_max_daily', 'hmg_min_daily', 'plant_rate', 'orders_enabled'];
   for (const [k, v] of Object.entries(req.body)) {
     if (!allowed.includes(k)) continue;
     if (['hmg_max_daily', 'hmg_min_daily', 'plant_rate'].includes(k)) {
       const n = parseInt(v, 10);
       if (isNaN(n) || n <= 0 || n > 1000000) return res.status(400).json({ error: `${k} musí být kladné číslo` });
+    }
+    if (k === 'orders_enabled') {
+      if (v !== 'true' && v !== 'false') return res.status(400).json({ error: 'orders_enabled musí být true nebo false' });
     }
     await pool.query(
       `INSERT INTO settings (key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,
@@ -1258,7 +1288,7 @@ app.get('/api/day-capacity', requireAuth, async (req, res) => {
 
 // POST /api/orders — jen pro hmg_share uživatele
 // Body: { lokalita, lat, lng, items: [{datum,smes,itt,tuny,komentar},...] }
-app.post('/api/orders', requireAuth, async (req, res) => {
+app.post('/api/orders', requireAuth, requireOrdersEnabled, async (req, res) => {
   if (req.session.role !== 'hmg_share') {
     return res.status(403).json({ error: 'Pouze sdílení uživatelé (hmg_share) mohou podávat objednávky' });
   }
@@ -1404,7 +1434,7 @@ app.post('/api/orders', requireAuth, async (req, res) => {
 // PATCH /api/orders/:groupId/approve — admin schválí skupinu
 // Bez body (nebo {confirm:false}): jen zkontroluje kapacitu, nic neschvaluje
 // S body {confirm:true}: skutečně schválí (vždy, i pokud překračuje max)
-app.patch('/api/orders/:groupId/approve', requireAuth, requireAdmin, async (req, res) => {
+app.patch('/api/orders/:groupId/approve', requireAuth, requireAdmin, requireOrdersEnabled, async (req, res) => {
   try {
     const { groupId } = req.params;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId)) {
@@ -1551,7 +1581,7 @@ app.patch('/api/orders/:groupId/approve', requireAuth, requireAdmin, async (req,
 });
 
 // PATCH /api/orders/:groupId/reject — admin zamítne skupinu (soft reject, uchovává v DB)
-app.patch('/api/orders/:groupId/reject', requireAuth, requireAdmin, async (req, res) => {
+app.patch('/api/orders/:groupId/reject', requireAuth, requireAdmin, requireOrdersEnabled, async (req, res) => {
   try {
     const { groupId } = req.params;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId)) {
@@ -1578,7 +1608,7 @@ app.patch('/api/orders/:groupId/reject', requireAuth, requireAdmin, async (req, 
 });
 
 // DELETE /api/orders/:groupId — admin smaže skupinu
-app.delete('/api/orders/:groupId', requireAuth, requireAdmin, async (req, res) => {
+app.delete('/api/orders/:groupId', requireAuth, requireAdmin, requireOrdersEnabled, async (req, res) => {
   try {
     const { groupId } = req.params;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId)) {
@@ -1628,7 +1658,7 @@ app.get('/api/orders/pending-groups', requireAuth, requireAdmin, async (req, res
 });
 
 // PATCH /api/orders/:groupId/day/:datum/preapprove
-app.patch('/api/orders/:groupId/day/:datum/preapprove', requireAuth, requireAdmin, async (req, res) => {
+app.patch('/api/orders/:groupId/day/:datum/preapprove', requireAuth, requireAdmin, requireOrdersEnabled, async (req, res) => {
   try {
     const { groupId, datum } = req.params;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId))
@@ -1683,7 +1713,7 @@ app.patch('/api/orders/:groupId/day/:datum/preapprove', requireAuth, requireAdmi
 });
 
 // PATCH /api/orders/:groupId/day/:datum/prereject
-app.patch('/api/orders/:groupId/day/:datum/prereject', requireAuth, requireAdmin, async (req, res) => {
+app.patch('/api/orders/:groupId/day/:datum/prereject', requireAuth, requireAdmin, requireOrdersEnabled, async (req, res) => {
   try {
     const { groupId, datum } = req.params;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId))
@@ -1706,7 +1736,7 @@ app.patch('/api/orders/:groupId/day/:datum/prereject', requireAuth, requireAdmin
 });
 
 // PATCH /api/orders/:groupId/day/:datum/reset
-app.patch('/api/orders/:groupId/day/:datum/reset', requireAuth, requireAdmin, async (req, res) => {
+app.patch('/api/orders/:groupId/day/:datum/reset', requireAuth, requireAdmin, requireOrdersEnabled, async (req, res) => {
   try {
     const { groupId, datum } = req.params;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId))
@@ -1726,7 +1756,7 @@ app.patch('/api/orders/:groupId/day/:datum/reset', requireAuth, requireAdmin, as
 });
 
 // PATCH /api/orders/:groupId/finalize
-app.patch('/api/orders/:groupId/finalize', requireAuth, requireAdmin, async (req, res) => {
+app.patch('/api/orders/:groupId/finalize', requireAuth, requireAdmin, requireOrdersEnabled, async (req, res) => {
   try {
     const { groupId } = req.params;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId))
@@ -1812,7 +1842,7 @@ app.patch('/api/orders/:groupId/finalize', requireAuth, requireAdmin, async (req
 });
 
 // PATCH /api/orders/:groupId/reject-all
-app.patch('/api/orders/:groupId/reject-all', requireAuth, requireAdmin, async (req, res) => {
+app.patch('/api/orders/:groupId/reject-all', requireAuth, requireAdmin, requireOrdersEnabled, async (req, res) => {
   try {
     const { groupId } = req.params;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId))
