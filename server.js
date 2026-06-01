@@ -132,6 +132,9 @@ async function initDb() {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;
 
+    -- HMG V4 — vynucená změna hesla při prvním přihlášení
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false;
+
     -- Migrace: rozšíření CHECK constraintu statusů (pre_approved, pre_rejected)
     DO $$
     BEGIN
@@ -152,17 +155,24 @@ async function initDb() {
     `INSERT INTO settings (key, value) VALUES ('orders_enabled', 'true') ON CONFLICT (key) DO NOTHING`
   );
 
-  // Vytvoř výchozího admina pokud neexistuje
+  // HMG V4 — Admin účet z ADMIN_PASSWORD (bez výchozího hesla)
+  // a) Admin existuje → NEDĚLEJ NIC (neměň heslo ani příznaky)
+  // b) Admin neexistuje + ADMIN_PASSWORD nastaven → vytvoř s must_change_password=true
+  // c) Admin neexistuje + ADMIN_PASSWORD NENÍ nastaven → varování, nevytvářej, server pokračuje
   const adminUser = process.env.ADMIN_USERNAME || 'admin';
-  const adminPass = process.env.ADMIN_PASSWORD || 'hmg2026';
   const existing = await pool.query('SELECT id FROM users WHERE username = $1', [adminUser]);
   if (existing.rows.length === 0) {
-    const hash = await bcrypt.hash(adminPass, 12);
-    await pool.query(
-      'INSERT INTO users (username, password_hash, role) VALUES ($1, $2, $3)',
-      [adminUser, hash, 'admin']
-    );
-    console.log(`Vytvořen admin účet: ${adminUser}`);
+    const adminPass = process.env.ADMIN_PASSWORD;
+    if (adminPass) {
+      const hash = await bcrypt.hash(adminPass, 12);
+      await pool.query(
+        'INSERT INTO users (username, password_hash, role, must_change_password) VALUES ($1, $2, $3, $4)',
+        [adminUser, hash, 'admin', true]
+      );
+      console.log(`Vytvořen admin účet: ${adminUser} (musí změnit heslo při prvním přihlášení)`);
+    } else {
+      console.warn('VAROVÁNÍ: ADMIN_PASSWORD není nastaveno v .env, admin účet nebyl vytvořen. Nastavte ADMIN_PASSWORD a restartujte server.');
+    }
   }
 }
 
@@ -197,7 +207,21 @@ app.use(express.static(path.join(__dirname, 'public'), {
 
 // ── Auth middleware ──
 function requireAuth(req, res, next) {
-  if (req.session && req.session.userId) return next();
+  if (req.session && req.session.userId) {
+    // Pokud uživatel musí změnit heslo: povolíme jen nezbytné endpointy
+    if (req.session.mustChangePassword) {
+      const ALLOWED = ['/api/change-password', '/api/logout', '/api/me'];
+      if (req.path.startsWith('/api/')) {
+        if (!ALLOWED.includes(req.path)) {
+          return res.status(403).json({ error: 'Musíte nejdříve změnit heslo', must_change_password: true });
+        }
+      } else {
+        // HTML stránky → přesměruj na login (který zobrazí formulář změny hesla)
+        return res.redirect('/login');
+      }
+    }
+    return next();
+  }
   if (req.xhr || req.path.startsWith('/api/')) {
     return res.status(401).json({ error: 'Nepřihlášen' });
   }
@@ -246,7 +270,14 @@ async function requireOrdersEnabled(req, res, next) {
 
 // ── Stránky ──
 app.get('/login', (req, res) => {
-  if (req.session && req.session.userId) return res.redirect('/');
+  if (req.session && req.session.userId) {
+    // Přihlášený, ale musí změnit heslo → zobraz login stránku s formulářem změny
+    if (req.session.mustChangePassword) {
+      if (!req.query.change) return res.redirect('/login?change=1');
+    } else {
+      return res.redirect('/');
+    }
+  }
   const csrfToken = crypto.randomBytes(24).toString('hex');
   res.cookie('csrf', csrfToken, { httpOnly: false, sameSite: 'lax' });
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -285,7 +316,11 @@ app.post('/api/login', loginLimiter, async (req, res) => {
     req.session.role = user.role;
     req.session.userAgent = req.headers['user-agent'] || '';
     req.session.loginIp = req.ip || '';
+    req.session.mustChangePassword = !!user.must_change_password;
     await pool.query('UPDATE users SET last_seen = NOW() WHERE id = $1', [user.id]);
+    if (user.must_change_password) {
+      return res.json({ ok: true, must_change_password: true });
+    }
     res.json({ ok: true, role: user.role });
   } catch (err) {
     console.error('Login error:', err);
@@ -300,11 +335,38 @@ app.post('/api/logout', (req, res) => {
   });
 });
 
+// Vynucená změna hesla (must_change_password = true) — dostupná i při mustChangePassword session
+app.post('/api/change-password', requireAuth, async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
+      return res.status(400).json({ error: 'Nové heslo musí mít alespoň 6 znaků' });
+    }
+    const hash = await bcrypt.hash(newPassword, 12);
+    await pool.query(
+      'UPDATE users SET password_hash=$1, must_change_password=false WHERE id=$2',
+      [hash, req.session.userId]
+    );
+    req.session.mustChangePassword = false;
+    console.log(`Uživatel ${req.session.username} si změnil heslo (vynucená změna)`);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('POST /api/change-password error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
 app.get('/api/me', requireAuth, async (req, res) => {
   try {
     const r = await pool.query('SELECT firma FROM users WHERE id=$1', [req.session.userId]);
     const firma = r.rows[0] ? r.rows[0].firma : null;
-    res.json({ username: req.session.username, role: req.session.role, userId: req.session.userId, firma });
+    res.json({
+      username: req.session.username,
+      role: req.session.role,
+      userId: req.session.userId,
+      firma,
+      mustChangePassword: req.session.mustChangePassword || false
+    });
   } catch(err) {
     res.json({ username: req.session.username, role: req.session.role, userId: req.session.userId, firma: null });
   }

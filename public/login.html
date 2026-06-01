@@ -19,22 +19,50 @@ button{width:100%;height:44px;background:#1a1a2e;color:#fff;border:none;border-r
 button:hover{background:#2d2d4e}
 button:disabled{background:#94a3b8;cursor:not-allowed}
 .err{background:#fef2f2;border:1px solid #fca5a5;border-radius:7px;padding:11px 14px;font-size:13px;color:#991b1b;font-weight:600;margin-bottom:16px;display:none}
+.info-box{background:#eff6ff;border:1px solid #bfdbfe;border-radius:7px;padding:11px 14px;font-size:13px;color:#1d4ed8;margin-bottom:20px}
+.chg-form{display:none}
 </style>
 </head>
 <body>
 <div class="card">
   <div class="logo">Harmonogram výroby</div>
-  <h1>Přihlášení</h1>
-  <div class="err" id="errBox"></div>
-  <label for="username">Uživatelské jméno</label>
-  <input type="text" id="username" autocomplete="username" autofocus>
-  <label for="password">Heslo</label>
-  <input type="password" id="password" autocomplete="current-password">
-  <button id="loginBtn" onclick="doLogin()">Přihlásit se</button>
+
+  <!-- Přihlašovací formulář -->
+  <div id="loginForm">
+    <h1>Přihlášení</h1>
+    <div class="err" id="errBox"></div>
+    <label for="username">Uživatelské jméno</label>
+    <input type="text" id="username" autocomplete="username" autofocus>
+    <label for="password">Heslo</label>
+    <input type="password" id="password" autocomplete="current-password">
+    <button id="loginBtn" onclick="doLogin()">Přihlásit se</button>
+  </div>
+
+  <!-- Formulář vynucené změny hesla (zobrazí se místo přihlašovacího) -->
+  <div id="changeForm" class="chg-form">
+    <h1>Nastavte nové heslo</h1>
+    <div class="info-box">Z bezpečnostních důvodů musíte nastavit vlastní heslo před prvním vstupem do aplikace.</div>
+    <div class="err" id="chgErrBox"></div>
+    <label for="newPassword">Nové heslo <span style="color:#6b7280;font-weight:400">(min. 6 znaků)</span></label>
+    <input type="password" id="newPassword" autocomplete="new-password">
+    <label for="newPassword2">Nové heslo znovu</label>
+    <input type="password" id="newPassword2" autocomplete="new-password">
+    <button id="chgBtn" onclick="doChangePassword()">Uložit heslo a vstoupit</button>
+  </div>
 </div>
 <script>
+// Při načtení stránky: pokud URL obsahuje ?change=1 → zobraz formulář změny hesla
+(function() {
+  if (new URLSearchParams(window.location.search).get('change') === '1') {
+    showChangeForm();
+  }
+})();
+
 document.getElementById('password').addEventListener('keydown', e => {
   if (e.key === 'Enter') doLogin();
+});
+document.getElementById('newPassword2').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doChangePassword();
 });
 
 async function doLogin() {
@@ -54,7 +82,13 @@ async function doLogin() {
     });
     const data = await res.json();
     if (res.ok && data.ok) {
-      window.location.href = '/';
+      if (data.must_change_password) {
+        // Vynucená změna hesla — zobraz formulář bez přesměrování
+        history.replaceState(null, '', '/login?change=1');
+        showChangeForm();
+      } else {
+        window.location.href = '/';
+      }
     } else {
       showErr(data.error || 'Nesprávné jméno nebo heslo.');
       btn.disabled = false;
@@ -67,8 +101,52 @@ async function doLogin() {
   }
 }
 
+async function doChangePassword() {
+  const p1 = document.getElementById('newPassword').value;
+  const p2 = document.getElementById('newPassword2').value;
+  const btn = document.getElementById('chgBtn');
+  const err = document.getElementById('chgErrBox');
+  err.style.display = 'none';
+  if (!p1 || p1.length < 6) { showChgErr('Heslo musí mít alespoň 6 znaků.'); return; }
+  if (p1 !== p2) { showChgErr('Hesla se neshodují.'); return; }
+  btn.disabled = true;
+  btn.textContent = 'Ukládám...';
+  try {
+    const res = await fetch('/api/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newPassword: p1 })
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      window.location.href = '/';
+    } else {
+      showChgErr(data.error || 'Nepodařilo se uložit heslo.');
+      btn.disabled = false;
+      btn.textContent = 'Uložit heslo a vstoupit';
+    }
+  } catch (e) {
+    showChgErr('Chyba připojení k serveru.');
+    btn.disabled = false;
+    btn.textContent = 'Uložit heslo a vstoupit';
+  }
+}
+
+function showChangeForm() {
+  document.getElementById('loginForm').style.display = 'none';
+  document.getElementById('changeForm').style.display = 'block';
+  const f = document.getElementById('newPassword');
+  if (f) setTimeout(() => f.focus(), 50);
+}
+
 function showErr(msg) {
   const e = document.getElementById('errBox');
+  e.textContent = msg;
+  e.style.display = 'block';
+}
+
+function showChgErr(msg) {
+  const e = document.getElementById('chgErrBox');
   e.textContent = msg;
   e.style.display = 'block';
 }
