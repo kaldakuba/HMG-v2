@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const nodemailer = require('nodemailer');
 const ExcelJS = require('exceljs');
 const path = require('path');
+const fs   = require('fs');
 const crypto = require('crypto');
 const cookieParser = require('cookie-parser');
 const { Pool } = require('pg');
@@ -38,6 +39,44 @@ const pool = new Pool({
   ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('railway')
     ? { rejectUnauthorized: false }
     : false
+});
+
+// ── Helper: logování chyb s časovým razítkem (konzola + soubor) ─────────────
+// Volá se vždy s popisem a chybou; zápis do souboru je best-effort (nikdy nepadne).
+const LOG_DIR  = path.join(__dirname, 'logs');
+const LOG_FILE = path.join(LOG_DIR, 'error.log');
+function logError(label, errOrMsg) {
+  const ts  = new Date().toISOString();
+  const detail = errOrMsg instanceof Error
+    ? (errOrMsg.stack || errOrMsg.message)
+    : String(errOrMsg);
+  const line = `[${ts}] ${label}\n${detail}`;
+  console.error(line);
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    fs.appendFileSync(LOG_FILE, line + '\n---\n');
+  } catch (_) { /* zápis do souboru selhal – konzola stačí */ }
+}
+
+// ── Ošetření chyb DB poolu ZA CHODU ──────────────────────────────────────────
+// Bez tohoto handleru by neočekávaná chyba idle klienta (výpadek / restart DB
+// na Railway) vyhodila uncaughtException a zabila Node.js proces.
+pool.on('error', err => {
+  logError('POOL ERROR – neočekávaná chyba idle klienta (DB výpadek/restart)', err);
+  // Neukončujeme; pg.Pool se pokusí obnovit spojení při dalším dotazu.
+});
+
+// ── Globální zachytávání neošetřených chyb ───────────────────────────────────
+// Zajišťuje, že ŽÁDNÁ chyba neprojde bez záznamu a neshodí server potichu.
+process.on('unhandledRejection', (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  logError('UNHANDLED REJECTION', err);
+  // Neukončujeme – chyba je zalogována, server pokračuje.
+});
+process.on('uncaughtException', (err) => {
+  logError('UNCAUGHT EXCEPTION', err);
+  // Neukončujeme – logujeme a pokračujeme. Railway restartuje kontejner
+  // na základě health-checku, pokud se stane něco vážného.
 });
 
 // ── Validace ──
@@ -2035,17 +2074,40 @@ app.get('*', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-initDb()
-  .then(() => {
-    app.listen(PORT, () => console.log(`Server běží na portu ${PORT}`));
-    if (process.env.GMAIL_USER) scheduleBackup();
-    // Auto-cleanup rejected objednávek — běží vždy, nezávisle na GMAIL
-    const MS_DAY = 24 * 60 * 60 * 1000;
-    cleanupRejectedOrders(); // jednou při startu
-    setInterval(cleanupRejectedOrders, MS_DAY); // pak každý den
-    console.log('Auto-cleanup rejected objednávek: nastaven (každých 24h)');
-  })
-  .catch(err => { console.error('DB init error:', err); process.exit(1); });
+// ── Start serveru s retry připojením k DB ────────────────────────────────────
+// Při startu na Railway DB někdy potřebuje chvíli navíc – místo okamžitého
+// pádu zkoušíme připojení MAX_RETRIES-krát s RETRY_DELAY_MS prodlevou.
+async function startServer() {
+  const MAX_RETRIES = 10;
+  const RETRY_DELAY = 3000; // ms
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`[${new Date().toISOString()}] Inicializace DB (pokus ${attempt}/${MAX_RETRIES})…`);
+      await initDb();
+      console.log(`[${new Date().toISOString()}] DB inicializována úspěšně.`);
+      break; // ── úspěch → pokračuj za smyčku ──
+    } catch (err) {
+      if (attempt < MAX_RETRIES) {
+        console.error(`[${new Date().toISOString()}] DB zatím nedostupná (pokus ${attempt}/${MAX_RETRIES}): ${err.message} – zkouším znovu za ${RETRY_DELAY / 1000} s…`);
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+      } else {
+        logError(`DB init selhala po ${MAX_RETRIES} pokusech – server se ukončuje`, err);
+        process.exit(1);
+      }
+    }
+  }
+
+  app.listen(PORT, () => console.log(`[${new Date().toISOString()}] Server běží na portu ${PORT}`));
+  if (process.env.GMAIL_USER) scheduleBackup();
+  // Auto-cleanup rejected objednávek — běží vždy, nezávisle na GMAIL
+  const MS_DAY = 24 * 60 * 60 * 1000;
+  cleanupRejectedOrders(); // jednou při startu
+  setInterval(cleanupRejectedOrders, MS_DAY); // pak každý den
+  console.log(`[${new Date().toISOString()}] Auto-cleanup rejected objednávek: nastaven (každých 24h)`);
+}
+
+startServer();
 
 // ── Export čistých funkcí pouze pro testovací účely ──────────────────────────
 // Spuštění přes `node server.js` tento blok nevykoná (require.main === module).
