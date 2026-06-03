@@ -42,7 +42,16 @@ const pool = new Pool({
 
 // ── Validace ──
 function isIsoDate(s) {
-  return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s));
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  // Připojíme T00:00:00Z → přísné UTC parsování ISO 8601.
+  // Poté porovnáme UTC složky zpět se vstupem: pokud datum "přeteklo"
+  // (např. 2026-02-30 → 2026-03-02), složky se budou lišit → odmítneme.
+  // Přístup záměrně používá UTC, aby se zamezilo timezone posunu (stejná
+  // filosofie jako types.setTypeParser a 'T00:00:00Z' jinde v projektu).
+  const d = new Date(s + 'T00:00:00Z');
+  if (isNaN(d.getTime())) return false;
+  const [y, m, day] = s.split('-').map(Number);
+  return d.getUTCFullYear() === y && d.getUTCMonth() + 1 === m && d.getUTCDate() === day;
 }
 function isIntOrEmpty(v) {
   if (v === '' || v === null || v === undefined) return true;
@@ -2037,3 +2046,10 @@ initDb()
     console.log('Auto-cleanup rejected objednávek: nastaven (každých 24h)');
   })
   .catch(err => { console.error('DB init error:', err); process.exit(1); });
+
+// ── Export čistých funkcí pouze pro testovací účely ──────────────────────────
+// Spuštění přes `node server.js` tento blok nevykoná (require.main === module).
+// Aktivuje se pouze při `require('./server')` z testů.
+if (require.main !== module) {
+  module.exports = { isIsoDate, isIntOrEmpty, sanitizeStr, validateRows, fv, fmtDateCz, escHtml };
+}
