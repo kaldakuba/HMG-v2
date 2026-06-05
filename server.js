@@ -2276,5 +2276,5 @@ startServer();
 // Spuštění přes `node server.js` tento blok nevykoná (require.main === module).
 // Aktivuje se pouze při `require('./server')` z testů.
 if (require.main !== module) {
-  module.exports = { isIsoDate, isIntOrEmpty, sanitizeStr, validateRows, fv, fmtDateCz, escHtml };
+  module.exports = { isIsoDate, isIntOrEmpty, sanitizeStr, validateRows, fv, fmtDateCz, escHtml, sendBackup };
 }

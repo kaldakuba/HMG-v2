@@ -20,5 +20,8 @@ desktop.ini
 # ── Logy serveru (složka) ────────────────────────────────
 logs/
 
+# ── Zálohy generované serverem / testy (artefakty, necommitovat) ──
+backups/
+
 # ── Claude Code lokální paměť (nečistý obsah) ───────────
 .claude/
