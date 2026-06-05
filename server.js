@@ -730,7 +730,7 @@ app.use((err, req, res, next) => {
 
 
 // ── Sestavení styled Excel zálohy ──
-async function buildStyledExcel(weeks, inputs, companies) {
+async function buildStyledExcel(weeks, inputs, companies, orders, users) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'HMG Záloha';
   wb.created = new Date();
@@ -826,6 +826,67 @@ async function buildStyledExcel(weeks, inputs, companies) {
     });
   }
 
+  // ── Objednávky (čitelný přehled — jen ke čtení, ne pro import) ──
+  if (orders && orders.length > 0) {
+    const STATUS_CZ = {
+      pending:      'Čeká',
+      pre_approved: 'Předschváleno',
+      pre_rejected: 'Předmítnuto',
+      approved:     'Schváleno',
+      rejected:     'Zamítnuto',
+    };
+    const wsOrd = wb.addWorksheet('Objednávky');
+    wsOrd.columns = [
+      { header: 'Lokalita',        key: 'lokalita',      width: 22 },
+      { header: 'Firma',           key: 'firma',         width: 18 },
+      { header: 'Směs',            key: 'smes',          width: 32 },
+      { header: 'ITT',             key: 'itt',           width: 14 },
+      { header: 'Datum',           key: 'datum',         width: 12 },
+      { header: 'Tuny',            key: 'tuny',          width: 8  },
+      { header: 'Stav',            key: 'status',        width: 14 },
+      { header: 'Důvod zamítnutí', key: 'reject_reason', width: 30 },
+      { header: 'Vytvořeno',       key: 'created_at',    width: 20 },
+    ];
+    const ordAligns = ['left','left','left','left','center','center','center','left','center'];
+    styleRow(wsOrd.getRow(1), null, ordAligns, true);
+    orders.forEach(o => {
+      const row = wsOrd.addRow({
+        lokalita:      o.lokalita || '',
+        firma:         o.firma || '',
+        smes:          o.smes || '',
+        itt:           o.itt || '',
+        datum:         o.datum ? String(o.datum).slice(0, 10) : '',
+        tuny:          o.tuny != null ? o.tuny : '',
+        status:        STATUS_CZ[o.status] || o.status || '',
+        reject_reason: o.reject_reason || '',
+        created_at:    o.created_at ? new Date(o.created_at).toISOString().slice(0, 16).replace('T', ' ') : '',
+      });
+      styleRow(row, null, ordAligns, false);
+    });
+  }
+
+  // ── Uživatelé (čitelný přehled — bez password_hash) ──
+  if (users && users.length > 0) {
+    const wsUsr = wb.addWorksheet('Uživatelé');
+    wsUsr.columns = [
+      { header: 'Login',  key: 'username', width: 20 },
+      { header: 'Role',   key: 'role',     width: 14 },
+      { header: 'E-mail', key: 'email',    width: 28 },
+      { header: 'Firma',  key: 'firma',    width: 22 },
+    ];
+    const usrAligns = ['left', 'center', 'left', 'left'];
+    styleRow(wsUsr.getRow(1), null, usrAligns, true);
+    users.forEach(u => {
+      const row = wsUsr.addRow({
+        username: u.username || '',
+        role:     u.role || '',
+        email:    u.email || '',
+        firma:    u.firma || '',
+      });
+      styleRow(row, null, usrAligns, false);
+    });
+  }
+
   if (wb.worksheets.length === 0) {
     const ws = wb.addWorksheet('Info');
     ws.addRow(['Záloha neobsahuje data']);
@@ -840,30 +901,70 @@ async function sendBackup() {
     throw new Error('Chybí konfigurace emailu (GMAIL_USER, GMAIL_APP_PASSWORD, BACKUP_EMAIL)');
   }
 
-  const [weeks, inputs, companies, settings] = await Promise.all([
+  // Načteme VŠECHNA data najednou — původní 4 tabulky + nově orders, users, month_entries
+  const [weeks, inputs, companies, settings, ordersRes, usersRes, monthRes] = await Promise.all([
     pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start'),
     pool.query('SELECT rows_json FROM inputs WHERE id=1'),
     pool.query('SELECT data_json FROM companies WHERE id=1'),
-    pool.query('SELECT key,value FROM settings')
+    pool.query('SELECT key,value FROM settings'),
+    pool.query(
+      'SELECT id,order_group_id,user_id,firma,datum,smes,itt,tuny,komentar,' +
+      'status,created_at,resolved_at,reject_reason,lokalita FROM orders ORDER BY created_at'
+    ),
+    pool.query(
+      'SELECT id,username,role,email,firma,must_change_password,created_at,last_seen FROM users ORDER BY id'
+    ),
+    pool.query('SELECT data_json FROM month_entries WHERE id=1'),
   ]);
 
   const settingsObj = {};
-  settings.rows.forEach(r => settingsObj[r.key] = r.value);
+  settings.rows.forEach(r => { settingsObj[r.key] = r.value; });
 
+  const date = new Date().toISOString().slice(0, 10);
+
+  // ── A) JSON snímek pro plnou obnovu ──────────────────────────────────────────
+  // settings bez smtp_password (admin ho zadá znovu po obnově)
+  const settingsForSnapshot = Object.assign({}, settingsObj);
+  if ('smtp_password' in settingsForSnapshot) settingsForSnapshot.smtp_password = '';
+
+  const snapshot = {
+    version: 3,
+    created: new Date().toISOString(),
+    week_data:    weeks.rows.map(r => ({ week_start: r.week_start, rows_json: r.rows_json })),
+    inputs:       inputs.rows[0] ? JSON.parse(inputs.rows[0].rows_json) : [],
+    companies:    companies.rows[0] ? JSON.parse(companies.rows[0].data_json) : [],
+    settings:     settingsForSnapshot,
+    month_entries: monthRes.rows[0] ? JSON.parse(monthRes.rows[0].data_json) : {},
+    users:        usersRes.rows,   // obsahuje password_hash (potřebné pro obnovu)
+    orders:       ordersRes.rows,
+  };
+
+  const snapshotJson     = JSON.stringify(snapshot, null, 2);
+  const snapshotFilename = `hmg-snapshot-${date}.json`;
+
+  // Best-effort uložení na disk — selhání NEVYHODÍ zálohu
+  try {
+    const backupDir = path.join(__dirname, 'backups');
+    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+    fs.writeFileSync(path.join(backupDir, snapshotFilename), snapshotJson, 'utf8');
+    console.log(`Snímek uložen na disk: backups/${snapshotFilename}`);
+  } catch (diskErr) {
+    console.error('Varování: snímek se nepodařilo uložit na disk (záloha e-mailem pokračuje):', diskErr.message);
+  }
+
+  // ── B) Excel se stávajícími listy + nové Objednávky a Uživatelé ─────────────
   const backup = {
     version: 2,
     created: new Date().toISOString(),
-    weeks: weeks.rows.map(r => ({ start: r.week_start, rows: JSON.parse(r.rows_json) })),
-    inputs: inputs.rows[0] ? JSON.parse(inputs.rows[0].rows_json) : [],
+    weeks:    weeks.rows.map(r => ({ start: r.week_start, rows: JSON.parse(r.rows_json) })),
+    inputs:   inputs.rows[0] ? JSON.parse(inputs.rows[0].rows_json) : [],
     companies: companies.rows[0] ? JSON.parse(companies.rows[0].data_json) : [],
-    settings: settingsObj
+    settings: settingsObj,
   };
 
-  const date = new Date().toISOString().slice(0, 10);
-  const filename = `hmg_zaloha_${date}.xlsx`;
-
-  // Sestavit styled Excel soubor
-  const xlsxBuffer = await buildStyledExcel(backup.weeks, backup.inputs, backup.companies);
+  // Sestavit styled Excel soubor (nově s listy Objednávky a Uživatelé)
+  const xlsxBuffer   = await buildStyledExcel(backup.weeks, backup.inputs, backup.companies, ordersRes.rows, usersRes.rows);
+  const xlsxFilename = `hmg_zaloha_${date}.xlsx`;
 
   const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -875,17 +976,35 @@ async function sendBackup() {
 
   await transporter.sendMail({
     from: `"HMG Záloha" <${process.env.GMAIL_USER}>`,
-    to: process.env.BACKUP_EMAIL,
+    to:   process.env.BACKUP_EMAIL,
     subject: `HMG záloha ${date} — ${backup.weeks.length} týdnů`,
-    text: `Automatická záloha dat harmonogramu výroby.\n\nObsah:\n- Týdnů: ${backup.weeks.length}\n- Receptur: ${backup.inputs.length}\n- Datum: ${date}`,
-    attachments: [{
-      filename,
-      content: xlsxBuffer,
-      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    }]
+    text: (
+      `Automatická záloha dat harmonogramu výroby.\n\n` +
+      `Obsah:\n` +
+      `- Týdnů: ${backup.weeks.length}\n` +
+      `- Receptur: ${backup.inputs.length}\n` +
+      `- Objednávek: ${ordersRes.rows.length}\n` +
+      `- Uživatelů: ${usersRes.rows.length}\n` +
+      `- Datum: ${date}\n\n` +
+      `Přílohy:\n` +
+      `1. ${xlsxFilename} — čitelný Excel (týdny, receptury, objednávky, uživatelé)\n` +
+      `2. ${snapshotFilename} — JSON snímek všech tabulek pro plnou obnovu DB`
+    ),
+    attachments: [
+      {
+        filename: xlsxFilename,
+        content: xlsxBuffer,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      },
+      {
+        filename: snapshotFilename,
+        content: Buffer.from(snapshotJson, 'utf8'),
+        contentType: 'application/json',
+      },
+    ],
   });
 
-  console.log(`Záloha odeslána: ${filename}`);
+  console.log(`Záloha odeslána: ${xlsxFilename} + ${snapshotFilename}`);
   await pool.query(
     "INSERT INTO settings (key,value) VALUES ('last_backup',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",
     [new Date().toISOString()]
