@@ -16,7 +16,7 @@ const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.8';
+const APP_VERSION = '3.9';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -929,7 +929,7 @@ async function sendBackup() {
         'status,created_at,resolved_at,reject_reason,lokalita FROM orders ORDER BY created_at'
       ),
       pool.query(
-        'SELECT id,username,role,email,firma,must_change_password,created_at,last_seen FROM users ORDER BY id'
+        'SELECT id,username,password_hash,role,email,firma,must_change_password,created_at,last_seen FROM users ORDER BY id'
       ),
       pool.query('SELECT data_json FROM month_entries WHERE id=1'),
     ]);
@@ -1066,6 +1066,184 @@ async function cleanupRejectedOrders() {
     }
   } catch (err) {
     console.error('Cleanup rejected orders error:', err.message);
+  }
+}
+
+// ── Obnova DB ze snímku (transakce + bezpečnostní záloha před zápisem) ───────
+async function restoreFromSnapshot(snapshot) {
+  const TAG = '[OBNOVA]';
+
+  // 1. Validace struktury snímku
+  const REQUIRED_KEYS = ['version','users','orders','week_data','inputs','companies','settings','month_entries'];
+  for (const k of REQUIRED_KEYS) {
+    if (!(k in snapshot)) throw new Error(`Neplatný snímek: chybí klíč "${k}"`);
+  }
+  if (!Array.isArray(snapshot.users))     throw new Error('Neplatný snímek: users není pole');
+  if (!Array.isArray(snapshot.orders))    throw new Error('Neplatný snímek: orders není pole');
+  if (!Array.isArray(snapshot.week_data)) throw new Error('Neplatný snímek: week_data není pole');
+  console.log(
+    `${TAG} Snímek validní — users=${snapshot.users.length}, orders=${snapshot.orders.length}, ` +
+    `weeks=${snapshot.week_data.length}`
+  );
+
+  // 2. Bezpečnostní snímek PŘED obnovou (selhání = abort, bezpečnost na prvním místě)
+  const preTs   = new Date().toISOString().slice(0, 16).replace('T', '-').replace(':', '');
+  const preFile = `pre-restore-${preTs}.json`;
+  try {
+    const [wk, inp, comp, sett, ord, usr, mo] = await Promise.all([
+      pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start'),
+      pool.query('SELECT rows_json FROM inputs WHERE id=1'),
+      pool.query('SELECT data_json FROM companies WHERE id=1'),
+      pool.query('SELECT key,value FROM settings'),
+      pool.query(
+        'SELECT id,order_group_id,user_id,firma,datum,smes,itt,tuny,komentar,' +
+        'status,created_at,resolved_at,reject_reason,lokalita FROM orders ORDER BY created_at'
+      ),
+      pool.query(
+        'SELECT id,username,password_hash,role,email,firma,must_change_password,created_at,last_seen FROM users ORDER BY id'
+      ),
+      pool.query('SELECT data_json FROM month_entries WHERE id=1'),
+    ]);
+    const sObj = {};
+    sett.rows.forEach(r => { sObj[r.key] = r.value; });
+    if ('smtp_password' in sObj) sObj.smtp_password = '';
+    const preSnap = {
+      version: 3, created: new Date().toISOString(),
+      note: 'Automatický bezpečnostní snímek před obnovou',
+      week_data:     wk.rows,
+      inputs:        inp.rows[0] ? JSON.parse(inp.rows[0].rows_json) : [],
+      companies:     comp.rows[0] ? JSON.parse(comp.rows[0].data_json) : [],
+      settings:      sObj,
+      month_entries: mo.rows[0] ? JSON.parse(mo.rows[0].data_json) : {},
+      users:         usr.rows,
+      orders:        ord.rows,
+    };
+    const backupDir = path.join(__dirname, 'backups');
+    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+    fs.writeFileSync(path.join(backupDir, preFile), JSON.stringify(preSnap, null, 2), 'utf8');
+    console.log(`${TAG} Bezpečnostní snímek uložen: backups/${preFile}`);
+  } catch (preErr) {
+    throw new Error(`Nelze vytvořit bezpečnostní snímek před obnovou: ${preErr.message}`);
+  }
+
+  // 3. Obnova v jedné transakci — jakákoliv chyba = ROLLBACK
+  const client = await pool.connect();
+  const summary = {};
+  try {
+    await client.query('BEGIN');
+
+    // Mazání v pořadí FK závislostí: orders → users, pak single-row tabulky
+    await client.query('DELETE FROM orders');
+    await client.query('DELETE FROM users');
+    await client.query('DELETE FROM week_data');
+    await client.query('DELETE FROM inputs');
+    await client.query('DELETE FROM companies');
+    await client.query('DELETE FROM month_entries');
+
+    // week_data — rows_json je již string v snímku (nezparsovávat znovu)
+    for (const w of snapshot.week_data) {
+      const rj = typeof w.rows_json === 'string' ? w.rows_json : JSON.stringify(w.rows_json);
+      await client.query(
+        'INSERT INTO week_data (week_start, rows_json) VALUES ($1, $2)',
+        [w.week_start, rj]
+      );
+    }
+    summary.week_data = snapshot.week_data.length;
+
+    // inputs — v snímku uloženo jako parsované pole, vrátit jako JSON string
+    const inputsData = Array.isArray(snapshot.inputs) ? snapshot.inputs : [];
+    await client.query(
+      'INSERT INTO inputs (id, rows_json) VALUES (1, $1)',
+      [JSON.stringify(inputsData)]
+    );
+    summary.inputs = inputsData.length;
+
+    // companies — v snímku uloženo jako parsované pole
+    const companiesData = Array.isArray(snapshot.companies) ? snapshot.companies : [];
+    await client.query(
+      'INSERT INTO companies (id, data_json) VALUES (1, $1)',
+      [JSON.stringify(companiesData)]
+    );
+    summary.companies = companiesData.length;
+
+    // month_entries — v snímku uloženo jako parsovaný objekt
+    const monthData = (snapshot.month_entries && typeof snapshot.month_entries === 'object')
+      ? snapshot.month_entries : {};
+    await client.query(
+      'INSERT INTO month_entries (id, data_json) VALUES (1, $1)',
+      [JSON.stringify(monthData)]
+    );
+    summary.month_entries = Object.keys(monthData).length;
+
+    // settings — upsert po klíčích; smtp_password prázdný → NEPŘEPISOVAT stávající
+    let settCount = 0;
+    for (const [key, value] of Object.entries(snapshot.settings || {})) {
+      if (key === 'smtp_password' && !value) continue;
+      await client.query(
+        'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value',
+        [key, String(value)]
+      );
+      settCount++;
+    }
+    summary.settings = settCount;
+
+    // users — s původními id (jsou FK target pro orders), vč. password_hash
+    for (const u of snapshot.users) {
+      await client.query(
+        `INSERT INTO users
+           (id, username, password_hash, role, email, firma, must_change_password, created_at, last_seen)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [
+          u.id,
+          u.username,
+          u.password_hash || null,
+          u.role  || 'operator',
+          u.email || null,
+          u.firma || null,
+          u.must_change_password || false,
+          u.created_at || new Date().toISOString(),
+          u.last_seen  || null,
+        ]
+      );
+    }
+    summary.users = snapshot.users.length;
+    if (snapshot.users.length > 0) {
+      await client.query("SELECT setval('users_id_seq', (SELECT MAX(id) FROM users))");
+    }
+
+    // orders — s původními id, FK na users musí být vložena první
+    for (const o of snapshot.orders) {
+      await client.query(
+        `INSERT INTO orders
+           (id, order_group_id, user_id, firma, datum, smes, itt, tuny,
+            komentar, status, created_at, resolved_at, reject_reason, lokalita)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        [
+          o.id, o.order_group_id, o.user_id, o.firma, o.datum, o.smes, o.itt, o.tuny,
+          o.komentar      || null,
+          o.status,
+          o.created_at,
+          o.resolved_at   || null,
+          o.reject_reason || null,
+          o.lokalita      || null,
+        ]
+      );
+    }
+    summary.orders = snapshot.orders.length;
+    if (snapshot.orders.length > 0) {
+      await client.query("SELECT setval('orders_id_seq', (SELECT MAX(id) FROM orders))");
+    }
+
+    await client.query('COMMIT');
+    console.log(`${TAG} Obnova úspěšně dokončena:`, JSON.stringify(summary));
+    return { summary, preBackup: preFile };
+
+  } catch (txErr) {
+    await client.query('ROLLBACK');
+    console.error(`${TAG} CHYBA — proveden ROLLBACK:`, txErr.message);
+    throw txErr;
+  } finally {
+    client.release();
   }
 }
 
@@ -1276,6 +1454,31 @@ app.post('/api/backup/run', requireAuth, requireAdmin, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error('Manuální záloha selhala:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Obnova ze snímku — jen admin, s ověřením hesla (přepíše celou DB)
+app.post('/api/restore', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { snapshotJson, password } = req.body;
+    if (!snapshotJson || !password) {
+      return res.status(400).json({ ok: false, error: 'Chybí snímek nebo heslo' });
+    }
+    // Ověř heslo přihlášeného admina (bcrypt)
+    const userRow = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.session.userId]);
+    if (!userRow.rows[0]) return res.status(401).json({ ok: false, error: 'Relace vypršela' });
+    const valid = await bcrypt.compare(password, userRow.rows[0].password_hash);
+    if (!valid) return res.status(401).json({ ok: false, error: 'Nesprávné heslo admina' });
+    // Parsuj JSON snímek
+    let snapshot;
+    try { snapshot = JSON.parse(snapshotJson); }
+    catch (e) { return res.status(400).json({ ok: false, error: 'Neplatný JSON soubor: ' + e.message }); }
+    // Proveď obnovu
+    const result = await restoreFromSnapshot(snapshot);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('[OBNOVA] Selhání endpointu:', err.message);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
@@ -2276,5 +2479,5 @@ startServer();
 // Spuštění přes `node server.js` tento blok nevykoná (require.main === module).
 // Aktivuje se pouze při `require('./server')` z testů.
 if (require.main !== module) {
-  module.exports = { isIsoDate, isIntOrEmpty, sanitizeStr, validateRows, fv, fmtDateCz, escHtml, sendBackup };
+  module.exports = { isIsoDate, isIntOrEmpty, sanitizeStr, validateRows, fv, fmtDateCz, escHtml, sendBackup, restoreFromSnapshot };
 }

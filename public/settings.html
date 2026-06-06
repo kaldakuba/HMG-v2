@@ -194,14 +194,29 @@ input:checked + .toggle-sl::before{transform:translateX(20px)}
               <div class="info" style="margin-bottom:10px">Stáhne zálohu všech dat jako .xlsx soubor.</div>
               <button class="btn teal" onclick="settZalohaDB()"><i class="ti ti-download" style="font-size:13px" aria-hidden="true"></i> Stáhnout</button>
             </div>
-            <div style="border:0.5px solid #e5e7eb;border-radius:8px;padding:14px">
-              <div style="font-size:13px;font-weight:500;color:#111;margin-bottom:4px">Obnovit ze zálohy</div>
-              <div class="info" style="margin-bottom:10px">Obnoví data ze záložního JSON souboru.</div>
-              <button class="btn gray" onclick="document.getElementById('settObnovaFile').click()"><i class="ti ti-upload" style="font-size:13px" aria-hidden="true"></i> Vybrat zálohu</button>
-              <input id="settObnovaFile" type="file" accept=".json" style="display:none" onchange="settObnovitDB(event)">
+            <div style="border:1px solid #fbbf24;border-radius:8px;padding:14px;background:#fffbeb">
+              <div style="font-size:13px;font-weight:500;color:#92400e;margin-bottom:4px"><i class="ti ti-database-import" style="font-size:13px" aria-hidden="true"></i> Obnovit ze zálohy</div>
+              <div class="info" style="margin-bottom:10px;color:#78350f">Přepíše VŠECHNA data ze snímku. Záloha aktuálního stavu se uloží automaticky před obnovou.</div>
+              <button class="btn orange" onclick="document.getElementById('settObnovaFile').click()"><i class="ti ti-upload" style="font-size:13px" aria-hidden="true"></i> Vybrat JSON snímek</button>
+              <input id="settObnovaFile" type="file" accept=".json" style="display:none" onchange="restoreStep1(event)">
             </div>
           </div>
           <div id="importMsg" style="margin-top:10px"></div>
+          <!-- Krok 2: potvrzení heslem — zobrazí se po výběru souboru -->
+          <div id="restoreConfirmPanel" style="display:none;margin-top:10px;padding:14px;background:#fff3cd;border:1px solid #fbbf24;border-radius:8px">
+            <div style="font-weight:600;color:#92400e;margin-bottom:8px;font-size:13px"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Potvrzení obnovy</div>
+            <div id="restoreSnapshotInfo" style="font-size:12px;color:#374151;margin-bottom:10px;line-height:1.6"></div>
+            <div style="font-size:12px;color:#dc2626;font-weight:500;margin-bottom:12px">
+              ⚠️ Tato akce <strong>PŘEPÍŠE</strong> všechna data: harmonogram, objednávky, uživatele, receptury, nastavení.<br>
+              Bezpečnostní snímek aktuálního stavu bude automaticky uložen do <code>./backups/</code> před zápisem.
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <input type="password" id="restorePassword" placeholder="Heslo admina" style="max-width:200px" autocomplete="new-password">
+              <button class="btn red" onclick="restoreStep2()" id="restoreConfirmBtn"><i class="ti ti-database-import" style="font-size:13px" aria-hidden="true"></i> Obnovit data</button>
+              <button class="btn gray" onclick="restoreCancel()"><i class="ti ti-x" style="font-size:13px" aria-hidden="true"></i> Zrušit</button>
+            </div>
+            <div id="restoreMsg" style="margin-top:8px"></div>
+          </div>
           <hr style="margin:14px 0 10px">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <div style="border:1px solid #fca5a5;border-radius:8px;padding:14px;background:#fff5f5">
@@ -602,18 +617,61 @@ async function settZalohaDB() {
   const a=document.createElement('a');a.href='/api/export-excel';a.download='hmg_zaloha_'+date+'.xlsx';document.body.appendChild(a);a.click();setTimeout(()=>a.remove(),500);
   document.getElementById('importMsg').innerHTML='<span class="msg-ok">✓ Záloha stažena</span>';
 }
-async function settObnovitDB(event) {
-  const file=event.target.files[0];if(!file)return;event.target.value='';
-  if(!confirm('⚠️ Obnovení přepíše všechna data. Pokračovat?'))return;
-  const msg=document.getElementById('importMsg');msg.innerHTML='<span style="color:#0369a1">⏳ Obnovuji...</span>';
-  try{const text=await file.text();const data=JSON.parse(text);if(!data.version)throw new Error('Neplatný formát zálohy');
-    const h={'Content-Type':'application/json'};const reqs=[];
-    if(data.weeks&&data.weeks.length)data.weeks.forEach(w=>reqs.push(fetch('/api/week/'+w.start,{method:'POST',headers:h,body:JSON.stringify({rows:w.rows})})));
-    if(data.inputs)reqs.push(fetch('/api/inputs',{method:'POST',headers:h,body:JSON.stringify({rows:data.inputs})}));
-    if(data.companies)reqs.push(fetch('/api/companies',{method:'POST',headers:h,body:JSON.stringify({companies:data.companies})}));
-    if(data.settings)reqs.push(fetch('/api/settings',{method:'POST',headers:h,body:JSON.stringify(data.settings)}));
-    await Promise.all(reqs);msg.innerHTML='<span class="msg-ok">✅ Data obnovena!</span>';setTimeout(()=>location.reload(),2000);
-  }catch(e){msg.innerHTML=`<span class="msg-err">✗ ${e.message}</span>`;}
+let _restoreSnapshotJson = null;
+async function restoreStep1(event) {
+  const file = event.target.files[0]; if (!file) return; event.target.value = '';
+  const msg = document.getElementById('importMsg'); msg.innerHTML = '';
+  try {
+    const text = await file.text();
+    const snap = JSON.parse(text);
+    const req = ['version','users','orders','week_data','inputs','companies','settings','month_entries'];
+    for (const k of req) {
+      if (!(k in snap)) throw new Error(`Chybí klíč "${k}" — toto není platný HMG snímek`);
+    }
+    _restoreSnapshotJson = text;
+    const d = snap.created ? new Date(snap.created).toLocaleString('cs-CZ') : '?';
+    document.getElementById('restoreSnapshotInfo').innerHTML =
+      `<strong>Soubor:</strong> ${esc(file.name)}<br>` +
+      `<strong>Vytvořen:</strong> ${esc(d)}<br>` +
+      `<strong>Uživatelů:</strong> ${snap.users.length} &nbsp;·&nbsp; ` +
+      `<strong>Objednávek:</strong> ${snap.orders.length} &nbsp;·&nbsp; ` +
+      `<strong>Týdnů:</strong> ${snap.week_data.length}`;
+    document.getElementById('restoreConfirmPanel').style.display = 'block';
+    document.getElementById('restorePassword').value = '';
+    document.getElementById('restoreMsg').innerHTML = '';
+    document.getElementById('restoreConfirmBtn').disabled = false;
+    document.getElementById('restorePassword').focus();
+  } catch(e) { msg.innerHTML = `<span class="msg-err">✗ ${esc(e.message)}</span>`; }
+}
+function restoreCancel() {
+  _restoreSnapshotJson = null;
+  document.getElementById('restoreConfirmPanel').style.display = 'none';
+  document.getElementById('importMsg').innerHTML = '';
+}
+async function restoreStep2() {
+  const password = document.getElementById('restorePassword').value;
+  if (!password) { alert('Zadejte heslo admina.'); return; }
+  const msg = document.getElementById('restoreMsg');
+  const btn = document.getElementById('restoreConfirmBtn');
+  msg.innerHTML = '<span style="color:#0369a1">⏳ Obnova probíhá — čekejte, trvá to několik sekund...</span>';
+  btn.disabled = true;
+  try {
+    const r = await api('POST', '/api/restore', { snapshotJson: _restoreSnapshotJson, password });
+    if (r.ok) {
+      const s = r.summary;
+      msg.innerHTML = `<span class="msg-ok">✅ Obnova dokončena! ` +
+        `Uživatelů: ${s.users}, Objednávek: ${s.orders}, Týdnů: ${s.week_data}. ` +
+        `Stránka se za 3 s načte znovu.</span>`;
+      _restoreSnapshotJson = null;
+      setTimeout(() => location.reload(), 3000);
+    } else {
+      msg.innerHTML = `<span class="msg-err">✗ ${esc(r.error || 'Neznámá chyba')}</span>`;
+      btn.disabled = false;
+    }
+  } catch(e) {
+    msg.innerHTML = `<span class="msg-err">✗ ${esc(e.message)}</span>`;
+    btn.disabled = false;
+  }
 }
 
 async function loadBackupInfo() {

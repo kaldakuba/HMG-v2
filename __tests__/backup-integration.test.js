@@ -22,9 +22,9 @@ const MOCK_ORDERS = [
     resolved_at:new Date('2026-06-05T11:00:00Z'), reject_reason:'Nedostatečná kapacita', lokalita:'Brno' },
 ];
 const MOCK_USERS = [
-  { id:1, username:'admin', role:'admin', email:'admin@hmg.cz', firma:null,
+  { id:1, username:'admin', password_hash:'$2b$12$testhash_admin', role:'admin', email:'admin@hmg.cz', firma:null,
     must_change_password:false, created_at:new Date('2026-01-01'), last_seen:new Date() },
-  { id:2, username:'colas_disp', role:'hmg_share', email:'disp@colas.cz', firma:'Colas',
+  { id:2, username:'colas_disp', password_hash:'$2b$12$testhash_share', role:'hmg_share', email:'disp@colas.cz', firma:'Colas',
     must_change_password:false, created_at:new Date('2026-01-15'), last_seen:new Date() },
 ];
 const MOCK_WEEKS = [
