@@ -1,9 +1,31 @@
 /** @type {import('jest').Config} */
 module.exports = {
-  testEnvironment: 'node',
   // Vynutí ukončení Jest po skončení testů — zabraňuje "visení" kvůli
   // otevřeným handles (DB pool, server listener spuštěný při require('../server'))
   forceExit: true,
   verbose: true,
-  testMatch: ['**/__tests__/**/*.test.js'],
+
+  projects: [
+    // ── Tier 1: unit + integrační testy s mocky (nevyžadují reálnou DB) ──────
+    {
+      displayName: 'tier1',
+      testEnvironment: 'node',
+      testMatch: [
+        '<rootDir>/__tests__/utils.test.js',
+        '<rootDir>/__tests__/backup-integration.test.js',
+        '<rootDir>/__tests__/restore-integration.test.js',
+      ],
+    },
+
+    // ── Tier 2: HTTP endpoint testy se skutečnou testovací DB ─────────────────
+    // Vyžaduje .env.test s DATABASE_URL → TESTOVACÍ DB (nikdy produkční!).
+    // Spuštění: npm run test:tier2
+    {
+      displayName: 'tier2',
+      testEnvironment: 'node',
+      testMatch: ['<rootDir>/__tests__/endpoints.test.js'],
+      // setupFiles: načítá .env.test a kontroluje bezpečnost DB URL
+      setupFiles: ['<rootDir>/__tests__/setup-tier2.js'],
+    },
+  ],
 };

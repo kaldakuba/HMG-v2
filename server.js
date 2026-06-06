@@ -16,7 +16,7 @@ const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.9';
+const APP_VERSION = '3.10';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -2473,11 +2473,20 @@ async function startServer() {
   console.log(`[${new Date().toISOString()}] Auto-cleanup rejected objednávek: nastaven (každých 24h)`);
 }
 
-startServer();
-
-// ── Export čistých funkcí pouze pro testovací účely ──────────────────────────
-// Spuštění přes `node server.js` tento blok nevykoná (require.main === module).
-// Aktivuje se pouze při `require('./server')` z testů.
-if (require.main !== module) {
-  module.exports = { isIsoDate, isIntOrEmpty, sanitizeStr, validateRows, fv, fmtDateCz, escHtml, sendBackup, restoreFromSnapshot };
+// ── Spuštění nebo export ──────────────────────────────────────────────────────
+// require.main === module  →  přímé spuštění `node server.js`  →  startServer()
+// require('../server')     →  import z testu                   →  exportuj API
+if (require.main === module) {
+  startServer();
+} else {
+  // Tier 1 testy (mocky): importují čisté funkce + sendBackup/restoreFromSnapshot
+  // Tier 2 testy (supertest): navíc potřebují app, pool, initDb pro HTTP testy s reálnou DB
+  module.exports = {
+    // Čisté utility funkce (Tier 1)
+    isIsoDate, isIntOrEmpty, sanitizeStr, validateRows, fv, fmtDateCz, escHtml,
+    // Záloha + obnova (Tier 1 integrační)
+    sendBackup, restoreFromSnapshot,
+    // HTTP + DB přístup (Tier 2 supertest)
+    app, pool, initDb,
+  };
 }
