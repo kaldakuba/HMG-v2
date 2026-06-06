@@ -86,6 +86,9 @@ async function doLogin() {
         // Vynucená změna hesla — zobraz formulář bez přesměrování
         history.replaceState(null, '', '/login?change=1');
         showChangeForm();
+      } else if (data.role === 'hmg_share') {
+        // hmg_share uživatel → rovnou na dashboard
+        window.location.href = '/dashboard';
       } else {
         window.location.href = '/';
       }

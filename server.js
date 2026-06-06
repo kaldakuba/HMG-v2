@@ -16,7 +16,7 @@ const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.10';
+const APP_VERSION = '3.11';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -335,8 +335,8 @@ app.get('/login', (req, res) => {
 });
 
 app.get('/', requireAuth, (req, res) => {
-  // Viewer vidí jen měsíční přehled
-  if (req.session.role === 'hmg_share') return res.redirect('/month-view');
+  // hmg_share vidí dashboard (má tam tlačítko do month-view)
+  if (req.session.role === 'hmg_share') return res.redirect('/dashboard');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
@@ -350,6 +350,11 @@ app.get('/inputs', requireAuth, requireAdmin, (req, res) => {
 
 app.get('/month-view', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'month-view.html'));
+});
+
+app.get('/dashboard', requireAuth, (req, res) => {
+  if (req.session.role === 'operator') return res.redirect('/index.html');
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
 // ── Auth API ──
@@ -2433,6 +2438,108 @@ app.get('/api/backup/last', requireAuth, requireAdmin, async (req, res) => {
   res.json({ last: r.rows[0] ? r.rows[0].value : null });
 });
 
+
+// ── Dashboard API ─────────────────────────────────────────────────────────────
+// Vrací agregovaná data pro /dashboard stránku.
+// role=admin → vidí objednávky všech firem; ostatní → jen svoji firmu.
+app.get('/api/dashboard', requireAuth, async (req, res) => {
+  try {
+    const uRes = await pool.query('SELECT role, firma FROM users WHERE id=$1', [req.session.userId]);
+    const role  = (uRes.rows[0] && uRes.rows[0].role)  || req.session.role;
+    const firma = (uRes.rows[0] && uRes.rows[0].firma) || null;
+
+    // "Od dneška" = datum >= dnešní datum (UTC)
+    let pendingList, confirmedCount, confirmedList, recentOrders;
+
+    let confirmedTons;
+
+    if (role === 'admin') {
+      // Admin: vidí všechny firmy
+      const [pRes, cRes, clRes, rRes] = await Promise.all([
+        pool.query(
+          `SELECT o.*, u.username
+           FROM orders o
+           LEFT JOIN users u ON u.id = o.user_id
+           WHERE o.status IN ('pending','pre_approved','pre_rejected')
+           ORDER BY o.created_at ASC`
+        ),
+        // COUNT + SUM v jednom dotazu — bez extra round-tripu
+        pool.query(
+          `SELECT COUNT(*) AS cnt,
+                  COALESCE(SUM(tuny), 0) AS tons
+           FROM orders
+           WHERE status = 'approved' AND datum >= CURRENT_DATE`
+        ),
+        pool.query(
+          `SELECT o.*, u.username
+           FROM orders o
+           LEFT JOIN users u ON u.id = o.user_id
+           WHERE o.status = 'approved' AND o.datum >= CURRENT_DATE
+           ORDER BY o.datum ASC`
+        ),
+        pool.query(
+          `SELECT o.*, u.username
+           FROM orders o
+           LEFT JOIN users u ON u.id = o.user_id
+           ORDER BY o.created_at DESC LIMIT 10`
+        ),
+      ]);
+      pendingList    = pRes.rows;
+      confirmedCount = parseInt(cRes.rows[0].cnt,  10);
+      confirmedTons  = parseInt(cRes.rows[0].tons, 10);
+      confirmedList  = clRes.rows;
+      recentOrders   = rRes.rows;
+    } else {
+      // hmg_share / ostatní: scoped na firmu uživatele
+      const firmaParam = firma || '';
+      const [pRes, cRes, clRes, rRes] = await Promise.all([
+        pool.query(
+          `SELECT * FROM orders
+           WHERE firma=$1 AND status IN ('pending','pre_approved','pre_rejected')
+           ORDER BY created_at ASC`,
+          [firmaParam]
+        ),
+        // COUNT + SUM v jednom dotazu
+        pool.query(
+          `SELECT COUNT(*) AS cnt,
+                  COALESCE(SUM(tuny), 0) AS tons
+           FROM orders
+           WHERE firma=$1 AND status = 'approved' AND datum >= CURRENT_DATE`,
+          [firmaParam]
+        ),
+        pool.query(
+          `SELECT * FROM orders
+           WHERE firma=$1 AND status='approved' AND datum >= CURRENT_DATE
+           ORDER BY datum ASC`,
+          [firmaParam]
+        ),
+        pool.query(
+          `SELECT * FROM orders WHERE firma=$1 ORDER BY created_at DESC LIMIT 10`,
+          [firmaParam]
+        ),
+      ]);
+      pendingList    = pRes.rows;
+      confirmedCount = parseInt(cRes.rows[0].cnt,  10);
+      confirmedTons  = parseInt(cRes.rows[0].tons, 10);
+      confirmedList  = clRes.rows;
+      recentOrders   = rRes.rows;
+    }
+
+    res.json({
+      role,
+      firma,
+      pending:        pendingList.length,
+      pending_list:   pendingList,
+      confirmed:      confirmedCount,
+      confirmed_list: confirmedList,
+      confirmed_tons: confirmedTons,
+      recent:         recentOrders,
+    });
+  } catch (err) {
+    console.error('GET /api/dashboard error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
 
 // ── Start ──
 console.log('=== HMG v2.3 PostgreSQL + Auth ===');

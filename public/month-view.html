@@ -52,6 +52,7 @@ th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151;letter-spacin
 th.sticky-lok,th.sticky-smes{z-index:6!important}
 tr.row-hover td,td.col-hover{background:#fefce8!important}
 @media(max-width:900px){.topbar{display:flex;flex-direction:column;align-items:stretch;padding:10px;min-height:auto}.topbar h1{text-align:left;font-size:16px}.actions{justify-content:flex-start}.wrap{padding:6px}}
+@media(max-width:768px){#btnDashboard{display:none!important}}
 /* Popup overlay */
 #orderPopupOverlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center;padding:16px}
 #orderPopupOverlay::-webkit-scrollbar{width:0}
@@ -73,6 +74,7 @@ tr.row-hover td,td.col-hover{background:#fefce8!important}
   </div>
   <h1>HARMONOGRAM VÝROBY</h1>
   <div class="actions">
+    <button id="btnDashboard" class="btn nav" onclick="location.href='/dashboard'" style="display:none;background:#7c3aed">Dashboard</button>
     <button class="btn nav" disabled title="Přístup k minulým měsícům není povolen">‹ Předchozí</button>
     <button class="btn nav" onclick="thisMonth()">Tento měsíc</button>
     <button class="btn nav" onclick="shiftMonth(1)">Další ›</button>
@@ -158,6 +160,11 @@ async function checkAccess() {
         if (badge) { badge.style.background='#ede9fe'; badge.style.color='#5b21b6'; badge.innerHTML='🏢 ' + esc(_meFirma || 'firma'); }
         // Tlačítko "Nová objednávka" se NEZOBRAZUJE zde – až po načtení settings (viz inicializace)
         // _meFirma je uložena, zobrazení rozhodne Promise.all().then() po ověření orders_enabled
+      }
+      // Zobraz tlačítko Dashboard pro hmg_share i admina (skryto na mobilu přes CSS)
+      if (me.role === 'hmg_share' || me.role === 'admin') {
+        const btnDash = document.getElementById('btnDashboard');
+        if (btnDash) btnDash.style.display = '';
       }
       return true;
     }
@@ -1308,5 +1315,17 @@ async function doLogout(){await fetch('/api/logout',{method:'POST'}).catch(()=>{
   <button onclick="doLogout()" style="display:inline-flex;align-items:center;gap:6px;background:transparent;border:1px solid #fca5a5;border-radius:6px;color:#dc2626;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;padding:6px 14px;line-height:1;" onmouseenter="this.style.background='#fff1f2'" onmouseleave="this.style.background='transparent'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Odhlásit se</button>
 </div>
 <script>fetch('/api/version').then(r=>r.json()).then(function(d){var v=document.getElementById('footerVersion');if(v&&d.version)v.textContent='TAXIS v'+d.version+' · 2026';}).catch(function(){});</script>
+<script>if(window.location.hash==='#new'){
+  history.replaceState(null,'',window.location.pathname);
+  // Počkej na plnou inicializaci (renderMonth + data load)
+  const tryOpen = (attempts) => {
+    if (typeof openOrderPopup === 'function' && document.getElementById('orderPopupOverlay')) {
+      openOrderPopup();
+    } else if (attempts > 0) {
+      setTimeout(() => tryOpen(attempts - 1), 300);
+    }
+  };
+  setTimeout(() => tryOpen(10), 500);
+}</script>
 </body>
 </html>
