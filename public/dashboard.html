@@ -87,7 +87,12 @@ footer{background:#1a1a2e;color:#c8d0e0;text-align:center;padding:12px;font-size
   </div>
   <h1>HARMONOGRAM VÝROBY</h1>
   <div class="actions">
-    <button class="btn nav" onclick="location.href='/month-view.html'">← Měsíční přehled</button>
+    <!-- Admin navigace (skryta pro hmg_share) -->
+    <a id="adminNavWeekly"  class="btn nav" href="/index.html"      style="display:none">Týdenní</a>
+    <a id="adminNavMonth"   class="btn nav" href="/month-view.html" style="display:none">Měsíční přehled</a>
+    <a id="adminNavInputs"  class="btn nav" href="/settings.html"   style="display:none">Vstupy</a>
+    <!-- hmg_share: jediné tlačítko zpět -->
+    <button id="shareNavMonth" class="btn nav" onclick="location.href='/month-view.html'">← Měsíční přehled</button>
   </div>
 </header>
 
@@ -133,6 +138,7 @@ footer{background:#1a1a2e;color:#c8d0e0;text-align:center;padding:12px;font-size
   </div>
 
   <!-- ══ SEKCE 2: Čekající objednávky ═══════════════════════════════════════ -->
+  <div id="pendingSection">
   <h2 class="section-title">
     ⏳ Čekající objednávky
     <span class="count-badge" id="pendingBadge">0</span>
@@ -141,28 +147,30 @@ footer{background:#1a1a2e;color:#c8d0e0;text-align:center;padding:12px;font-size
     <div class="table-scroll" id="pendingWrap">
       <div class="empty-state" id="pendingEmpty">Žádné čekající objednávky ✓</div>
       <table class="orders" id="pendingTable" style="display:none">
-        <thead><tr><th>Datum</th><th>Lokalita</th><th>Směs</th><th>ITT</th><th>Tuny</th><th>Status</th><th>Komentář</th></tr></thead>
+        <thead><tr><th>Datum</th><th>Lokalita</th><th>Směs</th><th>ITT</th><th>Tuny</th><th>Status</th><th>Objednávka</th></tr></thead>
         <tbody id="pendingBody"></tbody>
       </table>
     </div>
   </div>
+  </div>
 
-  <!-- ══ SEKCE 3: Potvrzené stavby od dneška ════════════════════════════════ -->
+  <!-- ══ SEKCE 3: Potvrzené stavby ════════════════════════════════════════ -->
   <h2 class="section-title">
-    ✅ Potvrzené stavby od dneška
+    ✅ Potvrzené stavby
     <span class="count-badge" id="confirmedBadge">0</span>
   </h2>
   <div class="card">
     <div class="table-scroll" id="confirmedWrap">
-      <div class="empty-state" id="confirmedEmpty">Žádné potvrzené stavby od dneška.</div>
+      <div class="empty-state" id="confirmedEmpty">Žádné potvrzené stavby.</div>
       <table class="orders" id="confirmedTable" style="display:none">
-        <thead><tr><th>Datum</th><th>Lokalita</th><th>Směs</th><th>ITT</th><th>Tuny</th><th>Status</th><th>Komentář</th></tr></thead>
+        <thead><tr><th>Datum</th><th>Lokalita</th><th>Směs</th><th>ITT</th><th>Tuny</th><th>Status</th><th>Objednávka</th></tr></thead>
         <tbody id="confirmedBody"></tbody>
       </table>
     </div>
   </div>
 
   <!-- ══ SEKCE 4: Poslední aktivita ═════════════════════════════════════════ -->
+  <div id="recentSection">
   <h2 class="section-title">
     🕐 Poslední aktivita
     <span class="count-badge" id="recentBadge">0</span>
@@ -172,11 +180,12 @@ footer{background:#1a1a2e;color:#c8d0e0;text-align:center;padding:12px;font-size
       <div class="empty-state" id="recentEmpty">Žádné objednávky.</div>
       <table class="orders" id="recentTable" style="display:none">
         <thead>
-          <tr><th>Vytvořeno</th><th>Datum</th><th>Lokalita</th><th>Směs</th><th>ITT</th><th>Tuny</th><th>Status</th></tr>
+          <tr><th>Vytvořeno</th><th>Datum</th><th>Lokalita</th><th>Směs</th><th>ITT</th><th>Tuny</th><th>Status</th><th>Objednávka</th></tr>
         </thead>
         <tbody id="recentBody"></tbody>
       </table>
     </div>
+  </div>
   </div>
 
 </div><!-- /wrap -->
@@ -231,18 +240,19 @@ async function logout() {
 }
 
 // ── Admin hlavička (stejná pro všechny 3 tabulky) ──
-const ADMIN_THEAD = '<tr><th>Firma</th><th>Lokalita</th><th>Datum</th><th>Směs</th><th>ITT</th><th>Tuny</th><th>Status</th><th>Vytvořeno</th><th>Komentář</th></tr>';
+const ADMIN_THEAD = '<tr><th>Firma</th><th>Lokalita</th><th>Datum</th><th>Směs</th><th>ITT</th><th>Tuny</th><th>Status</th><th>Vytvořeno</th><th>Objednávka</th></tr>';
 
-// ── Helper: obsah buňky Komentář ──
-// Pokud status = rejected a reject_reason je neprázdný → zobraz důvod zamítnutí (červeně).
-// Jinak zobraz komentar jako dosud.
-function komentarTd(o, maxWidth) {
+// ── Helper: obsah buňky Objednávka ──
+// Pokud komentar není prázdný → zobraz komentar.
+// Pokud komentar je prázdný/null → zobraz "chybí objednávka" červeně.
+// Platí pro všechny řádky bez ohledu na status.
+function objednavkaTd(o, maxWidth) {
   const mw = maxWidth || '200px';
   const style = `max-width:${mw};overflow:hidden;text-overflow:ellipsis`;
-  if (o.status === 'rejected' && o.reject_reason) {
-    return `<td style="${style};color:#991b1b" title="${esc(o.reject_reason)}">❌ ${esc(o.reject_reason)}</td>`;
+  if (o.komentar) {
+    return `<td style="${style}">${esc(o.komentar)}</td>`;
   }
-  return `<td style="${style}">${esc(o.komentar || '')}</td>`;
+  return `<td style="${style};color:#991b1b">chybí objednávka</td>`;
 }
 
 // ── Admin řádek (sekce 2, 3, 4 — stejná struktura) ──
@@ -256,7 +266,7 @@ function adminRow(o) {
     <td style="text-align:right">${o.tuny}</td>
     <td>${badgeHtml(o.status)}</td>
     <td style="white-space:nowrap">${fmtDateTime(o.created_at)}</td>
-    ${komentarTd(o, '180px')}
+    ${objednavkaTd(o, '180px')}
   </tr>`;
 }
 
@@ -269,7 +279,7 @@ function shareOrderRow(o) {
     <td>${esc(o.itt)}</td>
     <td style="text-align:right">${o.tuny}</td>
     <td>${badgeHtml(o.status)}</td>
-    ${komentarTd(o)}
+    ${objednavkaTd(o)}
   </tr>`;
 }
 
@@ -283,6 +293,7 @@ function shareRecentRow(o) {
     <td>${esc(o.itt)}</td>
     <td style="text-align:right">${o.tuny}</td>
     <td>${badgeHtml(o.status)}</td>
+    ${objednavkaTd(o)}
   </tr>`;
 }
 
@@ -304,6 +315,16 @@ async function loadDashboard() {
     // Topbar info
     document.getElementById('userInfo').textContent = roleLabel + ' · ' + firmaLabel;
 
+    // ── Navigace v topbaru ──
+    if (isAdmin) {
+      // Admin: zobraz admin tlačítka, skryj tlačítko hmg_share
+      document.getElementById('adminNavWeekly').style.display = '';
+      document.getElementById('adminNavMonth').style.display  = '';
+      document.getElementById('adminNavInputs').style.display = '';
+      document.getElementById('shareNavMonth').style.display  = 'none';
+    }
+    // (hmg_share: shareNavMonth je viditelný ve výchozím stavu, admin tlačítka skrytá)
+
     // Summary karty
     document.getElementById('cardPending').textContent   = data.pending;
     document.getElementById('cardConfirmed').textContent = data.confirmed;
@@ -315,6 +336,14 @@ async function loadDashboard() {
       document.querySelector('#pendingTable thead').innerHTML   = ADMIN_THEAD;
       document.querySelector('#confirmedTable thead').innerHTML = ADMIN_THEAD;
       document.querySelector('#recentTable thead').innerHTML    = ADMIN_THEAD;
+    }
+
+    // ── Sdílený přístup + orders_enabled = false → zobraz jen sekci 3 ──
+    if (!isAdmin && !data.orders_enabled) {
+      document.getElementById('ctaBar').style.display          = 'none';
+      document.getElementById('summaryCards').style.display    = 'none';
+      document.getElementById('pendingSection').style.display  = 'none';
+      document.getElementById('recentSection').style.display   = 'none';
     }
 
     // ── Sekce 2: Pending ──

@@ -2444,9 +2444,13 @@ app.get('/api/backup/last', requireAuth, requireAdmin, async (req, res) => {
 // role=admin → vidí objednávky všech firem; ostatní → jen svoji firmu.
 app.get('/api/dashboard', requireAuth, async (req, res) => {
   try {
-    const uRes = await pool.query('SELECT role, firma FROM users WHERE id=$1', [req.session.userId]);
-    const role  = (uRes.rows[0] && uRes.rows[0].role)  || req.session.role;
-    const firma = (uRes.rows[0] && uRes.rows[0].firma) || null;
+    const [uRes, oeRes] = await Promise.all([
+      pool.query('SELECT role, firma FROM users WHERE id=$1', [req.session.userId]),
+      pool.query("SELECT value FROM settings WHERE key='orders_enabled'"),
+    ]);
+    const role         = (uRes.rows[0] && uRes.rows[0].role)  || req.session.role;
+    const firma        = (uRes.rows[0] && uRes.rows[0].firma) || null;
+    const ordersEnabled = (oeRes.rows[0] ? oeRes.rows[0].value : 'true') === 'true';
 
     // "Od dneška" = datum >= dnešní datum (UTC)
     let pendingList, confirmedCount, confirmedList, recentOrders;
@@ -2528,6 +2532,7 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
     res.json({
       role,
       firma,
+      orders_enabled: ordersEnabled,
       pending:        pendingList.length,
       pending_list:   pendingList,
       confirmed:      confirmedCount,

@@ -141,7 +141,7 @@ input:checked + .toggle-sl::before{transform:translateX(20px)}
             <div class="form-group" style="max-width:130px"><label>Role</label>
               <select id="newRole" onchange="onRoleChange(this.value)">
                 <option value="operator">Operátor</option>
-                <option value="hmg_share">Sdílený HMG</option>
+                <option value="hmg_share">Sdílený přístup</option>
                 <option value="admin">Admin</option>
               </select>
             </div>
@@ -391,7 +391,7 @@ function avatarColor(role) {
 function roleBadge(role) {
   if (role==='admin') return '<span class="role-badge admin">admin</span>';
   if (role==='operator') return '<span class="role-badge operator">operátor</span>';
-  return '<span class="role-badge hmg_share">sdílený HMG</span>';
+  return '<span class="role-badge hmg_share">Sdílený přístup</span>';
 }
 
 function fmtDateShort(iso) {
@@ -520,7 +520,7 @@ async function changeFirma(id, name, currentFirma) {
   if (r.ok) loadUsers(); else alert(r.error);
 }
 async function changeRole(id, name, currentRole) {
-  const labels = {operator:'Operátor',hmg_share:'Sdílený HMG',admin:'Admin'};
+  const labels = {operator:'Operátor',hmg_share:'Sdílený přístup',admin:'Admin'};
   const newRole = prompt(`Změnit roli uživatele "${name}"\nAktuální: ${labels[currentRole]}\n\nZadej novou roli:\n- operator\n- hmg_share\n- admin`);
   if (!newRole) return;
   const r = await api('PUT', `/api/users/${id}/role`, {role: newRole.trim()});
