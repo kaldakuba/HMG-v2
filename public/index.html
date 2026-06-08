@@ -128,7 +128,7 @@ body.mobile-ro .hours-row td{height:18px;font-size:9px}
 </style></head>
 <body>
 <div class="saving-indicator" id="savingIndicator">Ukládám...</div>
-<header class="topbar"><div class="top-left"><span id="topWeekTitle" style="font-size:18px;font-weight:700;">Kalendářní týden</span></div><h1 id="mainTitle">HARMONOGRAM VÝROBY</h1><div class="actions"><a id="btnDashboard" class="btn" href="/dashboard" style="display:none;background:#7c3aed">Dashboard</a><a class="btn month" href="/month">Měsíční přehled</a><a class="btn inputs" href="/inputs">Vstupy</a></div></header>
+<header class="topbar"><div class="top-left"><span id="topWeekTitle" style="font-size:18px;font-weight:700;">Kalendářní týden</span><span id="topUsername" style="font-size:11px;color:#94a3b8;margin-left:8px"></span><span id="topFirmaBadge" style="display:none;font-size:11px;background:#ede9fe;color:#5b21b6;border-radius:4px;padding:2px 8px;margin-left:6px;font-weight:600"></span></div><h1 id="mainTitle">HARMONOGRAM VÝROBY</h1><div class="actions"><a id="btnDashboard" class="btn" href="/dashboard" style="display:none;background:#7c3aed">Dashboard</a><a class="btn month" href="/month">Měsíční přehled</a><a class="btn inputs" href="/inputs">Vstupy</a></div></header>
 <main class="wrap"><section class="card">
 <div class="weekbar"><div style="display:flex;align-items:center;gap:8px;"><span id="weekTitle" style="display:none"></span><button class="btn export" onclick="exportWeeks()">Export dat</button></div><div class="weeknav"><button class="btn gray" style="min-width:130px;" onclick="shiftWeek(-1)">‹ Předchozí týden</button><button class="btn blue" id="currentWeekBtn" style="min-width:140px;line-height:1.3" onclick="currentWeek()">Aktuální týden</button><button class="btn gray" style="min-width:130px;" onclick="shiftWeek(1)">Další týden ›</button><div style="position:relative;display:inline-block;"><button class="btn gray" onclick="toggleMiniCal()" id="calToggleBtn">📅 Kalendář</button><div id="miniCal" style="display:none;position:absolute;right:0;top:38px;z-index:9999;background:#fff;border:1px solid #d1d5db;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,.12);padding:14px;width:300px;font-family:'Inter',sans-serif;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><button onclick="shiftMiniCal(-1)" style="border:none;background:none;cursor:pointer;font-size:20px;font-weight:900;color:#374151;line-height:1;">‹</button><span id="miniCalHeader" style="font-weight:700;font-size:14px;color:#111;"></span><button onclick="shiftMiniCal(1)" style="border:none;background:none;cursor:pointer;font-size:20px;font-weight:900;color:#374151;line-height:1;">›</button></div><div id="miniCalGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center;"><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Po</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Út</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">St</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Čt</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Pá</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">So</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Ne</div></div></div></div></div></div>
 <div class="table-wrap"><table id="weekTable" class="sel-hidden"><colgroup><col class="num"><col class="lok"><col class="obj"><col class="smes"><col class="itt"><col class="ceta"><col class="day"><col class="day"><col class="day"><col class="day"><col class="day"><col class="day"><col class="day"><col class="souhrn"><col class="sel"></colgroup><thead id="thead"></thead><tbody id="tbody"></tbody><tfoot id="tfoot"></tfoot></table></div>
@@ -307,6 +307,10 @@ function render(){
     html+=`<td class="row-total">${fmtNum(rowSum(r))}</td><td class="sel-col" style="background:#f8fafc"><input type="checkbox" ${r.checked?'checked':''} onchange="updateCheck(${i},this.checked)"></td></tr>`;
   });
   tbody.innerHTML=html+orderHtml;renderFoot(rows);renderPanels();updateSelectedInfo();
+  // Operátor: deaktivuj všechna vstupní pole v tabulce po každém re-renderu
+  if (_role === 'operator') {
+    document.querySelectorAll('table input, table select, table textarea').forEach(el => { el.disabled = true; });
+  }
 }
 
 function renderFoot(rows){
@@ -610,6 +614,13 @@ async function checkOperatorRole() {
     const me = await fetch('/api/me').then(r=>r.json());
     const role = me.role;
     _role = role;
+    // Zobraz username (a případně firmu) v hlavičce vlevo
+    const topUser = document.getElementById('topUsername');
+    if (topUser && me.username) topUser.textContent = '| ' + me.username;
+    if (me.firma) {
+      const badge = document.getElementById('topFirmaBadge');
+      if (badge) { badge.textContent = '🏢 ' + me.firma; badge.style.display = ''; }
+    }
     // Zobrazit Nastavení a Dashboard jen adminovi
     const sb = document.getElementById('settingsBtn');
     if (sb && role === 'admin') sb.style.display = '';

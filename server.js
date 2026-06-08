@@ -435,6 +435,7 @@ app.get('/api/week/:start', requireAuth, async (req, res) => {
 });
 
 app.post('/api/week/:start', requireAuth, requireAdmin, async (req, res) => {
+  if (req.session.role === 'operator') return res.status(403).json({ error: 'Nedostatečná oprávnění' });
   const { rows } = req.body;
   if (!isIsoDate(req.params.start)) return res.status(400).json({ error: 'Neplatný formát data týdne' });
   const rowErr = validateRows(rows);
