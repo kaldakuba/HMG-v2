@@ -527,10 +527,10 @@ app.get('/api/settings', requireAuth, async (req, res) => {
 });
 
 app.post('/api/settings', requireAuth, requireAdmin, async (req, res) => {
-  const allowed = ['hmg_max_daily', 'hmg_min_daily', 'plant_rate', 'orders_enabled'];
+  const allowed = ['hmg_max_daily', 'hmg_min_daily', 'hmg_plant_rate', 'hmg_gas_capacity', 'orders_enabled'];
   for (const [k, v] of Object.entries(req.body)) {
     if (!allowed.includes(k)) continue;
-    if (['hmg_max_daily', 'hmg_min_daily', 'plant_rate'].includes(k)) {
+    if (['hmg_max_daily', 'hmg_min_daily', 'hmg_plant_rate', 'hmg_gas_capacity'].includes(k)) {
       const n = parseInt(v, 10);
       if (isNaN(n) || n <= 0 || n > 1000000) return res.status(400).json({ error: `${k} musí být kladné číslo` });
     }
