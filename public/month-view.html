@@ -161,10 +161,13 @@ async function checkAccess() {
         // Tlačítko "Nová objednávka" se NEZOBRAZUJE zde – až po načtení settings (viz inicializace)
         // _meFirma je uložena, zobrazení rozhodne Promise.all().then() po ověření orders_enabled
       }
-      // Zobraz tlačítko Dashboard pro hmg_share i admina (skryto na mobilu přes CSS)
+      // Zobraz tlačítko Dashboard/Seznam staveb pro hmg_share i admina (skryto na mobilu přes CSS)
       if (me.role === 'hmg_share' || me.role === 'admin') {
         const btnDash = document.getElementById('btnDashboard');
-        if (btnDash) btnDash.style.display = '';
+        if (btnDash) {
+          btnDash.style.display = '';
+          if (me.role === 'hmg_share') btnDash.textContent = 'Seznam staveb';
+        }
       }
       return true;
     }

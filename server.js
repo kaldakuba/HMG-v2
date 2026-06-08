@@ -2458,9 +2458,13 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
 
     let confirmedTons;
 
+    // Helper: SQL výraz pro bezpečné čtení dne (prázdný string → 0)
+    const dayVal = `COALESCE(NULLIF(row_data->>('d' || offs.n::text), '')::numeric, 0)`;
+
     if (role === 'admin') {
       // Admin: vidí všechny firmy
       const [pRes, cRes, clRes, rRes] = await Promise.all([
+        // pending — z orders (beze změny)
         pool.query(
           `SELECT o.*, u.username
            FROM orders o
@@ -2468,20 +2472,33 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
            WHERE o.status IN ('pending','pre_approved','pre_rejected')
            ORDER BY o.created_at ASC`
         ),
-        // COUNT + SUM v jednom dotazu — bez extra round-tripu
+        // confirmed COUNT + SUM — z week_data
         pool.query(
           `SELECT COUNT(*) AS cnt,
-                  COALESCE(SUM(tuny), 0) AS tons
-           FROM orders
-           WHERE status = 'approved' AND datum >= CURRENT_DATE`
+                  COALESCE(SUM(${dayVal}), 0) AS tons
+           FROM week_data wd,
+                jsonb_array_elements(wd.rows_json::jsonb) AS row_data,
+                (VALUES (0),(1),(2),(3),(4),(5),(6)) AS offs(n)
+           WHERE ${dayVal} > 0
+             AND (wd.week_start::date + (offs.n || ' days')::interval)::date >= CURRENT_DATE`
         ),
+        // confirmed_list — z week_data, sloupec firma = ceta
         pool.query(
-          `SELECT o.*, u.username
-           FROM orders o
-           LEFT JOIN users u ON u.id = o.user_id
-           WHERE o.status = 'approved' AND o.datum >= CURRENT_DATE
-           ORDER BY o.datum ASC`
+          `SELECT (wd.week_start::date + (offs.n || ' days')::interval)::date::text AS datum,
+                  row_data->>'lokalita'   AS lokalita,
+                  row_data->>'smes'       AS smes,
+                  row_data->>'itt'        AS itt,
+                  row_data->>'objednavka' AS komentar,
+                  row_data->>'ceta'       AS firma,
+                  ${dayVal}               AS tuny
+           FROM week_data wd,
+                jsonb_array_elements(wd.rows_json::jsonb) AS row_data,
+                (VALUES (0),(1),(2),(3),(4),(5),(6)) AS offs(n)
+           WHERE ${dayVal} > 0
+             AND (wd.week_start::date + (offs.n || ' days')::interval)::date >= CURRENT_DATE
+           ORDER BY datum ASC`
         ),
+        // recent — z orders (beze změny)
         pool.query(
           `SELECT o.*, u.username
            FROM orders o
@@ -2495,29 +2512,46 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
       confirmedList  = clRes.rows;
       recentOrders   = rRes.rows;
     } else {
-      // hmg_share / ostatní: scoped na firmu uživatele
+      // hmg_share / ostatní: scoped na firmu uživatele (ceta = firma)
       const firmaParam = firma || '';
       const [pRes, cRes, clRes, rRes] = await Promise.all([
+        // pending — z orders (beze změny)
         pool.query(
           `SELECT * FROM orders
            WHERE firma=$1 AND status IN ('pending','pre_approved','pre_rejected')
            ORDER BY created_at ASC`,
           [firmaParam]
         ),
-        // COUNT + SUM v jednom dotazu
+        // confirmed COUNT + SUM — z week_data filtrováno dle ceta
         pool.query(
           `SELECT COUNT(*) AS cnt,
-                  COALESCE(SUM(tuny), 0) AS tons
-           FROM orders
-           WHERE firma=$1 AND status = 'approved' AND datum >= CURRENT_DATE`,
+                  COALESCE(SUM(${dayVal}), 0) AS tons
+           FROM week_data wd,
+                jsonb_array_elements(wd.rows_json::jsonb) AS row_data,
+                (VALUES (0),(1),(2),(3),(4),(5),(6)) AS offs(n)
+           WHERE row_data->>'ceta' = $1
+             AND ${dayVal} > 0
+             AND (wd.week_start::date + (offs.n || ' days')::interval)::date >= CURRENT_DATE`,
           [firmaParam]
         ),
+        // confirmed_list — z week_data filtrováno dle ceta
         pool.query(
-          `SELECT * FROM orders
-           WHERE firma=$1 AND status='approved' AND datum >= CURRENT_DATE
+          `SELECT (wd.week_start::date + (offs.n || ' days')::interval)::date::text AS datum,
+                  row_data->>'lokalita'   AS lokalita,
+                  row_data->>'smes'       AS smes,
+                  row_data->>'itt'        AS itt,
+                  row_data->>'objednavka' AS komentar,
+                  ${dayVal}               AS tuny
+           FROM week_data wd,
+                jsonb_array_elements(wd.rows_json::jsonb) AS row_data,
+                (VALUES (0),(1),(2),(3),(4),(5),(6)) AS offs(n)
+           WHERE row_data->>'ceta' = $1
+             AND ${dayVal} > 0
+             AND (wd.week_start::date + (offs.n || ' days')::interval)::date >= CURRENT_DATE
            ORDER BY datum ASC`,
           [firmaParam]
         ),
+        // recent — z orders (beze změny)
         pool.query(
           `SELECT * FROM orders WHERE firma=$1 ORDER BY created_at DESC LIMIT 10`,
           [firmaParam]

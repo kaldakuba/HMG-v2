@@ -309,9 +309,11 @@ async function loadDashboard() {
     const isAdmin = data.role === 'admin';
     const firmaLabel = data.firma || '(nenastavena)';
     const roleLabel  = data.role === 'admin' ? 'Administrátor' : data.role === 'hmg_share' ? 'Sdílený přístup' : data.role;
+    const pageLabel  = isAdmin ? 'Dashboard' : 'Seznam staveb';
 
-    // Topbar info
-    document.getElementById('userInfo').textContent = roleLabel + ' · ' + firmaLabel;
+    // Název stránky — title tag i hlavička
+    document.title = 'HARMONOGRAM VÝROBY – ' + pageLabel;
+    document.getElementById('userInfo').textContent = pageLabel;
 
     // ── Navigace v topbaru ──
     if (isAdmin) {
