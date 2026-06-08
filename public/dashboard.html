@@ -64,8 +64,6 @@ table.orders tr:hover td{background:#f0f9ff}
 /* ── Prázdný stav ── */
 .empty-state{padding:28px 20px;text-align:center;color:#94a3b8;font-size:14px;font-style:italic}
 
-/* ── Footer ── */
-footer{background:#1a1a2e;color:#c8d0e0;text-align:center;padding:12px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:20px;flex-wrap:wrap;margin-top:40px}
 
 /* ── Loader ── */
 #loader{display:flex;align-items:center;justify-content:center;padding:60px 0;color:#64748b;font-size:15px;gap:10px}
@@ -194,10 +192,10 @@ footer{background:#1a1a2e;color:#c8d0e0;text-align:center;padding:12px;font-size
 <div id="loader"><div class="spinner"></div> Načítám data…</div>
 
 <!-- ══ Footer ══════════════════════════════════════════════════════════════ -->
-<footer>
-  <span id="footerVersion">TAXIS · 2026</span>
-  <button class="btn nav" style="padding:5px 12px;font-size:12px" onclick="logout()">Odhlásit</button>
-</footer>
+<div style="border-top:1px solid #e5e7eb;padding:12px 20px;display:flex;justify-content:flex-end;align-items:center;gap:16px;background:#f8fafc;">
+  <span id="footerVersion" style="font-size:13px;font-weight:500;color:#9ca3af;letter-spacing:1.5px">TAXIS · 2026</span>
+  <button onclick="logout()" style="display:inline-flex;align-items:center;gap:6px;background:transparent;border:1px solid #fca5a5;border-radius:6px;color:#dc2626;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;padding:6px 14px;line-height:1;" onmouseenter="this.style.background='#fff1f2'" onmouseleave="this.style.background='transparent'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Odhlásit se</button>
+</div>
 
 <script>
 'use strict';
@@ -402,10 +400,7 @@ async function loadDashboard() {
 }
 
 // ── Verze v patičce ──
-fetch('/api/version')
-  .then(r => r.ok ? r.json() : null)
-  .then(d => { if (d && d.version) document.getElementById('footerVersion').textContent = 'TAXIS · v' + d.version; })
-  .catch(() => {});
+fetch('/api/version').then(r=>r.json()).then(function(d){var v=document.getElementById('footerVersion');if(v&&d.version)v.textContent='TAXIS v'+d.version+' · 2026';}).catch(function(){});
 
 // ── Start ──
 loadDashboard();
