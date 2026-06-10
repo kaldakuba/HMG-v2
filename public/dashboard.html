@@ -17,7 +17,9 @@ body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111
 .actions{display:flex;justify-content:flex-end;gap:8px;align-items:center;flex-wrap:wrap}
 .btn{border-radius:6px;border:none;color:#fff;font-family:'Inter',sans-serif;font-weight:700;cursor:pointer;padding:7px 14px;font-size:13px;white-space:nowrap;transition:filter .15s}
 .btn:hover:not(:disabled){filter:brightness(1.12)}
-.btn.nav{background:#64748b}
+.btn.nav{color:rgba(255,255,255,0.65);background:transparent;border:0.5px solid transparent;padding:6px 14px;border-radius:6px}
+.btn.nav:hover{color:#fff!important;background:rgba(255,255,255,0.1);filter:none}
+.btn.nav.active{color:#fff!important;background:rgba(255,255,255,0.15)!important;border:0.5px solid rgba(255,255,255,0.2)!important;cursor:default;pointer-events:none}
 .btn.primary{background:#3b82f6}
 
 /* ── Layout ── */

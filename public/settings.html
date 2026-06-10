@@ -11,8 +11,10 @@
 body{font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;font-size:100%;min-height:100vh;display:flex;flex-direction:column}
 .topbar{background:#1a1a2e;color:#fff;height:52px;padding:0 20px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100;flex-shrink:0}
 .topbar h1{font-size:16px;font-weight:700;letter-spacing:1px;color:#fff;flex:1;text-align:center}
-.btn-back{background:rgba(255,255,255,.1);border:none;color:#c8d0e0;font-family:'Inter',sans-serif;font-size:12px;font-weight:500;cursor:pointer;padding:5px 12px;border-radius:6px;text-decoration:none;display:inline-flex;align-items:center;gap:5px}
-.btn-back:hover{background:rgba(255,255,255,.18)}
+.actions{display:flex;gap:0;align-items:center}
+.btn.nav{color:rgba(255,255,255,0.65);background:transparent;border:0.5px solid transparent;padding:6px 14px;border-radius:6px;text-decoration:none;font-family:'Inter',sans-serif;font-size:13px;font-weight:700;white-space:nowrap}
+.btn.nav:hover{color:#fff!important;background:rgba(255,255,255,0.1);filter:none}
+.btn.nav.active{color:#fff!important;background:rgba(255,255,255,0.15)!important;border:0.5px solid rgba(255,255,255,0.2)!important;cursor:default;pointer-events:none}
 .layout{display:flex;flex:1;max-width:1100px;margin:0 auto;width:100%;padding:20px 16px;gap:20px}
 .sidenav{width:180px;flex-shrink:0}
 .sidenav-inner{background:#fff;border:0.5px solid #d1d5db;border-radius:10px;overflow:hidden;position:sticky;top:72px}
@@ -96,9 +98,8 @@ input:checked + .toggle-sl::before{transform:translateX(20px)}
 <body>
 
 <header class="topbar">
-  <a class="btn-back" href="/inputs"><i class="ti ti-arrow-left" style="font-size:14px"></i> Zpět</a>
   <h1>NASTAVENÍ</h1>
-  <span style="width:60px"></span>
+  <div class="actions" id="navMenu"></div>
 </header>
 
 <div class="layout">
@@ -689,7 +690,36 @@ async function runBackup() {
 
 async function doLogout() { await fetch('/api/logout',{method:'POST'}).catch(()=>{}); window.location.href='/login'; }
 
+// ── Unified navigation ──
+const NAV_ITEMS = {
+  admin: [
+    { key:'weekly',    label:'Týdenní',      href:'/index.html' },
+    { key:'monthly',   label:'Měsíční',      href:'/month-view.html' },
+    { key:'dashboard', label:'Dashboard',    href:'/dashboard' },
+    { key:'inputs',    label:'Vstupy',       href:'/inputs' },
+    { key:'settings',  label:'Nastavení',    href:'/settings.html' },
+  ],
+  operator: [
+    { key:'weekly',    label:'Týdenní',      href:'/index.html' },
+    { key:'monthly',   label:'Měsíční',      href:'/month-view.html' },
+  ],
+  hmg_share: [
+    { key:'monthly',   label:'Měsíční',      href:'/month-view.html' },
+    { key:'dashboard', label:'Seznam staveb',href:'/dashboard' },
+  ],
+};
+function buildNav(role, activePage) {
+  const nav = document.getElementById('navMenu');
+  if (!nav) return;
+  const items = NAV_ITEMS[role] || [];
+  nav.innerHTML = items.map(function(item) {
+    const active = item.key === activePage;
+    return '<a href="' + item.href + '" class="btn nav' + (active ? ' active' : '') + '">' + item.label + '</a>';
+  }).join('');
+}
+
 fetch('/api/me').then(r=>r.json()).then(d=>{
+  buildNav(d.role, 'settings');
   const el=document.getElementById('footerUser');
   if(el&&d.username)el.textContent=d.username;
 }).catch(()=>{});
