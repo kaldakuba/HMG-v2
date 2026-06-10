@@ -12,7 +12,9 @@
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;-webkit-font-smoothing:antialiased;font-size:110%}
-.topbar{background:#1a1a2e;color:#fff;min-height:64px;padding:0 16px;display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center;gap:12px;position:sticky;top:0;z-index:100}
+.topbar{background:#1a1a2e;color:#fff;padding:4px 16px;display:flex;flex-direction:column;position:sticky;top:0;z-index:100}
+.topbar-row1{display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center;min-height:50px}
+.topbar-row2{display:flex;justify-content:flex-end;align-items:center;flex-wrap:nowrap;padding-bottom:4px}
 .title-left{font-size:15px;font-weight:700;color:#c8d0e0;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .topbar h1{margin:0;text-align:center;font-size:22px;font-weight:800;letter-spacing:2px;color:#fff}
 .actions{display:flex;justify-content:flex-end;gap:8px;align-items:center;flex-wrap:wrap}
@@ -52,7 +54,7 @@ th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151;letter-spacin
 .sticky-smes{position:sticky;left:150px;z-index:3}
 th.sticky-lok,th.sticky-smes{z-index:6!important}
 tr.row-hover td,td.col-hover{background:#fefce8!important}
-@media(max-width:900px){.topbar{display:flex;flex-direction:column;align-items:stretch;padding:10px;min-height:auto}.topbar h1{text-align:left;font-size:16px}.actions{justify-content:flex-start}.wrap{padding:6px}}
+@media(max-width:900px){.topbar{padding:6px 10px}.topbar-row1{display:flex;align-items:center;min-height:auto}.topbar-row1 .title-left{display:none}.topbar h1{flex:1;font-size:16px;text-align:left}.actions{justify-content:flex-end}.topbar-row2{padding-bottom:2px}.wrap{padding:6px}}
 .btn.nav.active{color:#fff!important;background:rgba(255,255,255,0.15)!important;border:0.5px solid rgba(255,255,255,0.2)!important;cursor:default;pointer-events:none}
 @media(max-width:768px){#navMenu{display:none!important}}
 /* Popup overlay */
@@ -69,14 +71,18 @@ tr.row-hover td,td.col-hover{background:#fefce8!important}
 </head>
 <body>
 <header class="topbar">
-  <div class="title-left">
-    <span id="pageTitle">Měsíční přehled</span>
-    <span id="viewerEmail" style="font-size:11px;color:#94a3b8;"></span>
-    <span class="ro-badge">&#128274; pouze čtení</span>
+  <div class="topbar-row1">
+    <div class="title-left">
+      <span id="pageTitle">Měsíční přehled</span>
+      <span id="viewerEmail" style="font-size:11px;color:#94a3b8;"></span>
+      <span class="ro-badge">&#128274; pouze čtení</span>
+    </div>
+    <h1>HARMONOGRAM VÝROBY</h1>
+    <div class="actions">
+      <div id="navMenu"></div>
+    </div>
   </div>
-  <h1>HARMONOGRAM VÝROBY</h1>
-  <div class="actions">
-    <div id="navMenu"></div>
+  <div class="topbar-row2">
     <button class="btn nav" disabled title="Přístup k minulým měsícům není povolen">‹ Předchozí</button>
     <button class="btn nav" onclick="thisMonth()">Tento měsíc</button>
     <button class="btn nav" onclick="shiftMonth(1)">Další ›</button>
