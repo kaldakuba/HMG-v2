@@ -362,12 +362,19 @@ async function renderMonth(){
   const isCurrentMonth=(y===ty&&m===tm-1);
   const isPastMonth=(y<ty||(y===ty&&m<tm-1));
 
+  // Filtr dnů: pouze hmg_share (a anonymní viewer přes share token) vidí jen
+  // dny ode dneška včetně. Admin a operátor vidí celý měsíc — všechny dny.
+  const isViewerMode = (_meRole === 'hmg_share' || (_urlToken && !_meRole));
+
   let visibleDays=[];
   for(let d=1;d<=totalDays;d++){
     const id=iso(y,m,d);
     if(!isPastMonth){
-      if(isCurrentMonth){if(id>=today)visibleDays.push(d);}
-      else visibleDays.push(d);
+      if(isCurrentMonth && isViewerMode){
+        if(id>=today)visibleDays.push(d);  // hmg_share: ode dneška včetně (10.6. ano)
+      } else {
+        visibleDays.push(d);                // admin/operátor: celý měsíc
+      }
     }
   }
 
