@@ -52,7 +52,8 @@ th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151;letter-spacin
 th.sticky-lok,th.sticky-smes{z-index:6!important}
 tr.row-hover td,td.col-hover{background:#fefce8!important}
 @media(max-width:900px){.topbar{display:flex;flex-direction:column;align-items:stretch;padding:10px;min-height:auto}.topbar h1{text-align:left;font-size:16px}.actions{justify-content:flex-start}.wrap{padding:6px}}
-@media(max-width:768px){#btnDashboard{display:none!important}}
+.btn.nav.active{background:#1e293b!important;cursor:default}
+@media(max-width:768px){#navMenu{display:none!important}}
 /* Popup overlay */
 #orderPopupOverlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center;padding:16px}
 #orderPopupOverlay::-webkit-scrollbar{width:0}
@@ -74,7 +75,7 @@ tr.row-hover td,td.col-hover{background:#fefce8!important}
   </div>
   <h1>HARMONOGRAM VÝROBY</h1>
   <div class="actions">
-    <button id="btnDashboard" class="btn nav" onclick="location.href='/dashboard'" style="display:none;background:#7c3aed">Dashboard</button>
+    <div id="navMenu"></div>
     <button class="btn nav" disabled title="Přístup k minulým měsícům není povolen">‹ Předchozí</button>
     <button class="btn nav" onclick="thisMonth()">Tento měsíc</button>
     <button class="btn nav" onclick="shiftMonth(1)">Další ›</button>
@@ -144,6 +145,34 @@ async function loadSettings() {
   } catch(e) {}
 }
 
+// ── Unified navigation ──
+const NAV_ITEMS = {
+  admin: [
+    { key:'weekly',    label:'Týdenní',      href:'/index.html' },
+    { key:'monthly',   label:'Měsíční',      href:'/month-view.html' },
+    { key:'dashboard', label:'Dashboard',    href:'/dashboard' },
+    { key:'inputs',    label:'Vstupy',       href:'/inputs' },
+    { key:'settings',  label:'Nastavení',    href:'/settings.html' },
+  ],
+  operator: [
+    { key:'weekly',    label:'Týdenní',      href:'/index.html' },
+    { key:'monthly',   label:'Měsíční',      href:'/month-view.html' },
+  ],
+  hmg_share: [
+    { key:'monthly',   label:'Měsíční',      href:'/month-view.html' },
+    { key:'dashboard', label:'Seznam staveb',href:'/dashboard' },
+  ],
+};
+function buildNav(role, activePage) {
+  const nav = document.getElementById('navMenu');
+  if (!nav) return;
+  const items = NAV_ITEMS[role] || [];
+  nav.innerHTML = items.map(function(item) {
+    const active = item.key === activePage;
+    return '<a href="' + item.href + '" class="btn nav' + (active ? ' active' : '') + '">' + item.label + '</a>';
+  }).join('');
+}
+
 // ── PŘÍSTUP ──
 async function checkAccess() {
   try {
@@ -161,14 +190,8 @@ async function checkAccess() {
         // Tlačítko "Nová objednávka" se NEZOBRAZUJE zde – až po načtení settings (viz inicializace)
         // _meFirma je uložena, zobrazení rozhodne Promise.all().then() po ověření orders_enabled
       }
-      // Zobraz tlačítko Dashboard/Seznam staveb pro hmg_share i admina (skryto na mobilu přes CSS)
-      if (me.role === 'hmg_share' || me.role === 'admin') {
-        const btnDash = document.getElementById('btnDashboard');
-        if (btnDash) {
-          btnDash.style.display = '';
-          if (me.role === 'hmg_share') btnDash.textContent = 'Seznam staveb';
-        }
-      }
+      // Navigace
+      buildNav(me.role, 'monthly');
       return true;
     }
   } catch(e) {}

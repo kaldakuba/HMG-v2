@@ -11,6 +11,7 @@ body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111
 .btn{border-radius:6px;border:none;color:#fff;text-decoration:none;font-family:'Inter',sans-serif;font-weight:700;cursor:pointer;padding:7px 14px;font-size:13px;white-space:nowrap;transition:filter .15s}
 .btn:hover{filter:brightness(1.1)}
 .btn.week,.btn.blue{background:#2563eb}.btn.month{background:#64748b}.btn.green{background:#16a34a}.btn.red{background:#dc2626}.btn.orange{background:#ea580c}.btn.graybtn{background:#64748b}
+.btn.nav{background:#64748b}.btn.nav.active{background:#1e293b!important;cursor:default}
 .wrap{padding:10px 12px}
 .card{background:#fff;border:1px solid #a0aabb;border-radius:8px;overflow:hidden;width:100%}
 .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid #a0aabb;background:#fff}
@@ -90,9 +91,7 @@ th{background:#f5f7fa;font-weight:700;font-size:12px;color:#374151;letter-spacin
   <div class="top-left">Vstupy směsí</div>
   <h1>VSTUPY</h1>
   <div class="actions">
-    <a class="btn week" href="/">Týdenní kalendář</a>
-    <a class="btn week" href="/month">Měsíční přehled</a>
-    <a class="btn" style="background:#1e40af;display:none" href="/settings" id="settingsBtn">⚙ Nastavení</a>
+    <div id="navMenu"></div>
   </div>
 </header>
 <main class="wrap"><section class="card">
@@ -307,18 +306,38 @@ loadFromDB();
 
 
 fetch('/api/me').then(r=>r.json()).then(d=>{
-  const sb = document.getElementById('settingsBtn');
-  if(sb && d.role==='admin') sb.style.display='';
+  buildNav(d.role, 'inputs');
   const el = document.getElementById('footerUser');
   if(el && d.username) el.textContent = d.username;
 }).catch(()=>{});
 
-fetch('/api/me').then(r=>r.json()).then(d=>{
-  const sb = document.getElementById('settingsBtn');
-  if(sb && d.role==='admin') sb.style.display='';
-  const el = document.getElementById('footerUser');
-  if(el && d.username) el.textContent = d.username;
-}).catch(()=>{});
+// ── Unified navigation ──
+const NAV_ITEMS = {
+  admin: [
+    { key:'weekly',    label:'Týdenní',      href:'/index.html' },
+    { key:'monthly',   label:'Měsíční',      href:'/month-view.html' },
+    { key:'dashboard', label:'Dashboard',    href:'/dashboard' },
+    { key:'inputs',    label:'Vstupy',       href:'/inputs' },
+    { key:'settings',  label:'Nastavení',    href:'/settings.html' },
+  ],
+  operator: [
+    { key:'weekly',    label:'Týdenní',      href:'/index.html' },
+    { key:'monthly',   label:'Měsíční',      href:'/month-view.html' },
+  ],
+  hmg_share: [
+    { key:'monthly',   label:'Měsíční',      href:'/month-view.html' },
+    { key:'dashboard', label:'Seznam staveb',href:'/dashboard' },
+  ],
+};
+function buildNav(role, activePage) {
+  const nav = document.getElementById('navMenu');
+  if (!nav) return;
+  const items = NAV_ITEMS[role] || [];
+  nav.innerHTML = items.map(function(item) {
+    const active = item.key === activePage;
+    return '<a href="' + item.href + '" class="btn nav' + (active ? ' active' : '') + '">' + item.label + '</a>';
+  }).join('');
+}
 
 async function doLogout(){
   await fetch('/api/logout',{method:'POST'}).catch(()=>{});

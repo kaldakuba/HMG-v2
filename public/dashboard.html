@@ -85,12 +85,7 @@ table.orders tr:hover td{background:#f0f9ff}
   </div>
   <h1>HARMONOGRAM VÝROBY</h1>
   <div class="actions">
-    <!-- Admin navigace (skryta pro hmg_share) -->
-    <a id="adminNavWeekly"  class="btn nav" href="/index.html"      style="display:none">Týdenní</a>
-    <a id="adminNavMonth"   class="btn nav" href="/month-view.html" style="display:none">Měsíční přehled</a>
-    <a id="adminNavInputs"  class="btn nav" href="/settings.html"   style="display:none">Vstupy</a>
-    <!-- hmg_share: jediné tlačítko zpět -->
-    <button id="shareNavMonth" class="btn nav" onclick="location.href='/month-view.html'">← Měsíční přehled</button>
+    <div id="navMenu"></div>
   </div>
 </header>
 
@@ -113,7 +108,7 @@ table.orders tr:hover td{background:#f0f9ff}
 
   <!-- ══ SEKCE 1: Summary karty (skryty na mobilu) ══════════════════════════ -->
   <div class="summary-cards" id="summaryCards">
-    <div class="scard pending-card">
+    <div class="scard pending-card" id="cardPendingWrap">
       <span class="label">Čekající objednávky</span>
       <span class="value" id="cardPending">–</span>
       <span class="sub">čekají na vyřízení</span>
@@ -199,6 +194,34 @@ table.orders tr:hover td{background:#f0f9ff}
 
 <script>
 'use strict';
+
+// ── Unified navigation ──
+const NAV_ITEMS = {
+  admin: [
+    { key:'weekly',    label:'Týdenní',      href:'/index.html' },
+    { key:'monthly',   label:'Měsíční',      href:'/month-view.html' },
+    { key:'dashboard', label:'Dashboard',    href:'/dashboard' },
+    { key:'inputs',    label:'Vstupy',       href:'/inputs' },
+    { key:'settings',  label:'Nastavení',    href:'/settings.html' },
+  ],
+  operator: [
+    { key:'weekly',    label:'Týdenní',      href:'/index.html' },
+    { key:'monthly',   label:'Měsíční',      href:'/month-view.html' },
+  ],
+  hmg_share: [
+    { key:'monthly',   label:'Měsíční',      href:'/month-view.html' },
+    { key:'dashboard', label:'Seznam staveb',href:'/dashboard' },
+  ],
+};
+function buildNav(role, activePage) {
+  const nav = document.getElementById('navMenu');
+  if (!nav) return;
+  const items = NAV_ITEMS[role] || [];
+  nav.innerHTML = items.map(function(item) {
+    const active = item.key === activePage;
+    return '<a href="' + item.href + '" class="btn nav' + (active ? ' active' : '') + '">' + item.label + '</a>';
+  }).join('');
+}
 
 // ── Helpers ──
 function fmtDate(isoDate) {
@@ -316,14 +339,7 @@ async function loadDashboard() {
     document.getElementById('userInfo').textContent = pageLabel;
 
     // ── Navigace v topbaru ──
-    if (isAdmin) {
-      // Admin: zobraz admin tlačítka, skryj tlačítko hmg_share
-      document.getElementById('adminNavWeekly').style.display = '';
-      document.getElementById('adminNavMonth').style.display  = '';
-      document.getElementById('adminNavInputs').style.display = '';
-      document.getElementById('shareNavMonth').style.display  = 'none';
-    }
-    // (hmg_share: shareNavMonth je viditelný ve výchozím stavu, admin tlačítka skrytá)
+    buildNav(isAdmin ? 'admin' : 'hmg_share', 'dashboard');
 
     // Summary karty
     document.getElementById('cardPending').textContent   = data.pending;
@@ -342,6 +358,14 @@ async function loadDashboard() {
     if (!isAdmin && !data.orders_enabled) {
       document.getElementById('ctaBar').style.display          = 'none';
       document.getElementById('summaryCards').style.display    = 'none';
+      document.getElementById('pendingSection').style.display  = 'none';
+      document.getElementById('recentSection').style.display   = 'none';
+    }
+
+    // ── Admin + orders_enabled = false → skryj pending kartu, pending sekci a recent sekci ──
+    if (isAdmin && !data.orders_enabled) {
+      document.getElementById('cardPendingWrap').style.display = 'none';
+      document.getElementById('ctaBar').style.display          = 'none';
       document.getElementById('pendingSection').style.display  = 'none';
       document.getElementById('recentSection').style.display   = 'none';
     }
