@@ -16,7 +16,7 @@ const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.16';
+const APP_VERSION = '3.22';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -460,8 +460,22 @@ app.post('/api/week/:start', requireAuth, requireAdmin, async (req, res) => {
 });
 
 app.get('/api/weeks', requireAuth, async (req, res) => {
-  const r = await pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start');
-  res.json(r.rows.map(r => ({ start: r.week_start, rows: JSON.parse(r.rows_json) })));
+  const qr = await pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start');
+  const allWeeks = qr.rows.map(w => ({ start: w.week_start, rows: JSON.parse(w.rows_json) }));
+
+  // hmg_share: filtrace dat podle firmy uživatele — server-side, nikdy z klienta
+  if (req.session.role === 'hmg_share') {
+    const uRow = await pool.query('SELECT firma FROM users WHERE id=$1', [req.session.userId]);
+    const firma = uRow.rows[0] ? (uRow.rows[0].firma || '') : '';
+    if (!firma) return res.json([]);
+    const filtered = allWeeks.map(w => ({
+      ...w,
+      rows: (w.rows || []).filter(row => (row.ceta || '') === firma)
+    }));
+    return res.json(filtered);
+  }
+
+  res.json(allWeeks);
 });
 
 app.get('/api/month-entries', requireAuth, async (req, res) => {
