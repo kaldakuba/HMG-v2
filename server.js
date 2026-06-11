@@ -16,7 +16,7 @@ const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.23';
+const APP_VERSION = '3.26';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -912,13 +912,34 @@ async function buildStyledExcel(weeks, inputs, companies, orders, users) {
 }
 
 // ── Emailová záloha ──
+// Best-effort zápis/smazání settings — chyby jen logujeme, neházíme
+async function setSetting(key, value) {
+  try {
+    await pool.query(
+      "INSERT INTO settings (key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",
+      [key, value]
+    );
+  } catch (e) { console.error(`[ZÁLOHA] Nelze uložit settings.${key}:`, e.message); }
+}
+async function delSetting(key) {
+  try { await pool.query("DELETE FROM settings WHERE key=$1", [key]); }
+  catch (e) { console.error(`[ZÁLOHA] Nelze smazat settings.${key}:`, e.message); }
+}
+
 async function sendBackup() {
   const TAG = `[ZÁLOHA v${APP_VERSION}]`;
   console.log(`${TAG} ===== START =====`);
 
+  // ── Záznam POKUSU (před čímkoliv jiným) ────────────────────────────────────
+  // Oddělíme "spuštěno" od "uspělo" — even kdyby DB queries selhaly níže,
+  // last_backup_attempt drží informaci, že se pokus stal.
+  const attemptIso = new Date().toISOString();
+  await setSetting('last_backup_attempt', attemptIso);
+
   if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD || !process.env.BACKUP_EMAIL) {
     const msg = 'Chybí konfigurace emailu (GMAIL_USER, GMAIL_APP_PASSWORD, BACKUP_EMAIL)';
     console.error(`${TAG} CHYBA konfigurace: ${msg}`);
+    await setSetting('last_backup_error', `${new Date().toISOString()} | ${msg}`);
     throw new Error(msg);
   }
 
@@ -932,7 +953,7 @@ async function sendBackup() {
       pool.query('SELECT key,value FROM settings'),
       pool.query(
         'SELECT id,order_group_id,user_id,firma,datum,smes,itt,tuny,komentar,' +
-        'status,created_at,resolved_at,reject_reason,lokalita FROM orders ORDER BY created_at'
+        'status,created_at,resolved_at,reject_reason,lokalita,lat,lng,resolved_by FROM orders ORDER BY created_at'
       ),
       pool.query(
         'SELECT id,username,password_hash,role,email,firma,must_change_password,created_at,last_seen FROM users ORDER BY id'
@@ -941,6 +962,7 @@ async function sendBackup() {
     ]);
   } catch (dbErr) {
     console.error(`${TAG} CHYBA DB dotazů — záloha se neprovede:`, dbErr.message);
+    await setSetting('last_backup_error', `${new Date().toISOString()} | DB: ${dbErr.message}`);
     throw dbErr;
   }
 
@@ -1003,6 +1025,7 @@ async function sendBackup() {
     ));
   } catch (xlsxErr) {
     console.error(`${TAG} CHYBA sestavení Excelu:`, xlsxErr.message);
+    await setSetting('last_backup_error', `${new Date().toISOString()} | Excel: ${xlsxErr.message}`);
     throw xlsxErr;
   }
 
@@ -1050,15 +1073,15 @@ async function sendBackup() {
     });
   } catch (mailErr) {
     console.error(`${TAG} CHYBA odeslání e-mailu:`, mailErr.message);
+    await setSetting('last_backup_error', `${new Date().toISOString()} | SMTP: ${mailErr.message}`);
     throw mailErr;
   }
 
   console.log(`${TAG} ===== DOKONČENO: ${xlsxFilename} + ${snapshotFilename} =====`);
 
-  await pool.query(
-    "INSERT INTO settings (key,value) VALUES ('last_backup',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",
-    [new Date().toISOString()]
-  );
+  // ── ÚSPĚCH: zapsat last_backup a vyčistit error ────────────────────────────
+  await setSetting('last_backup', new Date().toISOString());
+  await delSetting('last_backup_error');
 }
 
 // Smaž zamítnuté objednávky starší 30 dní (auto-cleanup)
@@ -1103,7 +1126,7 @@ async function restoreFromSnapshot(snapshot) {
       pool.query('SELECT key,value FROM settings'),
       pool.query(
         'SELECT id,order_group_id,user_id,firma,datum,smes,itt,tuny,komentar,' +
-        'status,created_at,resolved_at,reject_reason,lokalita FROM orders ORDER BY created_at'
+        'status,created_at,resolved_at,reject_reason,lokalita,lat,lng,resolved_by FROM orders ORDER BY created_at'
       ),
       pool.query(
         'SELECT id,username,password_hash,role,email,firma,must_change_password,created_at,last_seen FROM users ORDER BY id'
@@ -1218,12 +1241,14 @@ async function restoreFromSnapshot(snapshot) {
     }
 
     // orders — s původními id, FK na users musí být vložena první
+    // resolved_by je FK na users(id); users jsou již vloženy výše, takže FK projde
     for (const o of snapshot.orders) {
       await client.query(
         `INSERT INTO orders
            (id, order_group_id, user_id, firma, datum, smes, itt, tuny,
-            komentar, status, created_at, resolved_at, reject_reason, lokalita)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+            komentar, status, created_at, resolved_at, reject_reason, lokalita,
+            lat, lng, resolved_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
         [
           o.id, o.order_group_id, o.user_id, o.firma, o.datum, o.smes, o.itt, o.tuny,
           o.komentar      || null,
@@ -1232,6 +1257,9 @@ async function restoreFromSnapshot(snapshot) {
           o.resolved_at   || null,
           o.reject_reason || null,
           o.lokalita      || null,
+          (o.lat === undefined || o.lat === null || o.lat === '') ? null : o.lat,
+          (o.lng === undefined || o.lng === null || o.lng === '') ? null : o.lng,
+          (o.resolved_by === undefined || o.resolved_by === null) ? null : o.resolved_by,
         ]
       );
     }
@@ -1436,6 +1464,8 @@ async function sendOrderFinalizedEmail(groupId) {
 }
 
 // Spustit zálohu každý den v 18:00 (UTC+2 = 16:00 UTC) + cleanup rejected objednávek
+// Interval: 24 h (každý den) — ne 18 h.
+let _backupCatchupDone = false;
 function scheduleBackup() {
   const now = new Date();
   const next = new Date();
@@ -1446,11 +1476,79 @@ function scheduleBackup() {
     sendBackup().catch(err => console.error('Chyba plánované zálohy:', err.message));
     cleanupRejectedOrders();
   };
+
+  // ── CATCH-UP: deploy/restart resetuje setTimeout, proto kontrola při startu ──
+  // Pokud last_backup chybí nebo je > 24 h zpět, spusť zálohu okamžitě (JEDNOU).
+  (async () => {
+    if (_backupCatchupDone) return;
+    _backupCatchupDone = true;
+    try {
+      const r = await pool.query("SELECT value FROM settings WHERE key='last_backup'");
+      const lastIso = r.rows[0] ? r.rows[0].value : null;
+      const ageH = lastIso ? (Date.now() - Date.parse(lastIso)) / 3600000 : Infinity;
+      if (!lastIso || ageH > 24) {
+        const reason = lastIso ? `${ageH.toFixed(1)} h zpět` : 'chybí';
+        console.log(`[ZÁLOHA] CATCH-UP: last_backup ${reason} → spouštím okamžitě.`);
+        runScheduled();
+      } else {
+        console.log(`[ZÁLOHA] Catch-up nepotřeba: last_backup před ${ageH.toFixed(1)} h.`);
+      }
+    } catch (e) {
+      console.error('[ZÁLOHA] Catch-up: chyba čtení last_backup:', e.message);
+    }
+  })();
+
   setTimeout(() => {
     runScheduled();
     setInterval(runScheduled, 24 * 60 * 60 * 1000);
   }, msUntil);
-  console.log(`Záloha naplánována za ${Math.round(msUntil / 60000)} minut (každý den v 18:00)`);
+  console.log(`Záloha naplánována za ${Math.round(msUntil / 60000)} minut (každý den v 18:00, interval 24 h)`);
+}
+
+// ── Hlídání staré zálohy při startu (best-effort e-mail adminovi) ────────────
+// Když je last_backup > 36 h, zaloguj WARNING. UI banner v /settings doplní to,
+// co e-mail nezvládne (rozbité SMTP).
+async function checkBackupAge() {
+  try {
+    const r = await pool.query("SELECT key,value FROM settings WHERE key IN ('last_backup','last_backup_error')");
+    const map = {};
+    r.rows.forEach(row => { map[row.key] = row.value; });
+    const lastIso = map.last_backup || null;
+    if (!lastIso) {
+      console.warn('[ZÁLOHA] WARNING: settings.last_backup chybí — žádná úspěšná záloha nezaznamenána.');
+      return;
+    }
+    const ageH = (Date.now() - Date.parse(lastIso)) / 3600000;
+    if (ageH > 36) {
+      console.warn(`[ZÁLOHA] WARNING: poslední úspěšná záloha proběhla před ${ageH.toFixed(1)} h (${lastIso}). Zkontroluj SMTP a logy.`);
+      if (map.last_backup_error) {
+        console.warn(`[ZÁLOHA] Poslední zaznamenaná chyba: ${map.last_backup_error}`);
+      }
+      // Best-effort e-mail adminovi přes SMTP (může selhat, proto i UI banner)
+      try {
+        const smtpSettings = await getSmtpSettings();
+        if (smtpSettings.smtp_admin_emails) {
+          const ageDays = (ageH / 24).toFixed(1);
+          await sendNotificationEmail(
+            smtpSettings.smtp_admin_emails,
+            `[HMG] Záloha zastaralá: ${ageDays} dní`,
+            `<p>Poslední úspěšná záloha: <strong>${lastIso}</strong></p>` +
+            `<p>Stáří: <strong>${ageH.toFixed(1)} h</strong> (${ageDays} dní)</p>` +
+            (map.last_backup_error ? `<p>Poslední chyba: <code>${String(map.last_backup_error).replace(/</g,'&lt;')}</code></p>` : '') +
+            `<p>Zkontroluj logy a SMTP/Gmail konfiguraci.</p>`,
+            smtpSettings
+          );
+          console.log('[ZÁLOHA] Varovný e-mail odeslán adminovi.');
+        }
+      } catch (e) {
+        console.error('[ZÁLOHA] Nepodařilo se odeslat varovný e-mail:', e.message);
+      }
+    } else {
+      console.log(`[ZÁLOHA] OK: poslední záloha před ${ageH.toFixed(1)} h (${lastIso}).`);
+    }
+  } catch (e) {
+    console.error('[ZÁLOHA] checkBackupAge selhalo:', e.message);
+  }
 }
 
 // Manuální spuštění zálohy (jen pro admina)
@@ -2433,10 +2531,21 @@ app.post('/api/smtp-settings/test', requireAuth, requireAdmin, async (req, res) 
   }
 });
 
-// ── Záloha - poslední datum ──
+// ── Záloha - poslední datum + atributy stavu ──
 app.get('/api/backup/last', requireAuth, requireAdmin, async (req, res) => {
-  const r = await pool.query("SELECT value FROM settings WHERE key='last_backup'");
-  res.json({ last: r.rows[0] ? r.rows[0].value : null });
+  const r = await pool.query(
+    "SELECT key,value FROM settings WHERE key IN ('last_backup','last_backup_attempt','last_backup_error')"
+  );
+  const map = {};
+  r.rows.forEach(row => { map[row.key] = row.value; });
+  const last = map.last_backup || null;
+  const ageH = last ? (Date.now() - Date.parse(last)) / 3600000 : null;
+  res.json({
+    last,
+    last_attempt: map.last_backup_attempt || null,
+    last_error:   map.last_backup_error   || null,
+    age_hours:    ageH,
+  });
 });
 
 
@@ -2613,6 +2722,8 @@ async function startServer() {
 
   app.listen(PORT, () => console.log(`[${new Date().toISOString()}] Server běží na portu ${PORT}`));
   if (process.env.GMAIL_USER) scheduleBackup();
+  // Hlídání stáří zálohy — běží vždy, varuje když je last_backup > 36 h
+  checkBackupAge();
   // Auto-cleanup rejected objednávek — běží vždy, nezávisle na GMAIL
   const MS_DAY = 24 * 60 * 60 * 1000;
   cleanupRejectedOrders(); // jednou při startu

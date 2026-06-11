@@ -22,6 +22,7 @@ body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111
 .btn.nav{color:rgba(255,255,255,0.65);background:transparent;border:0.5px solid transparent;padding:6px 14px;border-radius:6px}
 .btn.nav:hover{color:#fff!important;background:rgba(255,255,255,0.1);filter:none}
 .btn.gray{background:#64748b}.btn.blue{background:#2563eb}.btn.export{background:#15803d}
+#monthTotal{font-weight:700;font-size:14px;color:#1e3a8a;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:4px 12px;white-space:nowrap;line-height:1}
 .ro-badge{display:inline-flex;align-items:center;gap:5px;background:#fee2e2;color:#991b1b;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700}
 .wrap{padding:10px 12px}
 .card{background:#fff;border:1px solid #a0aabb;border-radius:8px;overflow:hidden}
@@ -85,7 +86,7 @@ tr.row-hover td,td.col-hover{background:#fefce8!important}
     <button class="btn export" onclick="exportMonth()">Export dat</button>
     <div class="right">
       <button id="btnNewOrder" onclick="openOrderPopup()" style="display:none">+ Nová objednávka</button>
-      <button class="btn gray" disabled title="Přístup k minulým měsícům není povolen">‹ Předchozí</button>
+      <button id="btnPrev" class="btn gray" onclick="shiftMonth(-1)">‹ Předchozí</button>
       <button class="btn blue" onclick="thisMonth()">Tento měsíc</button>
       <button class="btn gray" onclick="shiftMonth(1)">Další ›</button>
       <input id="monthPick" type="month" onchange="onMonthChange()">
@@ -365,6 +366,15 @@ async function renderMonth(){
   // Filtr dnů: pouze hmg_share (a anonymní viewer přes share token) vidí jen
   // dny ode dneška včetně. Admin a operátor vidí celý měsíc — všechny dny.
   const isViewerMode = (_meRole === 'hmg_share' || (_urlToken && !_meRole));
+
+  // Tlačítko „‹ Předchozí" — admin/operátor vždy povolené,
+  // hmg_share/token viewer disabled, pokud zobrazený měsíc <= aktuální měsíc.
+  const btnPrev = document.getElementById('btnPrev');
+  if (btnPrev) {
+    const prevBlocked = isViewerMode && (isCurrentMonth || isPastMonth);
+    btnPrev.disabled = prevBlocked;
+    btnPrev.title = prevBlocked ? 'Přístup k minulým měsícům není povolen' : '';
+  }
 
   let visibleDays=[];
   for(let d=1;d<=totalDays;d++){

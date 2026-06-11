@@ -251,9 +251,10 @@ input:checked + .toggle-sl::before{transform:translateX(20px)}
               <div style="font-size:12px;color:#6b7280" id="lastBackup">Načítám...</div>
             </div>
             <div style="margin-left:auto">
-              <span style="font-size:11px;padding:3px 10px;border-radius:20px;background:#dcfce7;color:#15803d;font-weight:500">Aktivní</span>
+              <span id="backupBadge" style="font-size:11px;padding:3px 10px;border-radius:20px;background:#dcfce7;color:#15803d;font-weight:500">Aktivní</span>
             </div>
           </div>
+          <div id="backupError" style="display:none;padding:10px 12px;border-radius:8px;background:#fef2f2;border:0.5px solid #fecaca;color:#991b1b;font-size:12px;margin-bottom:10px"></div>
           <button class="btn green" onclick="runBackup()" id="backupBtn"><i class="ti ti-player-play" style="font-size:13px" aria-hidden="true"></i> Spustit zálohu teď</button>
           <div id="backupMsg" style="margin-top:10px"></div>
         </div>
@@ -676,8 +677,47 @@ async function restoreStep2() {
 }
 
 async function loadBackupInfo() {
-  const r=await api('GET','/api/backup/last');
-  document.getElementById('lastBackup').textContent=r.last?`Poslední záloha: ${fmtDate(r.last)}`:'Záloha zatím neproběhla';
+  const r = await api('GET','/api/backup/last');
+  const lastEl  = document.getElementById('lastBackup');
+  const badgeEl = document.getElementById('backupBadge');
+  const errEl   = document.getElementById('backupError');
+
+  if (r.last) {
+    lastEl.textContent = `Poslední záloha: ${fmtDate(r.last)}`;
+  } else {
+    lastEl.textContent = 'Záloha zatím neproběhla';
+  }
+
+  // Badge: červený >48 h / žlutý >36 h / zelený jinak / šedý při chybějící
+  if (badgeEl) {
+    const ageH = r.age_hours;
+    if (ageH === null || ageH === undefined) {
+      badgeEl.style.background = '#fee2e2'; badgeEl.style.color = '#991b1b';
+      badgeEl.textContent = '⚠ Žádná záloha';
+    } else if (ageH > 48) {
+      const days = Math.floor(ageH / 24);
+      const word = days === 1 ? 'dnem' : (days >= 2 && days <= 4 ? 'dny' : 'dny');
+      badgeEl.style.background = '#fee2e2'; badgeEl.style.color = '#991b1b';
+      badgeEl.textContent = `⚠ Před ${days} ${word}`;
+    } else if (ageH > 36) {
+      badgeEl.style.background = '#fef3c7'; badgeEl.style.color = '#92400e';
+      badgeEl.textContent = `⚠ ${ageH.toFixed(0)} h`;
+    } else {
+      badgeEl.style.background = '#dcfce7'; badgeEl.style.color = '#15803d';
+      badgeEl.textContent = 'Aktivní';
+    }
+  }
+
+  // Chyba poslední zálohy
+  if (errEl) {
+    if (r.last_error) {
+      errEl.style.display = '';
+      errEl.innerHTML = `<strong>Poslední chyba zálohy:</strong> ${String(r.last_error).replace(/</g,'&lt;')}`;
+    } else {
+      errEl.style.display = 'none';
+      errEl.innerHTML = '';
+    }
+  }
 }
 async function runBackup() {
   const btn=document.getElementById('backupBtn');const msg=document.getElementById('backupMsg');
