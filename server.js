@@ -14,12 +14,44 @@ const XLSX = require('xlsx');
 const bcrypt = require('bcrypt');
 const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
+const helmet = require('helmet');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.26';
+const APP_VERSION = '3.27';
 
 const app = express();
 app.set('trust proxy', 1);
+
+// ── Bezpečnostní hlavičky (helmet) ──
+// CSP whitelist odpovídá inventáři externích zdrojů ve public/*.html:
+//   - Inline <script>/<style> a inline handlery (onclick) → 'unsafe-inline'
+//   - Leaflet (mapa) z unpkg.com; Inter font z Google Fonts; OSM tiles + embed iframe
+//   - Geocoding: Mapy.cz + OSM Nominatim
+// crossOriginEmbedderPolicy a crossOriginResourcePolicy vypnuté kvůli mapám
+// (jinak by se OSM tile servery a Mapy.cz API odmítaly načítat).
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      defaultSrc:     ["'self'"],
+      scriptSrc:      ["'self'", "'unsafe-inline'", "https://unpkg.com"],
+      // scriptSrcAttr je v helmet defaults nastavený na 'none' a blokoval by
+      // inline onclick/onchange handlery — explicitně povolíme 'unsafe-inline'.
+      scriptSrcAttr:  ["'unsafe-inline'"],
+      styleSrc:       ["'self'", "'unsafe-inline'", "https://unpkg.com", "https://fonts.googleapis.com"],
+      imgSrc:         ["'self'", "data:", "blob:", "https://*.tile.openstreetmap.org", "https://unpkg.com"],
+      connectSrc:     ["'self'", "https://api.mapy.cz", "https://nominatim.openstreetmap.org"],
+      fontSrc:        ["'self'", "data:", "https://fonts.gstatic.com"],
+      frameSrc:       ["'self'", "https://www.openstreetmap.org"],
+      objectSrc:      ["'none'"],
+      baseUri:        ["'self'"],
+      frameAncestors: ["'none'"],  // anti-clickjacking — appka neběží v iframu
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: false,
+  // hsts, noSniff, referrerPolicy, frameguard zůstávají na helmet defaults
+}));
 
 // ── Rate limiting na login (5 pokusů / 5 minut) ──
 const loginLimiter = rateLimit({
