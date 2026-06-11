@@ -17,7 +17,7 @@ const pgSession = require('connect-pg-simple')(session);
 const helmet = require('helmet');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.27';
+const APP_VERSION = '3.28';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -275,7 +275,7 @@ app.use(session({
   cookie: {
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 dní
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: 'strict',
     // secure: true pouze pokud běží za HTTPS (produkce); lokálně false
     secure: process.env.NODE_ENV === 'production' || process.env.HTTPS === 'true'
   }
@@ -361,8 +361,6 @@ app.get('/login', (req, res) => {
       return res.redirect('/');
     }
   }
-  const csrfToken = crypto.randomBytes(24).toString('hex');
-  res.cookie('csrf', csrfToken, { httpOnly: false, sameSite: 'lax' });
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
