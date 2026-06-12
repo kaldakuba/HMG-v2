@@ -56,7 +56,8 @@ input[type=checkbox]:checked{background:#2563eb;border-color:#2563eb}
 input[type=checkbox]:checked::after{content:"";position:absolute;left:4px;top:1px;width:5px;height:9px;border:1.5px solid #fff;border-top:none;border-left:none;transform:rotate(45deg)}
 .row-checked td{border-top:2px solid #2563eb!important;border-bottom:2px solid #2563eb!important;background:rgba(59,130,246,.06)!important}
 .row-checked td:first-child{border-left:2px solid #2563eb!important}.row-checked td:last-child{border-right:2px solid #2563eb!important}
-.sel-hidden .sel-col input{visibility:hidden!important}.sel-hidden .sel-col{background:#fff!important}.sel-hidden .delete-btn{display:none!important}.sel-hidden th.sel-col{color:transparent!important}
+.sel-hidden .sel-col input{visibility:hidden!important}.sel-hidden .sel-col{background:#fff!important}.sel-hidden .delete-btn,.sel-hidden .move-btn{display:none!important}.sel-hidden th.sel-col{color:transparent!important}
+.move-btn{padding:7px 10px!important;font-size:14px!important;line-height:1}.move-btn:disabled{opacity:.4;cursor:not-allowed}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#f1f5f9}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 .saving-indicator{position:fixed;bottom:16px;right:16px;background:#1e293b;color:#fff;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;opacity:0;transition:opacity .3s;z-index:9999;pointer-events:none}
 .saving-indicator.show{opacity:1}
@@ -135,7 +136,7 @@ body.mobile-ro .hours-row td{height:18px;font-size:9px}
 <main class="wrap"><section class="card">
 <div class="weekbar"><div style="display:flex;align-items:center;gap:8px;"><span id="weekTitle" style="display:none"></span><button class="btn export" onclick="exportWeeks()">Export dat</button></div><div class="weeknav"><button class="btn gray" style="min-width:130px;" onclick="shiftWeek(-1)">‹ Předchozí týden</button><button class="btn blue" id="currentWeekBtn" style="min-width:140px;line-height:1.3" onclick="currentWeek()">Aktuální týden</button><button class="btn gray" style="min-width:130px;" onclick="shiftWeek(1)">Další týden ›</button><div style="position:relative;display:inline-block;"><button class="btn gray" onclick="toggleMiniCal()" id="calToggleBtn">📅 Kalendář</button><div id="miniCal" style="display:none;position:absolute;right:0;top:38px;z-index:9999;background:#fff;border:1px solid #d1d5db;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,.12);padding:14px;width:300px;font-family:'Inter',sans-serif;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><button onclick="shiftMiniCal(-1)" style="border:none;background:none;cursor:pointer;font-size:20px;font-weight:900;color:#374151;line-height:1;">‹</button><span id="miniCalHeader" style="font-weight:700;font-size:14px;color:#111;"></span><button onclick="shiftMiniCal(1)" style="border:none;background:none;cursor:pointer;font-size:20px;font-weight:900;color:#374151;line-height:1;">›</button></div><div id="miniCalGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center;"><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Po</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Út</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">St</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Čt</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Pá</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">So</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Ne</div></div></div></div></div></div>
 <div class="table-wrap"><table id="weekTable" class="sel-hidden"><colgroup><col class="num"><col class="lok"><col class="obj"><col class="smes"><col class="itt"><col class="ceta"><col class="day"><col class="day"><col class="day"><col class="day"><col class="day"><col class="day"><col class="day"><col class="souhrn"><col class="sel"></colgroup><thead id="thead"></thead><tbody id="tbody"></tbody><tfoot id="tfoot"></tfoot></table></div>
-<div class="controls"><input id="plantRate" type="number" step="1" value="150" style="display:none" onchange="setPlantRate(this.value);render()"><div style="margin-right:auto;display:flex;gap:8px;"><button class="btn top-orange" onclick="togglePanel('materialsPanel')">Spotřeba materiálu</button><button class="btn top-orange" onclick="togglePanel('mixesPanel')">Seznam směsí</button></div><button class="btn green" onclick="addRow()">Přidat nový řádek</button><button class="btn gray" onclick="toggleSelMode()" id="selModeBtn">Označit</button><button class="btn red delete-btn" onclick="deleteCheckedRows()" style="display:none">Smazat vybrané řádky</button><button class="btn gray" onclick="undoLast()">Zpět</button><span id="selectedInfo" style="display:none"></span></div>
+<div class="controls"><input id="plantRate" type="number" step="1" value="150" style="display:none" onchange="setPlantRate(this.value);render()"><div style="margin-right:auto;display:flex;gap:8px;"><button class="btn top-orange" onclick="togglePanel('materialsPanel')">Spotřeba materiálu</button><button class="btn top-orange" onclick="togglePanel('mixesPanel')">Seznam směsí</button></div><button class="btn green" onclick="addRow()">Přidat nový řádek</button><button class="btn gray" onclick="toggleSelMode()" id="selModeBtn">Označit</button><button class="btn gray move-btn" id="moveUpBtn" onclick="moveCheckedUp()" title="Přesunout označený řádek nahoru" style="display:none">▲</button><button class="btn gray move-btn" id="moveDownBtn" onclick="moveCheckedDown()" title="Přesunout označený řádek dolů" style="display:none">▼</button><button class="btn red delete-btn" onclick="deleteCheckedRows()" style="display:none">Smazat vybrané řádky</button><button class="btn gray" onclick="undoLast()">Zpět</button><span id="selectedInfo" style="display:none"></span></div>
 <div id="panelsRow" style="display:none;gap:16px;align-items:flex-start;flex-wrap:wrap;padding:12px;"><div id="materialsPanel" style="display:none"><h2 style="font-size:14px;font-weight:700;margin:0 0 8px">Spotřeba materiálu</h2><div class="panel-wrap" id="materialsArea"></div></div><div id="mixesPanel" style="display:none"><h2 style="font-size:14px;font-weight:700;margin:0 0 8px">Seznam směsí</h2><div class="panel-wrap" id="mixesArea"></div></div>
 </section></main>
 
@@ -324,7 +325,48 @@ function renderFoot(rows){
   tfoot.innerHTML=html;
 }
 
-function updateSelectedInfo(){const c=(_rows||[]).filter(r=>r.checked).length;selectedInfo.textContent=c?'Zatrženo řádků: '+c:'Není zatržen žádný řádek'}
+function updateSelectedInfo(){
+  const checked=(_rows||[]).map((r,i)=>r.checked?i:-1).filter(i=>i>=0);
+  const c=checked.length;
+  selectedInfo.textContent=c?'Zatrženo řádků: '+c:'Není zatržen žádný řádek';
+  // Tlačítka ▲/▼ aktivní jen když je zatržen právě jeden řádek a není na okraji
+  const up=document.getElementById('moveUpBtn');
+  const dn=document.getElementById('moveDownBtn');
+  if(up&&dn){
+    const single = (c===1) ? checked[0] : -1;
+    up.disabled = (single<=0);
+    dn.disabled = (single<0 || single>=(_rows||[]).length-1);
+    const hint = c===0 ? 'Nejdřív zatrhni jeden řádek' : c>1 ? 'Označen víc než jeden řádek' : '';
+    if (hint) { up.title=hint; dn.title=hint; }
+    else { up.title='Přesunout označený řádek nahoru'; dn.title='Přesunout označený řádek dolů'; }
+  }
+}
+// Pomocné: před přesunem vyvolej blur na případně editované buňce,
+// aby se její neuložená hodnota dostala přes onchange do _rows.
+function _commitEditingCell(){
+  const el=document.activeElement;
+  if(el && el.closest && el.closest('#weekTable')) el.blur();
+}
+function moveCheckedUp(){
+  _commitEditingCell();
+  const checked=_rows.map((r,i)=>r.checked?i:-1).filter(i=>i>=0);
+  if(checked.length!==1) return;
+  const i=checked[0];
+  if(i<=0) return;
+  snapshot();
+  [_rows[i-1],_rows[i]] = [_rows[i],_rows[i-1]];   // řádek si nese 'checked' s sebou
+  render();saveRows();
+}
+function moveCheckedDown(){
+  _commitEditingCell();
+  const checked=_rows.map((r,i)=>r.checked?i:-1).filter(i=>i>=0);
+  if(checked.length!==1) return;
+  const i=checked[0];
+  if(i>=_rows.length-1) return;
+  snapshot();
+  [_rows[i+1],_rows[i]] = [_rows[i],_rows[i+1]];
+  render();saveRows();
+}
 function updateCheck(i,val){_rows[i].checked=val;render();saveRows()}
 function updateMixSelect(i,key,val){snapshot();let m=key==='cislo'?mixByNumber(val):key==='smes'?mixByName(val):mixByItt(val);applyMix(_rows[i],m);render();saveRows()}
 function updateCell(i,key,val,autofill=false,integer=false){snapshot();_rows[i][key]=integer?intVal(val):val;render();saveRows()}
@@ -410,9 +452,9 @@ function downloadBlob(blob,name){const a=document.createElement('a');a.href=URL.
 // ── SEL MODE ──
 let _selMode=false;
 function toggleSelMode(){
-  _selMode=!_selMode;const table=document.getElementById('weekTable');const btn=document.getElementById('selModeBtn');const deleteBtns=document.querySelectorAll('.delete-btn');
-  if(_selMode){table.classList.remove('sel-hidden');btn.textContent='Označit ✕';btn.classList.remove('gray');btn.classList.add('orange');deleteBtns.forEach(b=>b.style.display='');}
-  else{table.classList.add('sel-hidden');btn.textContent='Označit';btn.classList.remove('orange');btn.classList.add('gray');deleteBtns.forEach(b=>b.style.display='none');_rows.forEach(r=>r.checked=false);render();saveRows();}
+  _selMode=!_selMode;const table=document.getElementById('weekTable');const btn=document.getElementById('selModeBtn');const deleteBtns=document.querySelectorAll('.delete-btn');const moveBtns=document.querySelectorAll('.move-btn');
+  if(_selMode){table.classList.remove('sel-hidden');btn.textContent='Označit ✕';btn.classList.remove('gray');btn.classList.add('orange');deleteBtns.forEach(b=>b.style.display='');moveBtns.forEach(b=>b.style.display='');}
+  else{table.classList.add('sel-hidden');btn.textContent='Označit';btn.classList.remove('orange');btn.classList.add('gray');deleteBtns.forEach(b=>b.style.display='none');moveBtns.forEach(b=>b.style.display='none');_rows.forEach(r=>r.checked=false);render();saveRows();}
 }
 
 // ── MINI KALENDÁŘ ──
@@ -657,8 +699,8 @@ async function checkOperatorRole() {
     const el = document.getElementById('footerUser');
     if (el && me.username) el.textContent = me.username;
     if (role === 'operator') {
-      // Skrýt pouze editační tlačítka (Přidat, Označit, Smazat, Zpět) - NE panely
-      document.querySelectorAll('.controls .btn.green, .controls .btn.red').forEach(b => {
+      // Skrýt pouze editační tlačítka (Přidat, Označit, Smazat, ▲/▼, Zpět) - NE panely
+      document.querySelectorAll('.controls .btn.green, .controls .btn.red, .controls .move-btn').forEach(b => {
         b.style.display = 'none';
       });
       document.getElementById('selModeBtn').style.display = 'none';

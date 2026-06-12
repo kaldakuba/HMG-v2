@@ -17,7 +17,7 @@ const pgSession = require('connect-pg-simple')(session);
 const helmet = require('helmet');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.29';
+const APP_VERSION = '3.30';
 
 const app = express();
 app.set('trust proxy', 1);
