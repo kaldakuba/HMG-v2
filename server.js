@@ -17,7 +17,7 @@ const pgSession = require('connect-pg-simple')(session);
 const helmet = require('helmet');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.28';
+const APP_VERSION = '3.29';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -340,6 +340,7 @@ function requireViewer(req, res, next) {
 }
 
 // Pojistka: objednávkové endpointy odmítají požadavky, když orders_enabled = false
+// FAIL-CLOSED: při chybě DB raději odmítnout než tiše pustit přes neověřený stav.
 async function requireOrdersEnabled(req, res, next) {
   try {
     const r = await pool.query("SELECT value FROM settings WHERE key='orders_enabled'");
@@ -347,7 +348,8 @@ async function requireOrdersEnabled(req, res, next) {
     if (!enabled) return res.status(403).json({ error: 'Objednávkový systém je vypnut' });
     next();
   } catch(err) {
-    next(); // při chybě DB pokračuj (fail-open)
+    console.error('requireOrdersEnabled: chyba čtení settings.orders_enabled, FAIL-CLOSED:', err.message);
+    return res.status(503).json({ error: 'Objednávky dočasně nedostupné (chyba ověření stavu)' });
   }
 }
 
@@ -1067,43 +1069,67 @@ async function sendBackup() {
     auth: {
       user: process.env.GMAIL_USER,
       pass: process.env.GMAIL_APP_PASSWORD,
-    }
+    },
+    // Timeouty proti zaseknutí na přechodných problémech SMTP/sítě.
+    connectionTimeout: 20000,
+    greetingTimeout:   20000,
+    socketTimeout:     30000,
   });
 
-  try {
-    await transporter.sendMail({
-      from:    `"HMG Záloha" <${process.env.GMAIL_USER}>`,
-      to:      process.env.BACKUP_EMAIL,
-      subject: `HMG záloha ${date} — ${backup.weeks.length} týdnů`,
-      text: (
-        `Automatická záloha dat harmonogramu výroby.\n\n` +
-        `Obsah:\n` +
-        `- Týdnů: ${backup.weeks.length}\n` +
-        `- Receptur: ${backup.inputs.length}\n` +
-        `- Objednávek: ${ordersRes.rows.length}\n` +
-        `- Uživatelů: ${usersRes.rows.length}\n` +
-        `- Datum: ${date}\n` +
-        `- Excel listy: ${sheetNames.join(', ')}\n\n` +
-        `Přílohy:\n` +
-        `1. ${xlsxFilename} — čitelný Excel (týdny, receptury, objednávky, uživatelé)\n` +
-        `2. ${snapshotFilename} — JSON snímek všech tabulek pro plnou obnovu DB`
-      ),
-      attachments: [
-        {
-          filename:    xlsxFilename,
-          content:     xlsxBuffer,
-          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        },
-        {
-          filename:    snapshotFilename,
-          content:     Buffer.from(snapshotJson, 'utf8'),
-          contentType: 'application/json',
-        },
-      ],
-    });
-  } catch (mailErr) {
-    console.error(`${TAG} CHYBA odeslání e-mailu:`, mailErr.message);
-    await setSetting('last_backup_error', `${new Date().toISOString()} | SMTP: ${mailErr.message}`);
+  const mailOptions = {
+    from:    `"HMG Záloha" <${process.env.GMAIL_USER}>`,
+    to:      process.env.BACKUP_EMAIL,
+    subject: `HMG záloha ${date} — ${backup.weeks.length} týdnů`,
+    text: (
+      `Automatická záloha dat harmonogramu výroby.\n\n` +
+      `Obsah:\n` +
+      `- Týdnů: ${backup.weeks.length}\n` +
+      `- Receptur: ${backup.inputs.length}\n` +
+      `- Objednávek: ${ordersRes.rows.length}\n` +
+      `- Uživatelů: ${usersRes.rows.length}\n` +
+      `- Datum: ${date}\n` +
+      `- Excel listy: ${sheetNames.join(', ')}\n\n` +
+      `Přílohy:\n` +
+      `1. ${xlsxFilename} — čitelný Excel (týdny, receptury, objednávky, uživatelé)\n` +
+      `2. ${snapshotFilename} — JSON snímek všech tabulek pro plnou obnovu DB`
+    ),
+    attachments: [
+      {
+        filename:    xlsxFilename,
+        content:     xlsxBuffer,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      },
+      {
+        filename:    snapshotFilename,
+        content:     Buffer.from(snapshotJson, 'utf8'),
+        contentType: 'application/json',
+      },
+    ],
+  };
+
+  // ── Retry smyčka: 3 pokusy s pauzami 4 s a 8 s ───────────────────────────────
+  // SMTP timeout = mail neodešel; případný duplikát je neškodný.
+  const RETRY_DELAYS_MS = [4000, 8000];
+  let mailErr = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await transporter.sendMail(mailOptions);
+      mailErr = null;
+      if (attempt > 1) console.log(`${TAG} E-mail odeslán napodruhé/napotřetí (pokus ${attempt}/3).`);
+      break;
+    } catch (err) {
+      mailErr = err;
+      console.error(`${TAG} Pokus ${attempt}/3 odeslání e-mailu selhal: ${err.message}`);
+      if (attempt < 3) {
+        const wait = RETRY_DELAYS_MS[attempt - 1];
+        console.log(`${TAG} Čekám ${wait} ms před dalším pokusem…`);
+        await new Promise(r => setTimeout(r, wait));
+      }
+    }
+  }
+  if (mailErr) {
+    console.error(`${TAG} CHYBA odeslání e-mailu po 3 pokusech:`, mailErr.message);
+    await setSetting('last_backup_error', `${new Date().toISOString()} | SMTP (3× selhal): ${mailErr.message}`);
     throw mailErr;
   }
 
