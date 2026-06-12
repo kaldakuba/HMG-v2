@@ -1,0 +1,62 @@
+name: Tests (tier1 + tier2)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Jest tier1 + tier2 (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20']  # LTS, kompatibilní s package.json engines: >=18
+
+    # Ephemeral Postgres pro tier2 — žije jen po dobu jobu
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER:     postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB:       hmg_test
+        ports:
+          - 5432:5432
+        # Health-check: další kroky čekají, dokud Postgres skutečně neodpovídá
+        options: >-
+          --health-cmd="pg_isready -U postgres -d hmg_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      # === Testovací env (ŽÁDNÉ produkční hodnoty!) ===
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/hmg_test
+      # 64 hex znaků — testovací hodnota, do produkce se nedostane (CI-only)
+      SESSION_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      # NODE_ENV nechán prázdný → session cookie 'secure: false' → HTTP testy projdou
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        # npm ci respektuje package-lock.json; stahuje i xlsx tarball z cdn.sheetjs.com
+        # a kompiluje native bcrypt — to vše na ubuntu-latest projde out of the box.
+        run: npm ci
+
+      - name: Tier 1 (unit + integrační s mocky)
+        run: npm run test:tier1
+
+      - name: Tier 2 (HTTP + reálný Postgres)
+        run: npm run test:tier2
