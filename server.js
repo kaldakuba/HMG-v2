@@ -18,7 +18,7 @@ const helmet = require('helmet');
 const { parseVazenky } = require('./lib/vazenky-parser');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.40';
+const APP_VERSION = '3.42';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -2678,26 +2678,43 @@ async function buildVazenkyQuery(req) {
   const od     = (req.query.od     || '').trim();
   const doD    = (req.query.do     || '').trim();
 
+  // Parametr firma — admin-only. Pro ne-adminy se IGNORUJE (scope drží na vlastní firmu).
+  const firmaParam = (req.query.firma || '').trim();
+  // adminFirma se NIKDY nepoužije pro hmg_share/operatora — viz scope níže.
+  const adminFirma = (role === 'admin') ? firmaParam : '';
+
   const where = [];
   const params = [];
 
-  // SCOPE podle role (klient nemůže obejít) — VŽDY před uživatelskými filtry
+  // SCOPE podle role (klient nemůže obejít) — VŽDY před uživatelskými filtry.
+  // Pro hmg_share je scope zamčen na users.firma; req.query.firma je IGNOROVÁN.
   if (role === 'hmg_share') {
-    if (!firma) return { role, firma, stavba, od, doD, empty: true };
+    if (!firma) return { role, firma, stavba, od, doD, firma_filter: '', empty: true };
     params.push(firma);
     where.push(`firma_taxis = $${params.length}`);
   }
-  // admin: bez scopu — vidí vše vč. nepřiřazeného (firma_taxis IS NULL)
+  // admin: žádný scope-WHERE; volitelně přidá firma filtr níže.
+
+  // Admin-only filtr firmy: speciální „(nepřiřazeno)" → IS NULL, jinak rovnost.
+  if (adminFirma) {
+    if (adminFirma === '(nepřiřazeno)') {
+      where.push(`firma_taxis IS NULL`);
+    } else {
+      params.push(adminFirma);
+      where.push(`firma_taxis = $${params.length}`);
+    }
+  }
 
   if (stavba) { params.push(stavba); where.push(`stavba = $${params.length}`); }
   if (od)     { params.push(od);     where.push(`datum >= $${params.length}`); }
   if (doD)    { params.push(doD);    where.push(`datum <= $${params.length}`); }
 
   // Default: bez filtru = posledních 30 dní (jen na uživatelské datum, scope zůstává)
-  if (!stavba && !od && !doD) where.push(`datum >= CURRENT_DATE - INTERVAL '30 days'`);
+  if (!stavba && !od && !doD && !adminFirma) where.push(`datum >= CURRENT_DATE - INTERVAL '30 days'`);
 
   return {
     role, firma, stavba, od, doD,
+    firma_filter: adminFirma,    // co se reálně použilo (prázdné = bez filtru)
     empty:    false,
     whereSQL: where.length ? 'WHERE ' + where.join(' AND ') : '',
     params,
@@ -2731,18 +2748,40 @@ app.get('/api/vazenky', requireAuth, async (req, res) => {
       ORDER BY stavba ASC
     `;
 
-    const [data, stavby] = await Promise.all([
+    // Číselník firem — JEN pro admina (klient ho v UI stejně nepoužije)
+    const firmyQ = q.role === 'admin'
+      ? pool.query(`
+          SELECT firma_taxis, COUNT(*)::int AS n
+          FROM vazenky
+          GROUP BY firma_taxis
+          ORDER BY firma_taxis NULLS LAST
+        `)
+      : Promise.resolve({ rows: [] });
+
+    const [data, stavby, firmy] = await Promise.all([
       pool.query(dataQ,   q.params),
       pool.query(stavbyQ, scopeParams),
+      firmyQ,
     ]);
 
     const total = data.rows.reduce((s, r) => s + Number(r.tuny || 0), 0);
 
+    // Sestav admin číselník: distinct firma_taxis + "(nepřiřazeno)" pokud existuje NULL
+    let firmyList = [];
+    if (q.role === 'admin') {
+      firmyList = firmy.rows
+        .filter(r => r.firma_taxis !== null)
+        .map(r => r.firma_taxis);
+      if (firmy.rows.some(r => r.firma_taxis === null)) firmyList.push('(nepřiřazeno)');
+    }
+
     res.json({
-      role:       q.role,
-      rows:       data.rows,
-      stavby:     stavby.rows.map(r => r.stavba),
-      total_tuny: Math.round(total * 1000) / 1000,
+      role:         q.role,
+      rows:         data.rows,
+      stavby:       stavby.rows.map(r => r.stavba),
+      firmy:        firmyList,            // jen admin, jinak []
+      total_tuny:   Math.round(total * 1000) / 1000,
+      firma_filter: q.firma_filter,        // co server reálně použil (admin-only)
     });
   } catch (err) {
     console.error('GET /api/vazenky error:', err);
@@ -2883,31 +2922,74 @@ app.get('/api/vazenky/export', requireAuth, async (req, res) => {
 });
 
 
+// ── Sdílený zdroj „Potvrzené stavby" — používá /api/dashboard i /api/dashboard/export ──
+// Scope a SELECT MUSÍ být na jednom místě, ať se výpis a export nikdy nemohou rozejít.
+// Admin → vidí všechny firmy (vč. sloupce firma); klient (hmg_share) → jen řádky s ceta = users.firma.
+async function loadConfirmedForDashboard(req) {
+  const uRes = await pool.query('SELECT role, firma FROM users WHERE id=$1', [req.session.userId]);
+  const role  = (uRes.rows[0] && uRes.rows[0].role)  || req.session.role;
+  const firma = (uRes.rows[0] && uRes.rows[0].firma) || null;
+  const isAdmin = role === 'admin';
+
+  const dayVal  = `COALESCE(NULLIF(row_data->>('d' || offs.n::text), '')::numeric, 0)`;
+  const baseFROM = `
+    FROM week_data wd,
+         jsonb_array_elements(wd.rows_json::jsonb) AS row_data,
+         (VALUES (0),(1),(2),(3),(4),(5),(6)) AS offs(n)
+  `;
+  // SCOPE: klient dostane jen řádky se svou firmou (klient nemůže obejít — řešeno server-side)
+  const whereScope = isAdmin
+    ? `WHERE ${dayVal} > 0
+       AND (wd.week_start::date + (offs.n || ' days')::interval)::date >= CURRENT_DATE`
+    : `WHERE row_data->>'ceta' = $1
+       AND ${dayVal} > 0
+       AND (wd.week_start::date + (offs.n || ' days')::interval)::date >= CURRENT_DATE`;
+  const params = isAdmin ? [] : [firma || ''];
+
+  // Pole pro výpis — admin má navíc firmu (ceta)
+  const selectCols = isAdmin
+    ? `SELECT (wd.week_start::date + (offs.n || ' days')::interval)::date::text AS datum,
+              row_data->>'lokalita'   AS lokalita,
+              row_data->>'smes'       AS smes,
+              row_data->>'itt'        AS itt,
+              row_data->>'objednavka' AS komentar,
+              row_data->>'ceta'       AS firma,
+              ${dayVal}               AS tuny`
+    : `SELECT (wd.week_start::date + (offs.n || ' days')::interval)::date::text AS datum,
+              row_data->>'lokalita'   AS lokalita,
+              row_data->>'smes'       AS smes,
+              row_data->>'itt'        AS itt,
+              row_data->>'objednavka' AS komentar,
+              ${dayVal}               AS tuny`;
+
+  const [list, agg] = await Promise.all([
+    pool.query(`${selectCols} ${baseFROM} ${whereScope} ORDER BY datum ASC`, params),
+    pool.query(`SELECT COUNT(*) AS cnt, COALESCE(SUM(${dayVal}), 0) AS tons ${baseFROM} ${whereScope}`, params),
+  ]);
+  return {
+    role, firma,
+    confirmedList:  list.rows,
+    confirmedTons:  parseInt(agg.rows[0].tons, 10),
+    confirmedCount: parseInt(agg.rows[0].cnt,  10),
+  };
+}
+
 // ── Dashboard API ─────────────────────────────────────────────────────────────
 // Vrací agregovaná data pro /dashboard stránku.
 // role=admin → vidí objednávky všech firem; ostatní → jen svoji firmu.
 app.get('/api/dashboard', requireAuth, async (req, res) => {
   try {
-    const [uRes, oeRes] = await Promise.all([
-      pool.query('SELECT role, firma FROM users WHERE id=$1', [req.session.userId]),
+    const [confirmedData, oeRes] = await Promise.all([
+      loadConfirmedForDashboard(req),
       pool.query("SELECT value FROM settings WHERE key='orders_enabled'"),
     ]);
-    const role         = (uRes.rows[0] && uRes.rows[0].role)  || req.session.role;
-    const firma        = (uRes.rows[0] && uRes.rows[0].firma) || null;
+    const { role, firma, confirmedList, confirmedTons, confirmedCount } = confirmedData;
     const ordersEnabled = (oeRes.rows[0] ? oeRes.rows[0].value : 'true') === 'true';
 
-    // "Od dneška" = datum >= dnešní datum (UTC)
-    let pendingList, confirmedCount, confirmedList, recentOrders;
-
-    let confirmedTons;
-
-    // Helper: SQL výraz pro bezpečné čtení dne (prázdný string → 0)
-    const dayVal = `COALESCE(NULLIF(row_data->>('d' || offs.n::text), '')::numeric, 0)`;
+    let pendingList, recentOrders;
 
     if (role === 'admin') {
-      // Admin: vidí všechny firmy
-      const [pRes, cRes, clRes, rRes] = await Promise.all([
-        // pending — z orders (beze změny)
+      const [pRes, rRes] = await Promise.all([
         pool.query(
           `SELECT o.*, u.username
            FROM orders o
@@ -2915,33 +2997,6 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
            WHERE o.status IN ('pending','pre_approved','pre_rejected')
            ORDER BY o.created_at ASC`
         ),
-        // confirmed COUNT + SUM — z week_data
-        pool.query(
-          `SELECT COUNT(*) AS cnt,
-                  COALESCE(SUM(${dayVal}), 0) AS tons
-           FROM week_data wd,
-                jsonb_array_elements(wd.rows_json::jsonb) AS row_data,
-                (VALUES (0),(1),(2),(3),(4),(5),(6)) AS offs(n)
-           WHERE ${dayVal} > 0
-             AND (wd.week_start::date + (offs.n || ' days')::interval)::date >= CURRENT_DATE`
-        ),
-        // confirmed_list — z week_data, sloupec firma = ceta
-        pool.query(
-          `SELECT (wd.week_start::date + (offs.n || ' days')::interval)::date::text AS datum,
-                  row_data->>'lokalita'   AS lokalita,
-                  row_data->>'smes'       AS smes,
-                  row_data->>'itt'        AS itt,
-                  row_data->>'objednavka' AS komentar,
-                  row_data->>'ceta'       AS firma,
-                  ${dayVal}               AS tuny
-           FROM week_data wd,
-                jsonb_array_elements(wd.rows_json::jsonb) AS row_data,
-                (VALUES (0),(1),(2),(3),(4),(5),(6)) AS offs(n)
-           WHERE ${dayVal} > 0
-             AND (wd.week_start::date + (offs.n || ' days')::interval)::date >= CURRENT_DATE
-           ORDER BY datum ASC`
-        ),
-        // recent — z orders (beze změny)
         pool.query(
           `SELECT o.*, u.username
            FROM orders o
@@ -2949,62 +3004,24 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
            ORDER BY o.created_at DESC LIMIT 10`
         ),
       ]);
-      pendingList    = pRes.rows;
-      confirmedCount = parseInt(cRes.rows[0].cnt,  10);
-      confirmedTons  = parseInt(cRes.rows[0].tons, 10);
-      confirmedList  = clRes.rows;
-      recentOrders   = rRes.rows;
+      pendingList  = pRes.rows;
+      recentOrders = rRes.rows;
     } else {
-      // hmg_share / ostatní: scoped na firmu uživatele (ceta = firma)
       const firmaParam = firma || '';
-      const [pRes, cRes, clRes, rRes] = await Promise.all([
-        // pending — z orders (beze změny)
+      const [pRes, rRes] = await Promise.all([
         pool.query(
           `SELECT * FROM orders
            WHERE firma=$1 AND status IN ('pending','pre_approved','pre_rejected')
            ORDER BY created_at ASC`,
           [firmaParam]
         ),
-        // confirmed COUNT + SUM — z week_data filtrováno dle ceta
-        pool.query(
-          `SELECT COUNT(*) AS cnt,
-                  COALESCE(SUM(${dayVal}), 0) AS tons
-           FROM week_data wd,
-                jsonb_array_elements(wd.rows_json::jsonb) AS row_data,
-                (VALUES (0),(1),(2),(3),(4),(5),(6)) AS offs(n)
-           WHERE row_data->>'ceta' = $1
-             AND ${dayVal} > 0
-             AND (wd.week_start::date + (offs.n || ' days')::interval)::date >= CURRENT_DATE`,
-          [firmaParam]
-        ),
-        // confirmed_list — z week_data filtrováno dle ceta
-        pool.query(
-          `SELECT (wd.week_start::date + (offs.n || ' days')::interval)::date::text AS datum,
-                  row_data->>'lokalita'   AS lokalita,
-                  row_data->>'smes'       AS smes,
-                  row_data->>'itt'        AS itt,
-                  row_data->>'objednavka' AS komentar,
-                  ${dayVal}               AS tuny
-           FROM week_data wd,
-                jsonb_array_elements(wd.rows_json::jsonb) AS row_data,
-                (VALUES (0),(1),(2),(3),(4),(5),(6)) AS offs(n)
-           WHERE row_data->>'ceta' = $1
-             AND ${dayVal} > 0
-             AND (wd.week_start::date + (offs.n || ' days')::interval)::date >= CURRENT_DATE
-           ORDER BY datum ASC`,
-          [firmaParam]
-        ),
-        // recent — z orders (beze změny)
         pool.query(
           `SELECT * FROM orders WHERE firma=$1 ORDER BY created_at DESC LIMIT 10`,
           [firmaParam]
         ),
       ]);
-      pendingList    = pRes.rows;
-      confirmedCount = parseInt(cRes.rows[0].cnt,  10);
-      confirmedTons  = parseInt(cRes.rows[0].tons, 10);
-      confirmedList  = clRes.rows;
-      recentOrders   = rRes.rows;
+      pendingList  = pRes.rows;
+      recentOrders = rRes.rows;
     }
 
     res.json({
@@ -3021,6 +3038,125 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('GET /api/dashboard error:', err);
     res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+// ── Export „Potvrzené stavby" do Excelu — používá STEJNÝ loader jako výpis ──
+app.get('/api/dashboard/export', requireAuth, async (req, res) => {
+  try {
+    const { role, firma, confirmedList, confirmedTons } = await loadConfirmedForDashboard(req);
+    const isAdmin = role === 'admin';
+
+    // Seskupení lokalita → den → dodávky (identicky jako buildConfirmedView v dashboard.html)
+    const byL = new Map();
+    for (const o of confirmedList) {
+      const lok  = o.lokalita || '–';
+      const tuny = Number(o.tuny) || 0;
+      let node = byL.get(lok);
+      if (!node) { node = { firma: o.firma || '', total: 0, days: new Map() }; byL.set(lok, node); }
+      node.total += tuny;
+      let day = node.days.get(o.datum);
+      if (!day) { day = { sum: 0, items: [] }; node.days.set(o.datum, day); }
+      day.sum += tuny;
+      day.items.push({ smes: o.smes || '–', itt: o.itt || '', tuny });
+    }
+    // Řazení staveb dle nejmenšího data — stejně jako na obrazovce
+    const stavby = Array.from(byL.entries()).map(([lok, n]) => {
+      const dayKeys = Array.from(n.days.keys()).sort();
+      return { lok, firma: n.firma, total: n.total, dayKeys, days: n.days, first: dayKeys[0] || '' };
+    });
+    stavby.sort((a, b) => a.first.localeCompare(b.first));
+
+    // ExcelJS workbook
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'HMG TAXIS';
+    wb.created = new Date();
+    const ws = wb.addWorksheet('Potvrzené stavby');
+
+    // Šířky a numFmt
+    ws.getColumn(1).width = 42;   // popis (stavba / datum / směs)
+    ws.getColumn(2).width = 18;   // ITT (jen u dodávek)
+    ws.getColumn(3).width = 12;   // tuny
+
+    const WEEKDAY = ['ne','po','út','st','čt','pá','so'];
+    const fmtDateCs = iso => {
+      const d = new Date(iso + 'T00:00:00Z');
+      return `${WEEKDAY[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2,'0')}. ${String(d.getUTCMonth()+1).padStart(2,'0')}. ${d.getUTCFullYear()}`;
+    };
+
+    // Titulek
+    const scopeLabel = isAdmin ? 'Vše (admin)' : (firma || '(bez firmy)');
+    ws.mergeCells('A1:C1'); ws.getCell('A1').value = 'Potvrzené stavby — export';
+    ws.getCell('A1').font = { bold: true, size: 14 };
+    ws.mergeCells('A2:C2'); ws.getCell('A2').value = `Rozsah: ${scopeLabel}`;
+    ws.getCell('A2').font = { size: 10, color: { argb: 'FF475569' } };
+    ws.mergeCells('A3:C3'); ws.getCell('A3').value = `Vygenerováno: ${new Date().toLocaleString('cs-CZ')}`;
+    ws.getCell('A3').font = { size: 10, color: { argb: 'FF94A3B8' } };
+    ws.addRow([]); // prázdný řádek
+
+    // Pro každou stavbu blok
+    for (const s of stavby) {
+      // Řádek hlavičky stavby: lokalita | (firma admin) | "Celkem X t"
+      const headerLabel = isAdmin && s.firma
+        ? `Stavba: ${s.lok}    |    Firma: ${s.firma}`
+        : `Stavba: ${s.lok}`;
+      const hRow = ws.addRow([headerLabel, '', `Celkem ${s.total} t`]);
+      hRow.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+      hRow.eachCell(c => {
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+        c.border = { bottom: { style: 'thin', color: { argb: 'FF334155' } } };
+      });
+      hRow.getCell(3).alignment = { horizontal: 'right' };
+      hRow.height = 22;
+
+      // Dny chronologicky
+      for (const d of s.dayKeys) {
+        const day = s.days.get(d);
+        const dRow = ws.addRow([fmtDateCs(d), '', `${day.sum} t`]);
+        dRow.font = { bold: true, color: { argb: 'FF1E40AF' } };
+        dRow.eachCell(c => {
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
+        });
+        dRow.getCell(3).alignment = { horizontal: 'right' };
+        dRow.getCell(3).numFmt    = '#,##0.00" t"';
+
+        // Dodávky (Směs | ITT | Tuny)
+        for (const it of day.items) {
+          const iRow = ws.addRow([`    ${it.smes}`, it.itt, Number(it.tuny)]);
+          iRow.getCell(3).numFmt    = '#,##0.00';
+          iRow.getCell(3).alignment = { horizontal: 'right' };
+          iRow.getCell(2).font      = { color: { argb: 'FF64748B' }, size: 11 };
+        }
+      }
+      ws.addRow([]); // prázdný oddělovač mezi stavbami
+    }
+
+    // CELKOVÝ řádek (= souhrn v nadpisu na obrazovce)
+    const totalRow = ws.addRow(['CELKEM', '', `${confirmedTons} t`]);
+    totalRow.font = { bold: true, size: 12 };
+    totalRow.eachCell(c => {
+      c.border = { top: { style: 'medium', color: { argb: 'FF1E293B' } } };
+      c.fill   = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+    });
+    totalRow.getCell(3).alignment = { horizontal: 'right' };
+    totalRow.getCell(3).numFmt    = '#,##0.00" t"';
+
+    const buf = await wb.xlsx.writeBuffer();
+
+    // Název souboru: "Potvrzené stavby export DD-MM-RRRR.xlsx" (RFC 5987)
+    const sanitize = s => String(s || '').replace(/[\\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
+    const now = new Date();
+    const dateStr = `${String(now.getDate()).padStart(2,'0')}-${String(now.getMonth()+1).padStart(2,'0')}-${now.getFullYear()}`;
+    const fullName  = sanitize(`Potvrzené stavby export ${dateStr}.xlsx`);
+    const asciiName = sanitize(fullName.normalize('NFD').replace(/[̀-ͯ]/g, ''));
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(fullName)}`);
+    res.send(Buffer.from(buf));
+  } catch (err) {
+    console.error('GET /api/dashboard/export error:', err);
+    res.status(500).json({ error: 'Chyba serveru při generování exportu' });
   }
 });
 

@@ -200,6 +200,9 @@ h2.section-title{justify-content:space-between;flex-wrap:wrap}
             <span class="ss-value tons js-card-tons">–</span>
           </span>
         </h2>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+          <button type="button" class="vz-btn" style="background:#15803d" onclick="exportConfirmed()">Export do Excelu</button>
+        </div>
         <div id="confirmedWrap">
           <div class="empty-state card" id="confirmedEmpty">Žádné potvrzené stavby.</div>
           <div id="confirmedCards" style="display:none;flex-direction:column;gap:14px"></div>
@@ -243,6 +246,10 @@ h2.section-title{justify-content:space-between;flex-wrap:wrap}
           <div class="vz-field">
             <label for="vzStavba">Stavba</label>
             <select id="vzStavba"><option value="">— všechny —</option></select>
+          </div>
+          <div class="vz-field" id="vzFirmaWrap" style="display:none">
+            <label for="vzFirma">Firma</label>
+            <select id="vzFirma"><option value="">— všechny firmy —</option></select>
           </div>
           <div class="vz-field">
             <label for="vzOd">Od (datum)</label>
@@ -596,10 +603,12 @@ async function loadVazenky() {
   const stavba = document.getElementById('vzStavba').value;
   const od     = document.getElementById('vzOd').value;
   const doD    = document.getElementById('vzDo').value;
+  const firma  = document.getElementById('vzFirma').value;   // pouze admin to vidí
   const params = new URLSearchParams();
   if (stavba) params.set('stavba', stavba);
   if (od)     params.set('od', od);
   if (doD)    params.set('do', doD);
+  if (firma)  params.set('firma', firma);
   try {
     const r = await fetch('/api/vazenky?' + params.toString());
     if (!r.ok) { console.error('Vazenky load failed', r.status); return; }
@@ -607,6 +616,18 @@ async function loadVazenky() {
 
     _vzIsAdmin = data.role === 'admin';
     buildVzHeader(_vzIsAdmin);
+
+    // Viditelnost selectu Firma + jeho naplnění (jen admin)
+    const firmaWrap = document.getElementById('vzFirmaWrap');
+    firmaWrap.style.display = _vzIsAdmin ? '' : 'none';
+    if (_vzIsAdmin) {
+      const selF = document.getElementById('vzFirma');
+      if (selF.options.length <= 1 || !firma) {
+        const current = selF.value;
+        selF.innerHTML = '<option value="">— všechny firmy —</option>' +
+          (data.firmy || []).map(f => `<option value="${esc(f)}"${f===current?' selected':''}>${esc(f)}</option>`).join('');
+      }
+    }
 
     // Naplň <select> stavby (jen pokud je prázdný nebo se filtr zmenšil)
     const sel = document.getElementById('vzStavba');
@@ -652,7 +673,19 @@ function resetVazenkyFilters() {
   document.getElementById('vzStavba').value = '';
   document.getElementById('vzOd').value = '';
   document.getElementById('vzDo').value = '';
+  document.getElementById('vzFirma').value = '';   // klient ho stejně nevidí
   loadVazenky();
+}
+
+// Export „Potvrzené stavby" — stáhne .xlsx z /api/dashboard/export.
+// Scope (admin vs klient) řeší výhradně server.
+function exportConfirmed() {
+  const a = document.createElement('a');
+  a.href = '/api/dashboard/export';
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => a.remove(), 500);
 }
 
 // Export do .xlsx — odešle aktuální filtry na endpoint a stáhne soubor.
@@ -661,10 +694,12 @@ function exportVazenky() {
   const stavba = document.getElementById('vzStavba').value;
   const od     = document.getElementById('vzOd').value;
   const doD    = document.getElementById('vzDo').value;
+  const firma  = document.getElementById('vzFirma').value;   // admin-only; server ho pro ne-adminy ignoruje
   const params = new URLSearchParams();
   if (stavba) params.set('stavba', stavba);
   if (od)     params.set('od', od);
   if (doD)    params.set('do', doD);
+  if (firma)  params.set('firma', firma);
   // Necitlivý název → datum vygenerování
   const url = '/api/vazenky/export' + (params.toString() ? '?' + params.toString() : '');
   // Prosté navigování přes <a download> spustí stažení (browser respektuje Content-Disposition)
