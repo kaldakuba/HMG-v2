@@ -234,6 +234,27 @@ input:checked + .toggle-sl::before{transform:translateX(20px)}
           <div id="deleteMsg" style="margin-top:8px"></div>
         </div>
       </div>
+
+      <!-- Nahrát váženky z váhy (jen admin) -->
+      <div class="card" id="card-vazenky-upload" style="display:none">
+        <div class="card-head">
+          <div class="card-head-icon" style="background:#dbeafe"><i class="ti ti-truck-delivery" style="font-size:18px;color:#1e40af" aria-hidden="true"></i></div>
+          <div><div class="card-head h2">Nahrát váženky z váhy</div><div class="card-head sub">TSV (Windows-1250) nebo .xlsx — opakované nahrání nezdvojí stejnou váženku.</div></div>
+        </div>
+        <div class="card-body">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <input id="vzSettFile" type="file" accept=".tsv,.txt,.csv,.xlsx,.xls" style="display:none" onchange="vzSettOnFileChange(event)">
+            <button class="btn purple" onclick="document.getElementById('vzSettFile').click()" type="button">
+              <i class="ti ti-file-spreadsheet" style="font-size:13px" aria-hidden="true"></i> Vybrat soubor
+            </button>
+            <span id="vzSettFileName" style="font-size:13px;color:#475569">žádný soubor</span>
+            <button class="btn green" id="vzSettUploadBtn" onclick="vzSettUpload()" type="button" disabled>
+              <i class="ti ti-upload" style="font-size:13px" aria-hidden="true"></i> Nahrát
+            </button>
+          </div>
+          <div id="vzSettMsg" style="margin-top:10px;font-size:13px"></div>
+        </div>
+      </div>
     </div>
 
     <!-- ZÁLOHY -->
@@ -762,7 +783,51 @@ fetch('/api/me').then(r=>r.json()).then(d=>{
   buildNav(d.role, 'settings');
   const el=document.getElementById('footerUser');
   if(el&&d.username)el.textContent=d.username;
+  // Karta „Nahrát váženky z váhy" — jen admin (server endpoint navíc má requireAdmin)
+  if (d.role === 'admin') {
+    const c = document.getElementById('card-vazenky-upload');
+    if (c) c.style.display = '';
+  }
 }).catch(()=>{});
+
+// ── Upload váženek z váhy (Nastavení → Data) ──────────────────────────────
+function vzSettOnFileChange(ev) {
+  const f = ev.target.files && ev.target.files[0];
+  document.getElementById('vzSettFileName').textContent =
+    f ? f.name + ' (' + Math.round(f.size/1024) + ' kB)' : 'žádný soubor';
+  document.getElementById('vzSettUploadBtn').disabled = !f;
+}
+async function vzSettUpload() {
+  const fileInput = document.getElementById('vzSettFile');
+  const msg       = document.getElementById('vzSettMsg');
+  const f = fileInput.files && fileInput.files[0];
+  if (!f) return;
+  msg.style.color = '#475569';
+  msg.textContent = 'Nahrávám…';
+  const fd = new FormData();
+  fd.append('file', f);
+  try {
+    const r = await fetch('/api/vazenky/upload', { method:'POST', body: fd });
+    const d = await r.json();
+    if (!r.ok) {
+      msg.style.color = '#991b1b';
+      msg.textContent = '✗ ' + (d.error || ('Chyba ' + r.status));
+      return;
+    }
+    const s = d.summary;
+    msg.style.color = '#15803d';
+    msg.innerHTML =
+      `✓ Nahráno <strong>${d.inserted}</strong> nových váženek ` +
+      `(duplicity: ${d.duplicates}, přeskočeno: ${s.skipped_neprijem + s.skipped_storno + s.skipped_invalid}, ` +
+      `nepřiřazeno k firmě: ${s.unassigned}).`;
+    fileInput.value = '';
+    document.getElementById('vzSettFileName').textContent = 'žádný soubor';
+    document.getElementById('vzSettUploadBtn').disabled = true;
+  } catch (e) {
+    msg.style.color = '#991b1b';
+    msg.textContent = '✗ ' + e.message;
+  }
+}
 
 async function confirmDelete(type) {
   const label = type === 'weeks' ? 'vsechna data tydnu a mesicu' : 'vsechny receptury smesi';

@@ -15,9 +15,10 @@ const bcrypt = require('bcrypt');
 const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
 const helmet = require('helmet');
+const { parseVazenky } = require('./lib/vazenky-parser');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.30';
+const APP_VERSION = '3.40';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -217,6 +218,28 @@ async function initDb() {
 
     -- HMG V4 — vynucená změna hesla při prvním přihlášení
     ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false;
+
+    -- HMG V5 — vážní data (váženky z exportu váhy)
+    CREATE TABLE IF NOT EXISTS vazenky (
+      id              SERIAL PRIMARY KEY,
+      cislo_vazenky   TEXT NOT NULL UNIQUE,
+      datum           DATE NOT NULL,
+      cas             TEXT,
+      smes            TEXT,
+      itt             TEXT,
+      tuny            NUMERIC(10,3) NOT NULL,
+      spz             TEXT,
+      ridic           TEXT,
+      stavba          TEXT,
+      nazev_partnera  TEXT,
+      ico             TEXT,
+      firma_taxis     TEXT,
+      uploaded_at     TIMESTAMPTZ DEFAULT NOW(),
+      uploaded_by     INTEGER REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_vazenky_datum       ON vazenky(datum);
+    CREATE INDEX IF NOT EXISTS idx_vazenky_firma_taxis ON vazenky(firma_taxis);
+    CREATE INDEX IF NOT EXISTS idx_vazenky_stavba      ON vazenky(stavba);
 
     -- Migrace: rozšíření CHECK constraintu statusů (pre_approved, pre_rejected)
     DO $$
@@ -2602,6 +2625,261 @@ app.get('/api/backup/last', requireAuth, requireAdmin, async (req, res) => {
     last_error:   map.last_backup_error   || null,
     age_hours:    ageH,
   });
+});
+
+
+// ── Vážní data (váženky) — upload + výpis ───────────────────────────────────
+// Pomocná: načti firmy z TAXIS (companies)
+async function loadTaxisFirmy() {
+  const r = await pool.query('SELECT data_json FROM companies WHERE id=1');
+  if (!r.rows[0]) return [];
+  try { return (JSON.parse(r.rows[0].data_json) || []).map(c => c.name).filter(Boolean); }
+  catch { return []; }
+}
+
+// Upload: jen admin. Multer memoryStorage, max 10 MB.
+const vazenkyUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+app.post('/api/vazenky/upload', requireAuth, requireAdmin, vazenkyUpload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Chybí soubor' });
+  try {
+    const taxisFirmy = await loadTaxisFirmy();
+    const { rows, summary } = parseVazenky(req.file.buffer, req.file.originalname || 'upload', taxisFirmy);
+
+    // Idempotentní upsert: UNIQUE na cislo_vazenky → ON CONFLICT DO NOTHING
+    let inserted = 0, duplicates = 0;
+    for (const r of rows) {
+      const ins = await pool.query(
+        `INSERT INTO vazenky
+          (cislo_vazenky, datum, cas, smes, itt, tuny, spz, ridic, stavba,
+           nazev_partnera, ico, firma_taxis, uploaded_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         ON CONFLICT (cislo_vazenky) DO NOTHING`,
+        [r.cislo_vazenky, r.datum, r.cas, r.smes, r.itt, r.tuny, r.spz, r.ridic, r.stavba,
+         r.nazev_partnera, r.ico, r.firma_taxis, req.session.userId]
+      );
+      if (ins.rowCount === 1) inserted++; else duplicates++;
+    }
+    res.json({ ok: true, summary, inserted, duplicates });
+  } catch (err) {
+    console.error('POST /api/vazenky/upload error:', err);
+    res.status(500).json({ error: 'Chyba zpracování souboru: ' + err.message });
+  }
+});
+
+// ── Sdílený builder filtr+scope pro /api/vazenky a /api/vazenky/export ──────
+// Jediný zdroj pravdy: oba endpointy MUSÍ vidět stejné řádky pro stejné filtry.
+async function buildVazenkyQuery(req) {
+  const uRes = await pool.query('SELECT role, firma FROM users WHERE id=$1', [req.session.userId]);
+  const role  = (uRes.rows[0] && uRes.rows[0].role)  || req.session.role;
+  const firma = (uRes.rows[0] && uRes.rows[0].firma) || null;
+
+  const stavba = (req.query.stavba || '').trim();
+  const od     = (req.query.od     || '').trim();
+  const doD    = (req.query.do     || '').trim();
+
+  const where = [];
+  const params = [];
+
+  // SCOPE podle role (klient nemůže obejít) — VŽDY před uživatelskými filtry
+  if (role === 'hmg_share') {
+    if (!firma) return { role, firma, stavba, od, doD, empty: true };
+    params.push(firma);
+    where.push(`firma_taxis = $${params.length}`);
+  }
+  // admin: bez scopu — vidí vše vč. nepřiřazeného (firma_taxis IS NULL)
+
+  if (stavba) { params.push(stavba); where.push(`stavba = $${params.length}`); }
+  if (od)     { params.push(od);     where.push(`datum >= $${params.length}`); }
+  if (doD)    { params.push(doD);    where.push(`datum <= $${params.length}`); }
+
+  // Default: bez filtru = posledních 30 dní (jen na uživatelské datum, scope zůstává)
+  if (!stavba && !od && !doD) where.push(`datum >= CURRENT_DATE - INTERVAL '30 days'`);
+
+  return {
+    role, firma, stavba, od, doD,
+    empty:    false,
+    whereSQL: where.length ? 'WHERE ' + where.join(' AND ') : '',
+    params,
+  };
+}
+
+// Výpis: scoping podle role na SERVERU.
+// Filtry: ?stavba=&od=YYYY-MM-DD&do=YYYY-MM-DD (všechny volitelné, kombinují se AND).
+// Default (nic): posledních 30 dní.
+app.get('/api/vazenky', requireAuth, async (req, res) => {
+  try {
+    const q = await buildVazenkyQuery(req);
+    if (q.empty) return res.json({ role: q.role, rows: [], stavby: [], total_tuny: 0 });
+
+    const dataQ = `
+      SELECT cislo_vazenky, datum, cas, smes, itt, tuny, spz, ridic, stavba,
+             nazev_partnera, firma_taxis
+      FROM vazenky
+      ${q.whereSQL}
+      ORDER BY datum DESC, cas DESC
+      LIMIT 5000
+    `;
+    // Číselník stavby (pro select v UI) — bez datumového filtru, jen scope
+    const scopeWhere  = q.role === 'hmg_share' ? `WHERE firma_taxis = $1` : '';
+    const scopeParams = q.role === 'hmg_share' ? [q.firma] : [];
+    const stavbyQ = `
+      SELECT DISTINCT stavba
+      FROM vazenky
+      ${scopeWhere}
+      ${scopeWhere ? 'AND' : 'WHERE'} stavba IS NOT NULL AND stavba <> ''
+      ORDER BY stavba ASC
+    `;
+
+    const [data, stavby] = await Promise.all([
+      pool.query(dataQ,   q.params),
+      pool.query(stavbyQ, scopeParams),
+    ]);
+
+    const total = data.rows.reduce((s, r) => s + Number(r.tuny || 0), 0);
+
+    res.json({
+      role:       q.role,
+      rows:       data.rows,
+      stavby:     stavby.rows.map(r => r.stavba),
+      total_tuny: Math.round(total * 1000) / 1000,
+    });
+  } catch (err) {
+    console.error('GET /api/vazenky error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+// Export do .xlsx — používá STEJNÝ buildVazenkyQuery → stejný scope+filtr.
+app.get('/api/vazenky/export', requireAuth, async (req, res) => {
+  try {
+    const q = await buildVazenkyQuery(req);
+    const rowsRes = q.empty
+      ? { rows: [] }
+      : await pool.query(
+          `SELECT cislo_vazenky, firma_taxis, stavba, datum, cas, smes, itt, tuny, spz, ridic
+           FROM vazenky
+           ${q.whereSQL}
+           ORDER BY datum ASC, cas ASC
+           LIMIT 50000`,
+          q.params
+        );
+
+    const isAdmin = q.role === 'admin';
+
+    // Hlavička — „Číslo DL" je VŽDY první sloupec, pak (admin only) Firma, pak zbytek.
+    const headers = isAdmin
+      ? ['Číslo DL', 'Firma', 'Stavba', 'Datum', 'Čas', 'Směs', 'ITT', 'Tuny', 'SPZ', 'Jméno řidiče']
+      : ['Číslo DL',          'Stavba', 'Datum', 'Čas', 'Směs', 'ITT', 'Tuny', 'SPZ', 'Jméno řidiče'];
+    // Indexy klíčových sloupců (1-based pro ExcelJS):
+    const datumColIdx = isAdmin ? 4 : 3;   // posunuto o +1 (před nimi nově Číslo DL)
+    const tunyColIdx  = isAdmin ? 8 : 7;
+    const lastCol     = String.fromCharCode(64 + headers.length); // A,B,C…
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'HMG TAXIS';
+    wb.created = new Date();
+    const ws = wb.addWorksheet('Odebrané stavby', { views: [{ state: 'frozen', ySplit: 4 }] });
+
+    // Titulek (mergované přes celou šířku tabulky — dynamicky podle headers.length)
+    const scopeLabel  = isAdmin ? 'Vše (admin)' : (q.firma || '(bez firmy)');
+    const filtrLabel  =
+      `Stavba: ${q.stavba || '— všechny —'} · ` +
+      `Od: ${q.od || '—'} · Do: ${q.doD || '—'}` +
+      (!q.stavba && !q.od && !q.doD ? ' (default: posledních 30 dní)' : '');
+    ws.mergeCells(`A1:${lastCol}1`); ws.getCell('A1').value = 'Odebrané stavby — export';
+    ws.getCell('A1').font = { bold: true, size: 14 };
+    ws.mergeCells(`A2:${lastCol}2`); ws.getCell('A2').value = `Rozsah: ${scopeLabel}    |    ${filtrLabel}`;
+    ws.getCell('A2').font = { size: 10, color: { argb: 'FF475569' } };
+    ws.mergeCells(`A3:${lastCol}3`); ws.getCell('A3').value = `Vygenerováno: ${new Date().toLocaleString('cs-CZ')}`;
+    ws.getCell('A3').font = { size: 10, color: { argb: 'FF94A3B8' } };
+
+    // Hlavička — řádek 4
+    const headerRow = ws.addRow([]);  // pomocný; přepneme na řádek 4
+    headerRow.values = headers;
+    headerRow.eachCell(c => {
+      c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+      c.alignment = { vertical: 'middle', horizontal: 'left' };
+      c.border = { bottom: { style: 'thin', color: { argb: 'FF334155' } } };
+    });
+    headerRow.height = 22;
+
+    // Šířky (první = Číslo DL = 14)
+    const widths = isAdmin
+      ? [14, 16, 28, 12, 8, 22, 14, 10, 12, 22]
+      : [14,     28, 12, 8, 22, 14, 10, 12, 22];
+    widths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+    // „Číslo DL" jako text (Excel ho jinak může vyhodnotit jako číslo a uříznout nuly)
+    ws.getColumn(1).numFmt = '@';
+
+    // Datové řádky
+    let total = 0;
+    for (const r of rowsRes.rows) {
+      const cisloDL = String(r.cislo_vazenky || '');
+      const firmaCell = r.firma_taxis || '(nepřiřazeno)';
+      const dateObj = r.datum instanceof Date ? r.datum : new Date(String(r.datum) + 'T00:00:00Z');
+      const tuny = Number(r.tuny) || 0;
+      total += tuny;
+      const values = isAdmin
+        ? [cisloDL, firmaCell, r.stavba || '(neuvedeno)', dateObj, r.cas || '', r.smes || '', r.itt || '', tuny, r.spz || '', r.ridic || '']
+        : [cisloDL,            r.stavba || '(neuvedeno)', dateObj, r.cas || '', r.smes || '', r.itt || '', tuny, r.spz || '', r.ridic || ''];
+      const row = ws.addRow(values);
+      // Formátování data + tun
+      row.getCell(datumColIdx).numFmt = 'dd.mm.yyyy';
+      row.getCell(tunyColIdx).numFmt  = '#,##0.00';
+      row.getCell(tunyColIdx).alignment = { horizontal: 'right' };
+    }
+
+    // Součtový řádek: „Celkem" v sloupci o jeden vlevo od Tuny, suma v Tuny.
+    const sumValues = new Array(headers.length).fill('');
+    sumValues[tunyColIdx - 2] = 'Celkem';
+    sumValues[tunyColIdx - 1] = Math.round(total * 1000) / 1000;
+    const sumRow = ws.addRow(sumValues);
+    sumRow.font = { bold: true };
+    sumRow.eachCell(c => {
+      c.border = { top: { style: 'medium', color: { argb: 'FF1E293B' } } };
+      c.fill   = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+    });
+    sumRow.getCell(tunyColIdx).numFmt = '#,##0.00';
+    sumRow.getCell(tunyColIdx).alignment = { horizontal: 'right' };
+
+    // Auto-filtr na hlavičku
+    ws.autoFilter = `A4:${lastCol}4`;
+
+    const buf = await wb.xlsx.writeBuffer();
+
+    // ── Název souboru: "<stavba> export DD-MM-RRRR.xlsx" ────────────────────
+    // <stavba> = filtr stavby, fallback "Odebrané stavby", speciál "(neuvedeno)"→"neuvedeno"
+    const stavbaRaw = (q.stavba || '').trim();
+    let prettyStavba;
+    if (!stavbaRaw)                       prettyStavba = 'Odebrané stavby';
+    else if (stavbaRaw === '(neuvedeno)') prettyStavba = 'neuvedeno';
+    else                                  prettyStavba = stavbaRaw;
+    // Sanitizace: zakázané znaky v názvech souborů (\ / : * ? " < > |)
+    // a vícenásobné mezery slít do jedné. Diakritika zachována.
+    const sanitize = s => String(s || '').replace(/[\\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
+    prettyStavba = sanitize(prettyStavba);
+
+    const now = new Date();
+    const dd   = String(now.getDate()).padStart(2, '0');
+    const mm   = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    const dateStr = `${dd}-${mm}-${yyyy}`;
+
+    const fullName  = `${prettyStavba} export ${dateStr}.xlsx`;
+    // ASCII fallback (odstraň diakritiku) pro starší prohlížeče / proxy
+    const asciiName = sanitize(fullName.normalize('NFD').replace(/[̀-ͯ]/g, ''));
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    // RFC 5987: filename="..." (ASCII) + filename*=UTF-8''<percent-encoded> (plný název s diakritikou)
+    res.setHeader('Content-Disposition',
+      `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(fullName)}`);
+    res.send(Buffer.from(buf));
+  } catch (err) {
+    console.error('GET /api/vazenky/export error:', err);
+    res.status(500).json({ error: 'Chyba serveru při generování exportu' });
+  }
 });
 
 

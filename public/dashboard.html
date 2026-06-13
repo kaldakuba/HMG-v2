@@ -65,6 +65,71 @@ table.orders tr:hover td{background:#f0f9ff}
 
 /* ── Prázdný stav ── */
 .empty-state{padding:28px 20px;text-align:center;color:#94a3b8;font-size:14px;font-style:italic}
+/* ── Souhrn vpravo v nadpisu sekce ── */
+h2.section-title{justify-content:space-between;flex-wrap:wrap}
+.section-title-left{display:flex;align-items:center;gap:8px}
+.section-summary{display:flex;align-items:center;gap:14px;font-weight:600;text-transform:none;letter-spacing:.2px;color:#475569}
+.section-summary .ss-label{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.6px}
+.section-summary .ss-value{font-size:20px;font-weight:900;line-height:1}
+.section-summary .ss-value.count{color:#16a34a}
+.section-summary .ss-value.tons{color:#0f172a;font-size:18px;font-weight:800}
+.section-summary .ss-divider{display:inline-block;width:1px;height:22px;background:#cbd5e1}
+
+/* ── Záložka "Odebrané stavby" ── */
+.vz-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.vz-field{display:flex;flex-direction:column;gap:4px}
+.vz-field label{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px}
+.vz-field input,.vz-field select{height:34px;border:1px solid #cbd5e1;border-radius:6px;padding:0 10px;font-family:inherit;font-size:13px;color:#0f172a;background:#fff;min-width:160px}
+.vz-field input:focus,.vz-field select:focus{outline:2px solid #3b82f6;border-color:#3b82f6}
+.vz-btn{height:34px;background:#1e293b;color:#fff;border:none;border-radius:6px;padding:0 16px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.vz-btn:hover{background:#0f172a}
+.vz-btn.upload{background:#16a34a}
+.vz-btn.upload:hover{background:#15803d}
+.vz-upload-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:#fef9c3;border:1px solid #fde68a;border-radius:10px;padding:12px 16px;margin-bottom:14px}
+.vz-upload-row .vz-hint{font-size:12px;color:#854d0e}
+.vz-msg{font-size:13px;font-weight:600;margin-top:6px}
+.vz-msg.ok{color:#15803d}
+.vz-msg.err{color:#991b1b}
+.vz-table{width:100%;border-collapse:collapse;font-size:13px}
+.vz-table thead th{position:sticky;top:0;background:#f1f5f9;color:#475569;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;text-align:left;padding:10px 12px;border-bottom:1px solid #cbd5e1}
+.vz-table tbody td{padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#0f172a}
+.vz-table tbody tr:hover td{background:#f8fafc}
+.vz-table td.num{text-align:right;font-weight:700;white-space:nowrap}
+.vz-table .firma-unassigned{color:#991b1b;font-weight:600}
+/* ── Karty staveb (seskupené potvrzené) ── */
+.stavba-card{background:#fff;border:1px solid #a0aabb;border-radius:10px;overflow:hidden}
+.stavba-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;background:#f1f5f9;border-bottom:1px solid #e2e8f0}
+.stavba-name{font-size:16px;font-weight:800;color:#0f172a;letter-spacing:.3px}
+.stavba-sub{font-size:12px;font-weight:600;color:#64748b;margin-top:2px}
+.stavba-total{font-size:14px;font-weight:800;color:#16a34a;background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:6px 12px;white-space:nowrap}
+.stavba-body{padding:6px 18px 12px}
+.day-block{padding:10px 0;border-bottom:1px dashed #e2e8f0}
+.day-block:last-child{border-bottom:none}
+.day-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.day-date{font-size:13px;font-weight:700;color:#1e293b}
+.day-sum{font-size:12px;font-weight:700;color:#1e40af;background:#dbeafe;border-radius:6px;padding:2px 8px}
+.delivery-row{display:grid;grid-template-columns:1.6fr 1fr auto;gap:10px;padding:4px 0 4px 12px;font-size:13px;color:#334155;align-items:center}
+.delivery-row .dv-itt{color:#64748b;font-size:12px}
+.delivery-row .dv-tuny{font-weight:700;color:#0f172a;text-align:right;white-space:nowrap;min-width:55px}
+
+/* ── Dvousloupcový layout: levý sidebar + obsah ── */
+.dash-layout{display:grid;grid-template-columns:220px 1fr;gap:0;margin-top:18px;align-items:stretch;background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;min-height:60vh}
+.dash-sidebar{background:#f8fafc;border-right:1px solid #e5e7eb;display:flex;flex-direction:column;padding:14px 0}
+.dash-menu-item{background:transparent;border:none;border-left:3px solid transparent;border-radius:0;padding:11px 22px;text-align:left;font-family:inherit;font-size:13px;font-weight:500;color:#475569;cursor:pointer;transition:background .12s,color .12s,border-color .12s;display:block;width:100%;letter-spacing:.2px}
+.dash-menu-item:hover{background:#eef2f7;color:#0f172a}
+.dash-menu-item.active{background:#1e293b;color:#fff;border-left-color:#0f172a;font-weight:700;cursor:default}
+.dash-menu-item.active:hover{background:#1e293b}
+.dash-content{padding:18px 20px;min-width:0}
+.dash-content > .dash-tab{display:none}
+.dash-content > .dash-tab.active{display:block}
+.dash-content > .dash-tab > .section-title:first-child{margin-top:0}
+@media(max-width:768px){
+  .dash-layout{grid-template-columns:1fr;min-height:0}
+  .dash-sidebar{flex-direction:row;border-right:none;border-bottom:1px solid #e5e7eb;padding:0;overflow-x:auto}
+  .dash-menu-item{flex:1 0 auto;text-align:center;white-space:nowrap;border-left:none;border-bottom:3px solid transparent;padding:12px 18px}
+  .dash-menu-item.active{border-left:none;border-bottom-color:#0f172a}
+  .dash-content{padding:14px}
+}
 
 
 /* ── Loader ── */
@@ -108,79 +173,101 @@ table.orders tr:hover td{background:#f0f9ff}
     <span style="font-size:13px;color:#64748b">→ Přejít do měsíčního přehledu a vytvořit objednávku</span>
   </div>
 
-  <!-- ══ SEKCE 1: Summary karty (skryty na mobilu) ══════════════════════════ -->
-  <div class="summary-cards" id="summaryCards">
-    <div class="scard pending-card" id="cardPendingWrap">
-      <span class="label">Čekající objednávky</span>
-      <span class="value" id="cardPending">–</span>
-      <span class="sub">čekají na vyřízení</span>
-    </div>
-    <div class="scard confirmed-card">
-      <span class="label">Potvrzených objednávek</span>
-      <span class="value" id="cardConfirmed">–</span>
-      <span class="sub" id="cardConfirmedSub">staveb</span>
-    </div>
-    <div class="scard firma-card">
-      <span class="label">Potvrzených tun</span>
-      <span class="value" id="cardTons">–</span>
-      <span class="sub">schválených tun od dneška</span>
-    </div>
-    <div class="scard role-card">
-      <span class="label">Role</span>
-      <span class="value" id="cardRole">–</span>
-      <span class="sub">přístup</span>
-    </div>
-  </div>
+  <!-- ══ DVOUSLOUPCOVÝ LAYOUT: vlevo menu, vpravo obsah ═════════════════════ -->
+  <div class="dash-layout">
 
-  <!-- ══ SEKCE 2: Čekající objednávky ═══════════════════════════════════════ -->
-  <div id="pendingSection">
-  <h2 class="section-title">
-    ⏳ Čekající objednávky
-    <span class="count-badge" id="pendingBadge">0</span>
-  </h2>
-  <div class="card">
-    <div class="table-scroll" id="pendingWrap">
-      <div class="empty-state" id="pendingEmpty">Žádné čekající objednávky ✓</div>
-      <table class="orders" id="pendingTable" style="display:none">
-        <thead><tr><th>Datum</th><th>Lokalita</th><th>Směs</th><th>ITT</th><th>Tuny</th><th>Status</th><th>Objednávka</th></tr></thead>
-        <tbody id="pendingBody"></tbody>
-      </table>
-    </div>
-  </div>
-  </div>
+    <!-- Levé menu (záložky) -->
+    <aside class="dash-sidebar" role="navigation" aria-label="Záložky dashboardu">
+      <button type="button" class="dash-menu-item active" data-tab="byStavba">Potvrzené stavby</button>
+      <button type="button" class="dash-menu-item"        data-tab="bySmes">Rozdělení dle směsí</button>
+      <button type="button" class="dash-menu-item"        data-tab="odebrane">Odebrané stavby</button>
+    </aside>
 
-  <!-- ══ SEKCE 3: Potvrzené stavby ════════════════════════════════════════ -->
-  <h2 class="section-title">
-    ✅ Potvrzené stavby
-    <span class="count-badge" id="confirmedBadge">0</span>
-  </h2>
-  <div class="card">
-    <div class="table-scroll" id="confirmedWrap">
-      <div class="empty-state" id="confirmedEmpty">Žádné potvrzené stavby.</div>
-      <table class="orders" id="confirmedTable" style="display:none">
-        <thead><tr><th>Datum</th><th>Lokalita</th><th>Směs</th><th>ITT</th><th>Tuny</th><th>Status</th><th>Objednávka</th></tr></thead>
-        <tbody id="confirmedBody"></tbody>
-      </table>
-    </div>
-  </div>
+    <!-- Pravý obsah (záložky) -->
+    <div class="dash-content">
 
-  <!-- ══ SEKCE 4: Poslední aktivita ═════════════════════════════════════════ -->
-  <div id="recentSection">
-  <h2 class="section-title">
-    🕐 Poslední aktivita
-    <span class="count-badge" id="recentBadge">0</span>
-  </h2>
-  <div class="card">
-    <div class="table-scroll" id="recentWrap">
-      <div class="empty-state" id="recentEmpty">Žádné objednávky.</div>
-      <table class="orders" id="recentTable" style="display:none">
-        <thead>
-          <tr><th>Vytvořeno</th><th>Datum</th><th>Lokalita</th><th>Směs</th><th>ITT</th><th>Tuny</th><th>Status</th><th>Objednávka</th></tr>
-        </thead>
-        <tbody id="recentBody"></tbody>
-      </table>
+      <!-- Záložka 1: Potvrzené stavby (původní obsah z v3.31) -->
+      <section id="tab-byStavba" class="dash-tab active">
+        <h2 class="section-title">
+          <span class="section-title-left">
+            ✅ Potvrzené stavby
+            <span class="count-badge" id="confirmedBadge">0</span>
+          </span>
+          <span class="section-summary">
+            <span class="ss-label">Celkem potvrzených staveb</span>
+            <span class="ss-value count js-card-count">–</span>
+            <span class="ss-divider" aria-hidden="true"></span>
+            <span class="ss-value tons js-card-tons">–</span>
+          </span>
+        </h2>
+        <div id="confirmedWrap">
+          <div class="empty-state card" id="confirmedEmpty">Žádné potvrzené stavby.</div>
+          <div id="confirmedCards" style="display:none;flex-direction:column;gap:14px"></div>
+        </div>
+      </section>
+
+      <!-- Záložka 2: Rozdělení dle směsí -->
+      <section id="tab-bySmes" class="dash-tab">
+        <h2 class="section-title">
+          <span class="section-title-left">
+            📊 Rozdělení dle směsí
+            <span class="count-badge" id="bySmesBadge">0</span>
+          </span>
+          <span class="section-summary">
+            <span class="ss-label">Celkem potvrzených staveb</span>
+            <span class="ss-value count js-card-count">–</span>
+            <span class="ss-divider" aria-hidden="true"></span>
+            <span class="ss-value tons js-card-tons">–</span>
+          </span>
+        </h2>
+        <div id="bySmesWrap">
+          <div class="empty-state card" id="bySmesEmpty">Žádné potvrzené stavby.</div>
+          <div id="bySmesCards" style="display:none;flex-direction:column;gap:14px"></div>
+        </div>
+      </section>
+
+      <!-- Záložka 3: Odebrané stavby (vážní data) -->
+      <section id="tab-odebrane" class="dash-tab">
+        <h2 class="section-title">
+          <span class="section-title-left">Odebrané stavby</span>
+          <span class="section-summary">
+            <span class="ss-label">Počet váženek</span>
+            <span class="ss-value count" id="vzCount">–</span>
+            <span class="ss-divider" aria-hidden="true"></span>
+            <span class="ss-value tons" id="vzTotal">–</span>
+          </span>
+        </h2>
+
+        <!-- Filtry -->
+        <div class="vz-toolbar">
+          <div class="vz-field">
+            <label for="vzStavba">Stavba</label>
+            <select id="vzStavba"><option value="">— všechny —</option></select>
+          </div>
+          <div class="vz-field">
+            <label for="vzOd">Od (datum)</label>
+            <input type="date" id="vzOd">
+          </div>
+          <div class="vz-field">
+            <label for="vzDo">Do (datum)</label>
+            <input type="date" id="vzDo">
+          </div>
+          <button type="button" class="vz-btn" onclick="loadVazenky()">Filtrovat</button>
+          <button type="button" class="vz-btn" style="background:#64748b" onclick="resetVazenkyFilters()">Resetovat</button>
+          <button type="button" class="vz-btn" style="background:#15803d" onclick="exportVazenky()">Export do Excelu</button>
+        </div>
+
+        <div class="card" style="padding:0;overflow:auto;max-height:65vh">
+          <table class="vz-table" id="vzTable">
+            <thead><tr id="vzThead"></tr></thead>
+            <tbody id="vzBody"></tbody>
+          </table>
+          <div id="vzEmpty" class="empty-state" style="display:none">Žádné váženky pro vybrané filtry.</div>
+        </div>
+      </section>
+
     </div>
-  </div>
+
   </div>
 
 </div><!-- /wrap -->
@@ -231,6 +318,12 @@ function fmtDate(isoDate) {
   const d = new Date(isoDate + (isoDate.length === 10 ? 'T00:00:00Z' : ''));
   return d.toLocaleDateString('cs-CZ', { timeZone:'UTC', day:'2-digit', month:'2-digit', year:'numeric' });
 }
+// České zkratky názvů dnů. JS getUTCDay(): 0=ne, 1=po, ..., 6=so.
+function weekdayShortCs(isoDate) {
+  if (!isoDate) return '';
+  const d = new Date(isoDate + (isoDate.length === 10 ? 'T00:00:00Z' : ''));
+  return ['ne','po','út','st','čt','pá','so'][d.getUTCDay()] || '';
+}
 function fmtDateTime(iso) {
   if (!iso) return '–';
   const d = new Date(iso);
@@ -262,8 +355,126 @@ async function logout() {
   location.href = '/login.html';
 }
 
-// ── Admin hlavička (stejná pro všechny 3 tabulky) ──
-const ADMIN_THEAD = '<tr><th>Firma</th><th>Lokalita</th><th>Datum</th><th>Směs</th><th>ITT</th><th>Tuny</th><th>Status</th><th>Vytvořeno</th><th>Objednávka</th></tr>';
+// ── Sestavení seskupeného pohledu „Potvrzené stavby" ──
+// Vstup: pole dodávek { datum, lokalita, smes, itt, ceta/firma, tuny }.
+// Výstup: HTML — karty stavby (lokalita), uvnitř dny, uvnitř dodávky.
+// Jeden průchod listem; pak O(S log S) řazení staveb (S = počet staveb).
+function buildConfirmedView(list, isAdmin) {
+  const byL = new Map();  // lokalita -> { firma, total, days: Map<datum, {sum, items[]}> }
+  for (const o of list) {
+    const lok  = o.lokalita || '–';
+    const tuny = Number(o.tuny) || 0;
+    let node = byL.get(lok);
+    if (!node) { node = { firma: o.firma || o.ceta || '', total: 0, days: new Map() }; byL.set(lok, node); }
+    node.total += tuny;
+    let day = node.days.get(o.datum);
+    if (!day) { day = { sum: 0, items: [] }; node.days.set(o.datum, day); }
+    day.sum += tuny;
+    day.items.push({ smes: o.smes, itt: o.itt, tuny });
+  }
+
+  // Seřaď stavby podle nejmenšího data (chronologicky), dny v rámci stavby vzestupně
+  const arr = [];
+  for (const [lok, node] of byL) {
+    const dayKeys = Array.from(node.days.keys()).sort();   // ISO 'YYYY-MM-DD' lex == chrono
+    arr.push({ lok, firma: node.firma, total: node.total, dayKeys, days: node.days, first: dayKeys[0] || '' });
+  }
+  arr.sort((a, b) => a.first.localeCompare(b.first));
+
+  return arr.map(s => {
+    const daysHtml = s.dayKeys.map(d => {
+      const day = s.days.get(d);
+      const items = day.items.map(dv =>
+        `<div class="delivery-row">
+           <span class="dv-smes">${esc(dv.smes || '–')}</span>
+           <span class="dv-itt">${esc(dv.itt || '')}</span>
+           <span class="dv-tuny">${dv.tuny} t</span>
+         </div>`
+      ).join('');
+      return `<div class="day-block">
+        <div class="day-head">
+          <span class="day-date">${weekdayShortCs(d)} ${fmtDate(d)}</span>
+          <span class="day-sum">${day.sum} t</span>
+        </div>
+        ${items}
+      </div>`;
+    }).join('');
+
+    return `<div class="stavba-card">
+      <div class="stavba-head">
+        <div>
+          <div class="stavba-name">${esc(s.lok)}</div>
+          ${isAdmin && s.firma ? `<div class="stavba-sub">${esc(s.firma)}</div>` : ''}
+        </div>
+        <div class="stavba-total">Celkem ${s.total} t</div>
+      </div>
+      <div class="stavba-body">${daysHtml}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Sestavení záložky „Rozdělení dle směsí" ──
+// Vstup: stejné pole dodávek jako buildConfirmedView.
+// Výstup: HTML — karty stavby (lokalita), uvnitř ŘÁDKY SMĚSÍ s celkovou tonáží
+// (suma přes všechny dny). ITT u směsi se zobrazí jen pokud je v rámci stavby+směsi
+// jednotné (množina ITT velikosti 1). Jeden průchod listem.
+function buildConfirmedBySmes(list, isAdmin) {
+  // lokalita -> { firma, total, first (nejmenší datum pro řazení), smes: Map<smes, {tuny, itts:Set}> }
+  const byL = new Map();
+  for (const o of list) {
+    const lok  = o.lokalita || '–';
+    const tuny = Number(o.tuny) || 0;
+    let node = byL.get(lok);
+    if (!node) { node = { firma: o.firma || o.ceta || '', total: 0, first: '9999-99-99', smesMap: new Map() }; byL.set(lok, node); }
+    node.total += tuny;
+    if (o.datum && o.datum < node.first) node.first = o.datum;
+
+    const sm = o.smes || '–';
+    let sn = node.smesMap.get(sm);
+    if (!sn) { sn = { tuny: 0, itts: new Set() }; node.smesMap.set(sm, sn); }
+    sn.tuny += tuny;
+    if (o.itt) sn.itts.add(o.itt);
+  }
+
+  // Řazení staveb dle nejmenšího data (stejně jako buildConfirmedView)
+  const arr = Array.from(byL.entries()).map(([lok, n]) => ({ lok, ...n }));
+  arr.sort((a, b) => a.first.localeCompare(b.first));
+
+  return arr.map(s => {
+    // Směsi v rámci stavby seřaď dle tonáže sestupně (nejvíc nahoru)
+    const smesArr = Array.from(s.smesMap.entries()).sort((a, b) => b[1].tuny - a[1].tuny);
+    const rows = smesArr.map(([sm, sn]) => {
+      const itt = sn.itts.size === 1 ? Array.from(sn.itts)[0] : '';
+      return `<div class="delivery-row">
+        <span class="dv-smes">${esc(sm)}</span>
+        <span class="dv-itt">${esc(itt)}</span>
+        <span class="dv-tuny">${sn.tuny} t</span>
+      </div>`;
+    }).join('');
+
+    return `<div class="stavba-card">
+      <div class="stavba-head">
+        <div>
+          <div class="stavba-name">${esc(s.lok)}</div>
+          ${isAdmin && s.firma ? `<div class="stavba-sub">${esc(s.firma)}</div>` : ''}
+        </div>
+        <div class="stavba-total">Celkem ${s.total} t</div>
+      </div>
+      <div class="stavba-body" style="padding:10px 18px 12px">${rows}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Přepínání záložek (čistě klient) ──
+function switchTab(tabId) {
+  document.querySelectorAll('.dash-menu-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tabId));
+  document.querySelectorAll('.dash-content > .dash-tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + tabId));
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.dash-menu-item').forEach(b => {
+    b.addEventListener('click', () => switchTab(b.dataset.tab));
+  });
+});
 
 // ── Helper: obsah buňky Objednávka ──
 // Pokud komentar není prázdný → zobraz komentar.
@@ -279,140 +490,70 @@ function objednavkaTd(o, maxWidth) {
 }
 
 // ── Admin řádek (sekce 2, 3, 4 — stejná struktura) ──
-function adminRow(o) {
-  return `<tr>
-    <td>${esc(o.firma || '–')}</td>
-    <td>${esc(o.lokalita || '–')}</td>
-    <td>${fmtDate(o.datum)}</td>
-    <td>${esc(o.smes)}</td>
-    <td>${esc(o.itt)}</td>
-    <td style="text-align:right">${o.tuny}</td>
-    <td>${badgeHtml(o.status)}</td>
-    <td style="white-space:nowrap">${fmtDateTime(o.created_at)}</td>
-    ${objednavkaTd(o, '180px')}
-  </tr>`;
-}
-
-// ── hmg_share řádek — sekce 2 a 3 (pending / confirmed) ──
-function shareOrderRow(o) {
-  return `<tr>
-    <td>${fmtDate(o.datum)}</td>
-    <td>${esc(o.lokalita || '–')}</td>
-    <td>${esc(o.smes)}</td>
-    <td>${esc(o.itt)}</td>
-    <td style="text-align:right">${o.tuny}</td>
-    <td>${badgeHtml(o.status)}</td>
-    ${objednavkaTd(o)}
-  </tr>`;
-}
-
-// ── hmg_share řádek — sekce 4 (recent) ──
-function shareRecentRow(o) {
-  return `<tr>
-    <td>${fmtDateTime(o.created_at)}</td>
-    <td>${fmtDate(o.datum)}</td>
-    <td>${esc(o.lokalita || '–')}</td>
-    <td>${esc(o.smes)}</td>
-    <td>${esc(o.itt)}</td>
-    <td style="text-align:right">${o.tuny}</td>
-    <td>${badgeHtml(o.status)}</td>
-    ${objednavkaTd(o)}
-  </tr>`;
-}
-
 // ── Hlavní funkce: načti a vykresli ──
 async function loadDashboard() {
   const loader  = document.getElementById('loader');
   const content = document.getElementById('mainContent');
 
   try {
-    const res  = await fetch('/api/dashboard');
+    // /api/me — pro username v hlavičce (existující endpoint, stejný zdroj jako jiné stránky)
+    // /api/dashboard — data pro karty + záložky
+    const [meRes, res] = await Promise.all([
+      fetch('/api/me').catch(() => null),
+      fetch('/api/dashboard'),
+    ]);
     if (res.status === 401) { location.href = '/login.html'; return; }
     if (!res.ok) { showError('Chyba serveru (' + res.status + ')'); loader.style.display='none'; content.style.display='block'; return; }
     const data = await res.json();
+    const me   = (meRes && meRes.ok) ? await meRes.json() : {};
 
     const isAdmin = data.role === 'admin';
-    const firmaLabel = data.firma || '(nenastavena)';
-    const roleLabel  = data.role === 'admin' ? 'Administrátor' : data.role === 'hmg_share' ? 'Sdílený přístup' : data.role;
     const pageLabel  = isAdmin ? 'Dashboard' : 'Seznam staveb';
+    const username   = me.username || '';
 
-    // Název stránky — title tag i hlavička
+    // Název stránky — title tag i hlavička (+ uživatel za | jako na jiných stránkách)
     document.title = 'HARMONOGRAM VÝROBY – ' + pageLabel;
-    document.getElementById('userInfo').textContent = pageLabel;
+    document.getElementById('userInfo').textContent = pageLabel + (username ? ' | ' + username : '');
 
     // ── Navigace v topbaru ──
     buildNav(isAdmin ? 'admin' : 'hmg_share', 'dashboard');
 
-    // Summary karty
-    document.getElementById('cardPending').textContent   = data.pending;
-    document.getElementById('cardConfirmed').textContent = data.confirmed;
-    document.getElementById('cardTons').textContent      = (data.confirmed_tons ?? '–').toLocaleString('cs-CZ');
-    document.getElementById('cardRole').textContent      = roleLabel;
+    // Souhrn vpravo v nadpisu sekce (na OBOU záložkách — plněno přes třídy)
+    const confirmedList = data.confirmed_list || [];
+    const uniqStaveb    = new Set(confirmedList.map(o => o.lokalita || '–')).size;
+    const tonsFormatted = (data.confirmed_tons ?? 0).toLocaleString('cs-CZ') + ' t';
+    document.querySelectorAll('.js-card-count').forEach(el => el.textContent = uniqStaveb);
+    document.querySelectorAll('.js-card-tons').forEach(el => el.textContent = tonsFormatted);
 
-    // ── Admin: přepiš theady ve všech 3 tabulkách ──
-    if (isAdmin) {
-      document.querySelector('#pendingTable thead').innerHTML   = ADMIN_THEAD;
-      document.querySelector('#confirmedTable thead').innerHTML = ADMIN_THEAD;
-      document.querySelector('#recentTable thead').innerHTML    = ADMIN_THEAD;
+    // CTA bar „+ Nová objednávka" — skryj když je objednávkový systém vypnut
+    if (!data.orders_enabled) {
+      document.getElementById('ctaBar').style.display = 'none';
     }
 
-    // ── Sdílený přístup + orders_enabled = false → zobraz jen sekci 3 ──
-    if (!isAdmin && !data.orders_enabled) {
-      document.getElementById('ctaBar').style.display          = 'none';
-      document.getElementById('summaryCards').style.display    = 'none';
-      document.getElementById('pendingSection').style.display  = 'none';
-      document.getElementById('recentSection').style.display   = 'none';
-    }
-
-    // ── Admin + orders_enabled = false → skryj pending kartu, pending sekci a recent sekci ──
-    if (isAdmin && !data.orders_enabled) {
-      document.getElementById('cardPendingWrap').style.display = 'none';
-      document.getElementById('ctaBar').style.display          = 'none';
-      document.getElementById('pendingSection').style.display  = 'none';
-      document.getElementById('recentSection').style.display   = 'none';
-    }
-
-    // ── Sekce 2: Pending ──
-    const pendingBadge = document.getElementById('pendingBadge');
-    const pendingEmpty = document.getElementById('pendingEmpty');
-    const pendingTable = document.getElementById('pendingTable');
-    const pendingBody  = document.getElementById('pendingBody');
-
-    pendingBadge.textContent = data.pending_list.length;
-
-    if (data.pending_list.length > 0) {
-      pendingBody.innerHTML = data.pending_list.map(o => isAdmin ? adminRow(o) : shareOrderRow(o)).join('');
-      pendingEmpty.style.display = 'none';
-      pendingTable.style.display = 'table';
-    }
-
-    // ── Sekce 3: Potvrzené stavby od dneška ──
+    // ── Záložka 1: Požadované stavby (po stavbách → dnech → dodávkách) ──
     const confirmedBadge = document.getElementById('confirmedBadge');
     const confirmedEmpty = document.getElementById('confirmedEmpty');
-    const confirmedTable = document.getElementById('confirmedTable');
-    const confirmedBody  = document.getElementById('confirmedBody');
-    const confirmedList  = data.confirmed_list || [];
+    const confirmedCards = document.getElementById('confirmedCards');
 
-    confirmedBadge.textContent = confirmedList.length;
+    confirmedBadge.textContent = uniqStaveb;
 
     if (confirmedList.length > 0) {
-      confirmedBody.innerHTML = confirmedList.map(o => isAdmin ? adminRow(o) : shareOrderRow(o)).join('');
+      confirmedCards.innerHTML = buildConfirmedView(confirmedList, isAdmin);
       confirmedEmpty.style.display = 'none';
-      confirmedTable.style.display = 'table';
+      confirmedCards.style.display = 'flex';
     }
 
-    // ── Sekce 4: Recent ──
-    const recentBadge = document.getElementById('recentBadge');
-    const recentEmpty = document.getElementById('recentEmpty');
-    const recentTable = document.getElementById('recentTable');
-    const recentBody  = document.getElementById('recentBody');
+    // ── Záložka 2: Rozdělení dle směsí (po stavbách → směsích) ──
+    const bySmesBadge = document.getElementById('bySmesBadge');
+    const bySmesEmpty = document.getElementById('bySmesEmpty');
+    const bySmesCards = document.getElementById('bySmesCards');
 
-    recentBadge.textContent = data.recent.length;
+    bySmesBadge.textContent = uniqStaveb;
 
-    if (data.recent.length > 0) {
-      recentBody.innerHTML = data.recent.map(o => isAdmin ? adminRow(o) : shareRecentRow(o)).join('');
-      recentEmpty.style.display = 'none';
-      recentTable.style.display = 'table';
+    if (confirmedList.length > 0) {
+      bySmesCards.innerHTML = buildConfirmedBySmes(confirmedList, isAdmin);
+      bySmesEmpty.style.display = 'none';
+      bySmesCards.style.display = 'flex';
     }
 
     // Zobraz obsah
@@ -426,6 +567,126 @@ async function loadDashboard() {
     content.style.display = 'block';
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Záložka „Odebrané stavby" — vážní data
+// ──────────────────────────────────────────────────────────────────────────
+let _vzIsAdmin = false;
+
+function buildVzHeader(isAdmin) {
+  const thead = document.getElementById('vzThead');
+  const cols = isAdmin
+    ? ['Firma','Stavba','Datum','Čas','Směs','ITT','Tuny','SPZ','Jméno řidiče']
+    : ['Stavba','Datum','Čas','Směs','ITT','Tuny','SPZ','Jméno řidiče'];
+  thead.innerHTML = cols.map(c => `<th>${c}</th>`).join('');
+}
+
+function fmtDateCs(iso) {
+  if (!iso) return '–';
+  const d = new Date(iso.length === 10 ? iso + 'T00:00:00Z' : iso);
+  return d.toLocaleDateString('cs-CZ', { timeZone:'UTC', day:'2-digit', month:'2-digit', year:'numeric' });
+}
+function fmtCasShort(s) {
+  if (!s) return '–';
+  const m = String(s).match(/^(\d{1,2}:\d{2})/);
+  return m ? m[1] : String(s);
+}
+
+async function loadVazenky() {
+  const stavba = document.getElementById('vzStavba').value;
+  const od     = document.getElementById('vzOd').value;
+  const doD    = document.getElementById('vzDo').value;
+  const params = new URLSearchParams();
+  if (stavba) params.set('stavba', stavba);
+  if (od)     params.set('od', od);
+  if (doD)    params.set('do', doD);
+  try {
+    const r = await fetch('/api/vazenky?' + params.toString());
+    if (!r.ok) { console.error('Vazenky load failed', r.status); return; }
+    const data = await r.json();
+
+    _vzIsAdmin = data.role === 'admin';
+    buildVzHeader(_vzIsAdmin);
+
+    // Naplň <select> stavby (jen pokud je prázdný nebo se filtr zmenšil)
+    const sel = document.getElementById('vzStavba');
+    if (sel.options.length <= 1 || !stavba) {
+      const current = sel.value;
+      sel.innerHTML = '<option value="">— všechny —</option>' +
+        (data.stavby || []).map(s => `<option value="${esc(s)}"${s===current?' selected':''}>${esc(s)}</option>`).join('');
+    }
+
+    // Souhrn vpravo v nadpisu
+    document.getElementById('vzCount').textContent = data.rows.length;
+    document.getElementById('vzTotal').textContent = (data.total_tuny ?? 0).toLocaleString('cs-CZ') + ' t';
+
+    // Tabulka
+    const tbody = document.getElementById('vzBody');
+    const empty = document.getElementById('vzEmpty');
+    if (!data.rows.length) {
+      tbody.innerHTML = '';
+      empty.style.display = '';
+      return;
+    }
+    empty.style.display = 'none';
+    tbody.innerHTML = data.rows.map(r => {
+      const firmaCell = _vzIsAdmin
+        ? `<td class="${r.firma_taxis ? '' : 'firma-unassigned'}">${esc(r.firma_taxis || '(nepřiřazeno)')}</td>`
+        : '';
+      return `<tr>
+        ${firmaCell}
+        <td>${esc(r.stavba || '(neuvedeno)')}</td>
+        <td>${fmtDateCs(r.datum)}</td>
+        <td>${esc(fmtCasShort(r.cas))}</td>
+        <td>${esc(r.smes)}</td>
+        <td>${esc(r.itt)}</td>
+        <td class="num">${Number(r.tuny).toLocaleString('cs-CZ')} t</td>
+        <td>${esc(r.spz)}</td>
+        <td>${esc(r.ridic)}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { console.error('loadVazenky error:', e); }
+}
+
+function resetVazenkyFilters() {
+  document.getElementById('vzStavba').value = '';
+  document.getElementById('vzOd').value = '';
+  document.getElementById('vzDo').value = '';
+  loadVazenky();
+}
+
+// Export do .xlsx — odešle aktuální filtry na endpoint a stáhne soubor.
+// Scope (admin vs hmg_share) řeší výhradně server.
+function exportVazenky() {
+  const stavba = document.getElementById('vzStavba').value;
+  const od     = document.getElementById('vzOd').value;
+  const doD    = document.getElementById('vzDo').value;
+  const params = new URLSearchParams();
+  if (stavba) params.set('stavba', stavba);
+  if (od)     params.set('od', od);
+  if (doD)    params.set('do', doD);
+  // Necitlivý název → datum vygenerování
+  const url = '/api/vazenky/export' + (params.toString() ? '?' + params.toString() : '');
+  // Prosté navigování přes <a download> spustí stažení (browser respektuje Content-Disposition)
+  const a = document.createElement('a');
+  a.href = url;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => a.remove(), 500);
+}
+
+// Hook: spuštění při přepnutí na záložku „odebrane"
+const _origSwitchTab = switchTab;
+switchTab = function(tabId) {
+  _origSwitchTab(tabId);
+  if (tabId === 'odebrane') {
+    // Lazy-load při prvním přepnutí
+    if (!document.getElementById('vzBody').innerHTML && !document.getElementById('vzEmpty').style.display) {
+      loadVazenky();
+    }
+  }
+};
 
 // ── Verze v patičce ──
 fetch('/api/version').then(r=>r.json()).then(function(d){var v=document.getElementById('footerVersion');if(v&&d.version)v.textContent='TAXIS v'+d.version+' · 2026';}).catch(function(){});
