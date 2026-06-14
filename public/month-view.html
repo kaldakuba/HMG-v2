@@ -7,40 +7,54 @@
 <meta name="author" content="Jakub Kalousek">
 <meta name="copyright" content="Copyright 2026 Jakub Kalousek. All rights reserved.">
 <title>HARMONOGRAM VÝROBY – Přehled</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <!-- Leaflet – interaktivní mapa s přetahovatelným praporkem -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;-webkit-font-smoothing:antialiased;font-size:110%}
-.topbar{background:#1a1a2e;color:#fff;min-height:56px;padding:0 16px;display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center;position:sticky;top:0;z-index:100}
-.title-left{font-size:15px;font-weight:700;color:#c8d0e0;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.topbar h1{margin:0;text-align:center;font-size:22px;font-weight:800;letter-spacing:2px;color:#fff}
+.topbar{background:#fff;color:#1a1a1a;border-bottom:1px solid #ebebeb;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:100}
+.hdr-brand{display:flex;align-items:center;gap:12px;flex-shrink:0}
+.hdr-logo{font-size:16px;font-weight:700;color:#1a1a1a;letter-spacing:-0.02em}
+.hdr-sep{width:1px;height:22px;background:#ccc;display:inline-block}
+.hdr-sub{font-size:15px;color:#555;font-weight:500;white-space:nowrap}
+.hdr-nav{display:flex;align-items:center;gap:4px;justify-content:center;flex-wrap:wrap}
+.hdr-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.hdr-firma{font-size:11px;color:#2c5545;background:#e6f0ec;padding:3px 10px;border-radius:20px;font-weight:500;white-space:nowrap}
+.hdr-user{font-size:14px;color:#666;white-space:nowrap}
+.hdr-avatar{width:32px;height:32px;border-radius:50%;background:#f0f0f0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#555;flex-shrink:0}
 .actions{display:flex;justify-content:flex-end;gap:8px;align-items:center;flex-wrap:wrap}
 .btn{border-radius:6px;border:none;color:#fff;font-family:'Inter',sans-serif;font-weight:700;cursor:pointer;padding:7px 14px;font-size:13px;white-space:nowrap;transition:filter .15s}
 .btn:hover:not(:disabled){filter:brightness(1.12)}
 .btn:disabled{opacity:0.35;cursor:not-allowed}
-.btn.nav{color:rgba(255,255,255,0.65);background:transparent;border:0.5px solid transparent;padding:6px 14px;border-radius:6px}
-.btn.nav:hover{color:#fff!important;background:rgba(255,255,255,0.1);filter:none}
+.btn.nav{color:#555;background:transparent;border:none;padding:7px 13px;border-radius:6px;font-size:14px;font-weight:400}
+.btn.nav:hover{color:#444;background:#f5f5f5;filter:none}
 .btn.gray{background:#64748b}.btn.blue{background:#2563eb}.btn.export{background:#15803d}
 #monthTotal{font-weight:700;font-size:14px;color:#1e3a8a;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:4px 12px;white-space:nowrap;line-height:1}
 .ro-badge{display:inline-flex;align-items:center;gap:5px;background:#fee2e2;color:#991b1b;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700}
 .wrap{padding:10px 12px}
 .card{background:#fff;border:1px solid #a0aabb;border-radius:8px;overflow:hidden}
-.month-toolbar{display:flex;align-items:center;padding:10px 12px;border-bottom:1px solid #a0aabb;background:#fff;gap:10px}
+.month-toolbar{display:flex;align-items:center;padding:8px 24px;border-bottom:1px solid #ebebeb;background:#fafafa;gap:10px}
 .month-toolbar .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+.month-toolbar .btn.export{font-size:12px;color:#2c5545;background:#e6f0ec;border:1px solid #c5ddd3;padding:5px 14px;border-radius:5px;font-weight:600}
+.month-toolbar .btn.gray{font-size:12px;color:#888;background:#fff;border:1px solid #ddd;padding:5px 12px;border-radius:5px;font-weight:500}
+.month-toolbar .btn.blue{font-size:12px;color:#fff;background:#1a1a1a;border:1px solid #1a1a1a;padding:5px 12px;border-radius:5px;font-weight:500}
+#monthContext{font-size:14px;font-weight:600;color:#1a1a1a;white-space:nowrap;padding:0 4px}
 input[type=month]{height:34px;border:1px solid #a0aabb;border-radius:6px;padding:2px 10px;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;color:#374151;background:#f8fafc;cursor:pointer}
 input[type=month]:focus{outline:2px solid #3b82f6;border-color:#3b82f6}
+.cal-picker{height:34px;border:1px solid #a0aabb;border-radius:6px;padding:2px 10px;font-size:13px;font-weight:600;color:#374151;background:#f8fafc;display:inline-flex;align-items:center;gap:6px;cursor:pointer;line-height:1;font-family:'Inter',sans-serif;white-space:nowrap}
+.cal-picker:hover{filter:brightness(0.98)}
 .table-wrap{overflow:auto;background:#fff;max-height:calc(100vh - 290px);min-height:200px}
 table{border-collapse:collapse;table-layout:fixed;min-width:100px;width:max-content;font-size:13px}
 th,td{border:1px solid #a0aabb;height:28px;padding:2px 4px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151;letter-spacing:.2px}
+th{font-weight:500;background:#f5f5f2;font-size:12px;color:#888;letter-spacing:.2px;border-bottom:1px solid #e5e5e0}
 .col-lok{width:150px}.col-obj{width:150px}.col-smes{width:230px}.col-itt{width:100px}.col-ceta{width:110px}.day{width:60px}
-.sum-head{background:#dbeafe!important;font-weight:800;color:#1e3a8a!important}
-.blue{background:#eff6ff}.gray{background:#c8ccd4}
+.sum-head{background:#f5f5f2!important;font-weight:600;color:#1e3a8a!important}
+.blue{background:#fff}.gray{background:#fafaf8}
 .holiday{background:#f0fdf4!important;color:#15803d}
-.today-col{background:#fef9c3!important;color:#854d0e!important;font-weight:700}
+.today-col{background:#eef5ff!important;color:#2563eb!important;font-weight:600}
+td.today-col{background:#f0f7ff!important}
 .week-sep td{border-top:3px solid #1a1a2e!important}
 .sticky-head th{position:sticky;top:0;z-index:4}
 .sticky-head-2 th{position:sticky;top:28px;z-index:4}
@@ -56,8 +70,8 @@ th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151;letter-spacin
 .sticky-smes{position:sticky;left:150px;z-index:3}
 th.sticky-lok,th.sticky-smes{z-index:6!important}
 tr.row-hover td,td.col-hover{background:#fefce8!important}
-@media(max-width:900px){.topbar{display:flex;flex-direction:column;align-items:stretch;padding:10px;min-height:auto}.topbar h1{text-align:left;font-size:16px}.actions{justify-content:flex-start}.wrap{padding:6px}}
-.btn.nav.active{color:#fff!important;background:rgba(255,255,255,0.15)!important;border:0.5px solid rgba(255,255,255,0.2)!important;cursor:default;pointer-events:none}
+@media(max-width:900px){.topbar{padding:10px 12px}.wrap{padding:6px}}
+.btn.nav.active{color:#fff;background:#1a1a1a;font-weight:500;cursor:default;pointer-events:none}
 @media(max-width:768px){#navMenu{display:none!important}}
 /* Popup overlay */
 #orderPopupOverlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center;padding:16px}
@@ -73,14 +87,12 @@ tr.row-hover td,td.col-hover{background:#fefce8!important}
 </head>
 <body>
 <header class="topbar">
-  <div class="title-left">
-    <span id="pageTitle">Měsíční přehled</span>
-    <span id="viewerEmail" style="font-size:11px;color:#94a3b8;"></span>
-    <span class="ro-badge">&#128274; pouze čtení</span>
-  </div>
-  <h1>HARMONOGRAM VÝROBY</h1>
-  <div class="actions">
-    <div id="navMenu"></div>
+  <div class="hdr-brand"><span class="hdr-sub">Harmonogram výroby</span></div>
+  <nav class="hdr-nav" id="navMenu"></nav>
+  <div class="hdr-right">
+    <span class="hdr-firma" id="hdrFirma" style="display:none"></span>
+    <span class="hdr-user" id="viewerEmail"></span>
+    <span class="hdr-avatar" id="hdrAvatar"></span>
   </div>
 </header>
 <main class="wrap"><section class="card">
@@ -91,20 +103,13 @@ tr.row-hover td,td.col-hover{background:#fefce8!important}
       <button id="btnPrev" class="btn gray" onclick="shiftMonth(-1)">‹ Předchozí</button>
       <button class="btn blue" onclick="thisMonth()">Tento měsíc</button>
       <button class="btn gray" onclick="shiftMonth(1)">Další ›</button>
-      <input id="monthPick" type="month" onchange="onMonthChange()">
+      <span style="position:relative;display:inline-flex">
+        <button class="cal-picker" id="monthCalBtn" type="button" onclick="openMonthPicker()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg><span id="monthCalLabel"></span></button>
+        <input id="monthPick" type="month" onchange="onMonthChange()" style="position:absolute;left:0;bottom:0;width:100%;height:0;opacity:0;pointer-events:none;border:0;padding:0;margin:0">
+      </span>
     </div>
   </div>
   <div class="table-wrap" id="tableWrap"></div>
-  <div class="legend">
-    <span><i class="box" style="background:#eff6ff"></i> všední den</span>
-    <span><i class="box" style="background:#c8ccd4"></i> víkend</span>
-    <span><i class="box" style="background:#f0fdf4;border-color:#86efac"></i> svátek ČR</span>
-    <span><i class="box" style="background:#fef9c3;border-color:#fde68a"></i> dnes</span>
-    <span><i class="box" style="background:#fff;border-color:#374151"></i> chybí objednávka</span>
-    <span><i class="box" style="border:2px dashed #f59e0b;background:#fffbeb"></i> čeká na schválení</span>
-    <span><i class="box" style="background:#fee2e2;border-color:#fca5a5"></i> překročen MAX</span>
-    <span><i class="box" style="background:#fef9c3;border-color:#fde68a"></i> pod MIN</span>
-  </div>
   <div class="note">Zobrazují se pouze dnešní a budoucí dny. Data se aktualizují v reálném čase.</div>
 </section></main>
 
@@ -113,6 +118,7 @@ tr.row-hover td,td.col-hover{background:#fefce8!important}
 let _maxDaily = 1500, _minDaily = 0, _accessOk = false;
 let _ordersEnabled = true; // přepínač objednávkového systému (načteno ze settings)
 let _meRole = '', _meFirma = '', _meUsername = '';
+let _meOrdersAllowed = false; // per-user povolení objednávek (jen hmg_share)
 let _receptury = [], _orders = [], _entries = {};
 let _orderRowCount = 0;
 let _mapyCzKey = '', _mapTempCoords = null;
@@ -188,11 +194,14 @@ async function checkAccess() {
       _meRole = me.role;
       _meUsername = me.username || '';
       _meFirma = me.firma || '';
+      _meOrdersAllowed = !!me.orders_allowed;
       const emailEl = document.getElementById('viewerEmail');
       if (emailEl && me.username) emailEl.textContent = me.username;
+      const ha = document.getElementById('hdrAvatar');
+      if (ha && me.username) ha.textContent = me.username.trim().charAt(0).toUpperCase();
       if (me.role === 'hmg_share') {
-        const badge = document.querySelector('.ro-badge');
-        if (badge) { badge.style.background='#ede9fe'; badge.style.color='#5b21b6'; badge.innerHTML='🏢 ' + esc(_meFirma || 'firma'); }
+        const badge = document.getElementById('hdrFirma');
+        if (badge) { badge.textContent = _meFirma || 'firma'; badge.style.display=''; }
         // Tlačítko "Nová objednávka" se NEZOBRAZUJE zde – až po načtení settings (viz inicializace)
         // _meFirma je uložena, zobrazení rozhodne Promise.all().then() po ověření orders_enabled
       }
@@ -215,6 +224,8 @@ async function checkAccess() {
     }
     const emailEl = document.getElementById('viewerEmail');
     if (emailEl && d.email) emailEl.textContent = d.email;
+    const ha2 = document.getElementById('hdrAvatar');
+    if (ha2 && d.email) ha2.textContent = d.email.trim().charAt(0).toUpperCase();
   } catch(e) {}
   _accessOk = true;
   return true;
@@ -358,7 +369,7 @@ async function renderMonth(){
   const val=monthPick.value||defaultMonth();
   const[yy,mm]=val.split('-');
   const y=parseInt(yy),m=parseInt(mm)-1;
-  pageTitle.textContent='Měsíční přehled | '+monthName(m)+' / '+y;
+  const _ml=document.getElementById('monthCalLabel');if(_ml)_ml.textContent=monthName(m).toLowerCase()+' '+y;
   const today=todayIso();
   const[ty,tm]=today.split('-').map(Number);
   const totalDays=new Date(y,m+1,0).getDate();
@@ -537,6 +548,11 @@ function onMonthChange(){
   const val=monthPick.value||defaultMonth();
   if(val<defaultMonth()){monthPick.value=defaultMonth();}
   loadOrders().then(()=>renderMonth());
+}
+function openMonthPicker(){
+  const i=document.getElementById('monthPick');
+  if(!i)return;
+  try{ i.showPicker(); }catch(e){ i.focus(); try{ i.click(); }catch(_){} }
 }
 function shiftMonth(delta){
   const val=monthPick.value||defaultMonth();
@@ -1212,6 +1228,9 @@ monthPick.value = localStorage.getItem('hmg_view_month') || defaultMonth();
 checkAccess().then(ok => {
   if (ok) {
     Promise.all([loadSettings(), loadReceptury(), loadMapyCzKey()]).then(() => {
+      // Per-user gating: hmg_share bez orders_allowed vidí aplikaci jako při vypnutém systému.
+      // Globální orders_enabled=false má vždy přednost (už je v _ordersEnabled zohledněno).
+      if (_meRole === 'hmg_share' && !_meOrdersAllowed) _ordersEnabled = false;
       // Tlačítko "Nová objednávka": zobrazit JEDINĚ pokud orders_enabled=true AND hmg_share AND má firmu
       // Výchozí stav je display:none (v HTML) – nikdy "zobrazit a pak schovat", vždy "až po ověření"
       const btnNew = document.getElementById('btnNewOrder');

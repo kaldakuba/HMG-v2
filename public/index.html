@@ -6,36 +6,51 @@
 <meta name="author" content="Jakub Kalousek">
 <meta name="copyright" content="Copyright 2026 Jakub Kalousek. All rights reserved.">
 <title>HARMONOGRAM VÝROBY</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/order-approval.js"></script>
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-size:100%}
-.topbar{background:#1a1a2e;color:#fff;min-height:56px;padding:0 16px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;position:sticky;top:0;z-index:100}
-.topbar h1{margin:0;text-align:center;font-size:22px;font-weight:800;letter-spacing:2px;color:#fff}
-.top-left{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:#c8d0e0}
+.topbar{background:#fff;color:#1a1a1a;border-bottom:1px solid #ebebeb;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;position:sticky;top:0;z-index:100}
+.hdr-brand{display:flex;align-items:center;gap:12px;flex-shrink:0}
+.hdr-logo{font-size:16px;font-weight:700;color:#1a1a1a;letter-spacing:-0.02em}
+.hdr-sep{width:1px;height:22px;background:#ccc;display:inline-block}
+.hdr-sub{font-size:15px;color:#555;font-weight:500;white-space:nowrap}
+.hdr-nav{display:flex;align-items:center;gap:4px;justify-content:center;flex-wrap:wrap}
+.hdr-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.hdr-firma{font-size:11px;color:#2c5545;background:#e6f0ec;padding:3px 10px;border-radius:20px;font-weight:500;white-space:nowrap}
+.hdr-user{font-size:14px;color:#666;white-space:nowrap}
+.hdr-avatar{width:32px;height:32px;border-radius:50%;background:#f0f0f0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#555;flex-shrink:0}
+.hdr-right .actions:empty{display:none}
 .actions,.weeknav,.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .btn{border-radius:6px;border:none;color:#fff;text-decoration:none;font-family:'Inter',sans-serif;font-weight:700;cursor:pointer;padding:7px 14px;font-size:13px;white-space:nowrap;transition:filter .15s}
 .btn:hover{filter:brightness(1.1)}
-.btn.nav{color:rgba(255,255,255,0.65);background:transparent;border:0.5px solid transparent;padding:6px 14px;border-radius:6px}
-.btn.nav:hover{color:#fff!important;background:rgba(255,255,255,0.1);filter:none}
-.btn.nav.active{color:#fff!important;background:rgba(255,255,255,0.15)!important;border:0.5px solid rgba(255,255,255,0.2)!important;cursor:default;pointer-events:none}
+.btn.nav{color:#555;background:transparent;border:none;padding:7px 13px;border-radius:6px;font-size:14px;font-weight:400}
+.btn.nav:hover{color:#444;background:#f5f5f5;filter:none}
+.btn.nav.active{color:#fff;background:#1a1a1a;font-weight:500;cursor:default;pointer-events:none}
 .btn.month{background:#2563eb}.btn.inputs{background:#7c3aed}.btn.green{background:#16a34a}.btn.red{background:#dc2626}.btn.gray{background:#64748b}.btn.blue{background:#2563eb}.btn.orange,.btn.top-orange{background:#ea580c}.btn.export{background:#15803d}
 .wrap{padding:10px 12px}
 .card{background:#fff;border:1px solid #a0aabb;border-radius:8px;overflow:hidden}
-.weekbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid #a0aabb;background:#fff}
+.weekbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 24px;border-bottom:1px solid #ebebeb;background:#fafafa}
+.weekbar .btn.export{font-size:12px;color:#2c5545;background:#e6f0ec;border:1px solid #c5ddd3;padding:5px 14px;border-radius:5px;font-weight:600}
+.weekbar .weeknav .btn{font-size:12px;color:#888;background:#fff;border:1px solid #ddd;padding:5px 12px;border-radius:5px;font-weight:500}
+.weekbar .weeknav .btn.blue{background:#1a1a1a;color:#fff;border-color:#1a1a1a;font-weight:500}
+.weekbar #weekContext{font-size:14px;font-weight:600;color:#1a1a1a;white-space:nowrap;padding:0 4px}
+#calToggleBtn{height:34px;border:1px solid #a0aabb;border-radius:6px;padding:2px 10px;font-size:13px;font-weight:600;color:#374151;background:#f8fafc;display:inline-flex;align-items:center;gap:6px;line-height:1}
 .table-wrap{overflow-x:auto;overflow-y:visible;background:#fff;width:100%}
 table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:13px}
 th,td{border:1px solid #a0aabb;height:34px;padding:1px 4px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;font-weight:500}
-th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151;letter-spacing:.2px;height:36px;border-color:#8892a4}
+th{font-weight:500;background:#f5f5f2;font-size:12px;color:#888;letter-spacing:.2px;height:36px;border-color:#8892a4;border-bottom:1px solid #e5e5e0}
 .cap-label{text-align:left;font-weight:700;padding-left:10px;font-size:12px;color:#6b7280}
 .cap-value{background:#fef9c3!important;font-weight:800;font-size:13px;color:#854d0e!important;border-color:#c8a84b!important}
 .sum-label{text-align:right;font-weight:700;font-size:12px;color:#6b7280;padding-right:6px}
 .sum-head{background:#dbeafe!important;font-weight:800;font-size:13px;color:#1e3a8a!important}
 .sel{width:3%}.num{width:3%}.lok{width:8%}.obj{width:9%}.smes{width:13%}.itt{width:9%}.ceta{width:7%}.day{width:5%}.souhrn{width:6%}
-.blue-day{background:#eff6ff}.gray-day{background:#f3f4f6}
-.row-total{font-weight:800;font-size:13px;background:#f5f7fa!important;color:#111!important}
-.hours-row td{background:#f1f5f9!important;font-weight:700;height:32px;font-size:12px;color:#475569!important;border-top:2px solid #cbd5e1!important}
+.blue-day{background:#fff}.gray-day{background:#fafaf8}
+.today-col{background:#eef5ff!important}
+td.today-col{background:#f0f7ff!important}
+.row-total{font-weight:600;font-size:13px;background:#f5f5f2!important;color:#111!important}
+.hours-row td{background:#f5f5f2!important;font-weight:600;height:32px;font-size:12px;color:#475569!important;border-top:2px solid #e0e0dc!important}
 .editable,.select-cell{width:100%;height:28px;border:0;background:transparent;text-align:center;font-family:'Inter',sans-serif;font-size:13px;font-weight:500;color:#111}
 .editable:focus,.select-cell:focus{outline:2px solid #3b82f6;background:#eff6ff;border-radius:3px}
 .select-cell{cursor:pointer}
@@ -88,12 +103,20 @@ input[type=checkbox]:checked::after{content:"";position:absolute;left:4px;top:1p
    ═══════════════════════════════════════════════════ */
 /* Topbar - kompaktní, jen název týdne + navigace */
 body.mobile-ro .topbar{
-  display:flex;flex-direction:row;align-items:center;
-  padding:0 5px;min-height:26px;height:26px;gap:3px;
+  display:flex;flex-direction:row;align-items:center;flex-wrap:nowrap;
+  padding:6px 10px;min-height:auto;height:auto;gap:8px;
+  background:#fff;border-bottom:1px solid #ebebeb;overflow-x:auto;
 }
-body.mobile-ro .topbar h1{font-size:9px;font-weight:700;letter-spacing:.1px;white-space:nowrap;margin:0;flex:1;text-align:center}
-body.mobile-ro .top-left{font-size:8px;color:#94a3b8;white-space:nowrap;overflow:hidden;max-width:90px;text-overflow:ellipsis;flex-shrink:0}
-body.mobile-ro #topWeekTitle{font-size:8px!important;font-weight:600!important}
+body.mobile-ro .hdr-logo{font-size:15px;font-weight:700;flex-shrink:0}
+body.mobile-ro .hdr-sep{height:18px}
+body.mobile-ro .m-weeknav{display:flex;align-items:center;gap:4px;flex-shrink:0}
+body.mobile-ro .m-arrow{font-size:15px;padding:7px 16px;border-radius:6px;border:1px solid #ddd;background:#fff;color:#555;cursor:pointer;line-height:1;font-family:'Inter',sans-serif}
+body.mobile-ro .m-today{font-size:13px;padding:7px 12px;border-radius:6px;border:1px solid #1a1a1a;background:#1a1a1a;color:#fff;cursor:pointer;font-weight:500;white-space:nowrap;font-family:'Inter',sans-serif}
+body.mobile-ro .m-weekinfo{display:flex;flex-direction:column;line-height:1.15;flex-shrink:0}
+body.mobile-ro #mWeekNum{font-size:14px;font-weight:700;color:#1a1a1a;white-space:nowrap}
+body.mobile-ro #mWeekRange{font-size:12px;color:#999;white-space:nowrap}
+body.mobile-ro .hdr-right{margin-left:auto;gap:6px;flex-shrink:0}
+body.mobile-ro .weekbar{display:none!important}
 /* Skrýt vše nepotřebné v topbaru */
 body.mobile-ro .actions{display:none!important}
 /* Weekbar - jen navigace šipkami, nic jiného */
@@ -121,9 +144,9 @@ body.mobile-ro .row-total{font-size:10px}
 body.mobile-ro .hours-row td{height:18px;font-size:9px}
 /* Landscape: výška < 500px */
 @media(max-height:500px){
-  body.mobile-ro .topbar{height:22px;min-height:22px}
-  body.mobile-ro .topbar h1{font-size:8px}
-  body.mobile-ro .top-left{display:none}
+  body.mobile-ro .topbar{height:auto;min-height:auto;padding:4px 8px}
+  body.mobile-ro .m-arrow{padding:5px 12px}
+  body.mobile-ro .m-today{padding:5px 10px}
   body.mobile-ro .wrap{padding:0}
   body.mobile-ro .weekbar{padding:2px 3px}
   body.mobile-ro table{font-size:9px}
@@ -134,9 +157,9 @@ body.mobile-ro .hours-row td{height:18px;font-size:9px}
 </style></head>
 <body>
 <div class="saving-indicator" id="savingIndicator">Ukládám...</div>
-<header class="topbar"><div class="top-left"><span id="topWeekTitle" style="font-size:18px;font-weight:700;">Kalendářní týden</span><span id="topUsername" style="font-size:11px;color:#94a3b8;margin-left:8px"></span><span id="topFirmaBadge" style="display:none;font-size:11px;background:#ede9fe;color:#5b21b6;border-radius:4px;padding:2px 8px;margin-left:6px;font-weight:600"></span></div><h1 id="mainTitle">HARMONOGRAM VÝROBY</h1><div class="actions"><div id="navMenu"></div></div></header>
+<header class="topbar"><div class="hdr-brand"><span class="hdr-sub">Harmonogram výroby</span></div><nav class="hdr-nav" id="navMenu"></nav><div class="hdr-right"><div class="actions"></div><span class="hdr-firma" id="hdrFirma" style="display:none"></span><span class="hdr-user" id="hdrUser"></span><span class="hdr-avatar" id="hdrAvatar"></span></div></header>
 <main class="wrap"><section class="card">
-<div class="weekbar"><div style="display:flex;align-items:center;gap:8px;"><span id="weekTitle" style="display:none"></span><button class="btn export" onclick="exportWeeks()">Export dat</button></div><div class="weeknav"><button class="btn gray" style="min-width:130px;" onclick="shiftWeek(-1)">‹ Předchozí týden</button><button class="btn blue" id="currentWeekBtn" style="min-width:140px;line-height:1.3" onclick="currentWeek()">Aktuální týden</button><button class="btn gray" style="min-width:130px;" onclick="shiftWeek(1)">Další týden ›</button><div style="position:relative;display:inline-block;"><button class="btn gray" onclick="toggleMiniCal()" id="calToggleBtn">📅 Kalendář</button><div id="miniCal" style="display:none;position:absolute;right:0;top:38px;z-index:9999;background:#fff;border:1px solid #d1d5db;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,.12);padding:14px;width:300px;font-family:'Inter',sans-serif;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><button onclick="shiftMiniCal(-1)" style="border:none;background:none;cursor:pointer;font-size:20px;font-weight:900;color:#374151;line-height:1;">‹</button><span id="miniCalHeader" style="font-weight:700;font-size:14px;color:#111;"></span><button onclick="shiftMiniCal(1)" style="border:none;background:none;cursor:pointer;font-size:20px;font-weight:900;color:#374151;line-height:1;">›</button></div><div id="miniCalGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center;"><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Po</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Út</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">St</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Čt</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Pá</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">So</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Ne</div></div></div></div></div></div>
+<div class="weekbar"><div style="display:flex;align-items:center;gap:8px;"><span id="weekTitle" style="display:none"></span><button class="btn export" onclick="exportWeeks()">Export dat</button></div><div class="weeknav"><button class="btn gray" onclick="shiftWeek(-1)">‹ Předchozí</button><button class="btn blue" id="currentWeekBtn" onclick="currentWeek()">Tento týden</button><button class="btn gray" onclick="shiftWeek(1)">Další ›</button><div style="position:relative;display:inline-block;"><button class="btn gray" onclick="toggleMiniCal()" id="calToggleBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg><span id="calWeekLabel">Kalendář</span></button><div id="miniCal" style="display:none;position:absolute;right:0;top:38px;z-index:9999;background:#fff;border:1px solid #d1d5db;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,.12);padding:14px;width:300px;font-family:'Inter',sans-serif;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><button onclick="shiftMiniCal(-1)" style="border:none;background:none;cursor:pointer;font-size:20px;font-weight:900;color:#374151;line-height:1;">‹</button><span id="miniCalHeader" style="font-weight:700;font-size:14px;color:#111;"></span><button onclick="shiftMiniCal(1)" style="border:none;background:none;cursor:pointer;font-size:20px;font-weight:900;color:#374151;line-height:1;">›</button></div><div id="miniCalGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center;"><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Po</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Út</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">St</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Čt</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Pá</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">So</div><div style="font-size:11px;color:#9ca3af;font-weight:700;padding:3px;">Ne</div></div></div></div></div></div>
 <div class="table-wrap"><table id="weekTable" class="sel-hidden"><colgroup><col class="num"><col class="lok"><col class="obj"><col class="smes"><col class="itt"><col class="ceta"><col class="day"><col class="day"><col class="day"><col class="day"><col class="day"><col class="day"><col class="day"><col class="souhrn"><col class="sel"></colgroup><thead id="thead"></thead><tbody id="tbody"></tbody><tfoot id="tfoot"></tfoot></table></div>
 <div class="controls"><input id="plantRate" type="number" step="1" value="150" style="display:none" onchange="setPlantRate(this.value);render()"><div style="margin-right:auto;display:flex;gap:8px;"><button class="btn top-orange" onclick="togglePanel('materialsPanel')">Spotřeba materiálu</button><button class="btn top-orange" onclick="togglePanel('mixesPanel')">Seznam směsí</button></div><button class="btn green" onclick="addRow()">Přidat nový řádek</button><button class="btn gray" onclick="toggleSelMode()" id="selModeBtn">Označit</button><button class="btn gray move-btn" id="moveUpBtn" onclick="moveCheckedUp()" title="Přesunout označený řádek nahoru" style="display:none">▲</button><button class="btn gray move-btn" id="moveDownBtn" onclick="moveCheckedDown()" title="Přesunout označený řádek dolů" style="display:none">▼</button><button class="btn red delete-btn" onclick="deleteCheckedRows()" style="display:none">Smazat vybrané řádky</button><button class="btn gray" onclick="undoLast()">Zpět</button><span id="selectedInfo" style="display:none"></span></div>
 <div id="panelsRow" style="display:none;gap:16px;align-items:flex-start;flex-wrap:wrap;padding:12px;"><div id="materialsPanel" style="display:none"><h2 style="font-size:14px;font-weight:700;margin:0 0 8px">Spotřeba materiálu</h2><div class="panel-wrap" id="materialsArea"></div></div><div id="mixesPanel" style="display:none"><h2 style="font-size:14px;font-weight:700;margin:0 0 8px">Seznam směsí</h2><div class="panel-wrap" id="mixesArea"></div></div>
@@ -198,7 +221,7 @@ function fmtTitleRange(start){const a=new Date(start),b=new Date(start);b.setDat
 function updateWeekNavBtn(){
   const btn=document.getElementById('currentWeekBtn');if(!btn)return;
   // Na desktopu vždy původní popis, číslo týdne + rozsah dat jen na mobilu
-  if(!IS_MOBILE){btn.innerHTML='Aktuální týden';return;}
+  if(!IS_MOBILE){btn.innerHTML='Tento týden';return;}
   const week=isoWeek(new Date(_weekStart));
   const range=fmtTitleRange(_weekStart);
   const isCurrent=(_weekStart===defaultMonday());
@@ -260,14 +283,14 @@ async function saveRows(){
 function renderHead(){
   const start=_weekStart;const rows=_rows||[];const dates=dayKeys.map((_,i)=>isoDateFromStart(start,i));
   const week=isoWeek(new Date(start));
-  const twt=document.getElementById('topWeekTitle');if(twt)twt.textContent='Kalendářní týden č. '+week+' | '+fmtTitleRange(start);
   updateWeekNavBtn();
+  const _cl=document.getElementById('calWeekLabel');if(_cl)_cl.textContent=week+'. týden';
   const _ds=k=>daySum(rows,k)+(_weekOrderDaySums[k]||0);
   const total=dayKeys.reduce((s,k)=>s+_ds(k),0);
   const maxDaily=parseInt(_settings.hmg_max_daily||'1000');
   const minDaily=parseInt(_settings.hmg_min_daily||'0')||0;
   const cap=_settings.hmg_gas_capacity||'10 000';
-  thead.innerHTML=`<tr><th class="cap-label" colspan="2">Denní kapacita plynu:</th><th class="cap-value">${cap} m3</th><th></th><th class="sum-label" colspan="2">Součet t/den:</th>${dayKeys.map(k=>{const _v=_ds(k);const _oM=_v>maxDaily;const _uM=_v>0&&minDaily>0&&_v<minDaily;return`<th class="sum-head" style="${_oM?'background:#fee2e2!important;color:#991b1b!important;':_uM?'background:#fef9c3!important;color:#92400e!important;':''}">  ${fmtNum(_v)}</th>`;}).join('')}<th class="sum-head">${fmtNum(total)}</th><th class="sel-col"></th></tr><tr style='height:38px'><th>č.</th><th>lokalita</th><th>objednávka</th><th>Směs a průkazná zk. typu</th><th>ITT</th><th>četa</th>${dates.map((d,i)=>`<th class="${i>=5?'gray-day':'blue-day'}" style="${i>=5?'color:#6b7280':'color:#1d4ed8'}">${fmtShort(d)}</th>`).join('')}<th>souhrn</th><th class='sel-col'>✓</th></tr>`;
+  thead.innerHTML=`<tr><th class="cap-label" colspan="2">Denní kapacita plynu:</th><th class="cap-value">${cap} m3</th><th></th><th class="sum-label" colspan="2">Součet t/den:</th>${dayKeys.map(k=>{const _v=_ds(k);const _oM=_v>maxDaily;const _uM=_v>0&&minDaily>0&&_v<minDaily;return`<th class="sum-head" style="${_oM?'background:#fee2e2!important;color:#991b1b!important;':_uM?'background:#fef9c3!important;color:#92400e!important;':''}">  ${fmtNum(_v)}</th>`;}).join('')}<th class="sum-head">${fmtNum(total)}</th><th class="sel-col"></th></tr><tr style='height:38px'><th>č.</th><th>lokalita</th><th>objednávka</th><th>Směs a průkazná zk. typu</th><th>ITT</th><th>četa</th>${dates.map((d,i)=>{const isT=d===localIso(new Date());const cls=isT?'today-col':(i>=5?'gray-day':'blue-day');const col=isT?'#2563eb':(i>=5?'#ccc':'#555');return `<th class="${cls}" style="color:${col}">${fmtShort(d)}</th>`;}).join('')}<th>souhrn</th><th class='sel-col'>✓</th></tr>`;
 }
 
 function selectOptions(values,current){return `<option value=""></option>${values.map(v=>`<option value="${esc(v)}" ${String(v)===String(current||'')?'selected':''}>${esc(v)}</option>`).join('')}`}
@@ -309,7 +332,7 @@ function render(){
   rows.forEach((r,i)=>{
     const color=companyColor(r.ceta);
     html+=`<tr class="${r.checked?'row-checked':''}" style="${color?'background:'+color:''}"><td style="background:#f8fafc;font-weight:800;font-size:13px"><select class="select-cell" style="font-weight:800" onchange="updateMixSelect(${i},'cislo',this.value)">${selectOptions(nums,r.cislo)}</select></td><td style="position:relative"><input class="editable" style="padding-right:20px" value="${esc(r.lokalita||'')}" onchange="updateCell(${i},'lokalita',this.value)"><button class="gps-btn${r.lat?' has-gps':''}" type="button" onclick="openMapPopup(${i},event)" title="${r.lat?'GPS: '+Number(r.lat).toFixed(4)+', '+Number(r.lng).toFixed(4):'Nastavit GPS'}">📍</button></td><td><input class="editable" value="${esc(r.objednavka||'')}" onchange="updateCell(${i},'objednavka',this.value)"></td><td><select class="select-cell" onchange="updateMixSelect(${i},'smes',this.value)">${selectOptions(smesi,r.smes)}</select></td><td><select class="select-cell" onchange="updateMixSelect(${i},'itt',this.value)">${selectOptions(itts,r.itt)}</select></td><td><select class="select-cell" onchange="updateCell(${i},'ceta',this.value)"><option value=""></option>${_companies.map(c=>`<option value="${esc(c.name)}" ${c.name===(r.ceta||'')?'selected':''}>${esc(c.name)}</option>`).join('')}</select></td>`;
-    dayKeys.forEach((k,di)=>{const dv=r[k]?fmtNum(n(r[k])||0)||"":"";html+=`<td class="${di>=5?'gray-day':'blue-day'}"><input class="day-input" inputmode="numeric" value="${esc(dv)}" onfocus="this.value=String(n(this.value.replace(/ /g,''))||this.value)" onchange="updateCell(${i},'${k}',this.value,false,true)"></td>`;});
+    dayKeys.forEach((k,di)=>{const dv=r[k]?fmtNum(n(r[k])||0)||"":"";const _isT=isoDateFromStart(_weekStart,di)===localIso(new Date());html+=`<td class="${_isT?'today-col':(di>=5?'gray-day':'blue-day')}"><input class="day-input" inputmode="numeric" value="${esc(dv)}" onfocus="this.value=String(n(this.value.replace(/ /g,''))||this.value)" onchange="updateCell(${i},'${k}',this.value,false,true)"></td>`;});
     html+=`<td class="row-total">${fmtNum(rowSum(r))}</td><td class="sel-col" style="background:#f8fafc"><input type="checkbox" ${r.checked?'checked':''} onchange="updateCheck(${i},this.checked)"></td></tr>`;
   });
   tbody.innerHTML=html+orderHtml;renderFoot(rows);renderPanels();updateSelectedInfo();
@@ -464,7 +487,7 @@ let _miniCalY=new Date().getFullYear(),_miniCalM=new Date().getMonth();
 const _mcMonths=['Leden','Únor','Březen','Duben','Květen','Červen','Červenec','Srpen','Září','Říjen','Listopad','Prosinec'];
 function getMondayStr(d){const x=new Date(d);x.setDate(d.getDate()-((d.getDay()||7)-1));return localIso(x);}
 function toggleMiniCal(){const c=document.getElementById('miniCal');if(c.style.display==='none'){const now=new Date();_miniCalY=now.getFullYear();_miniCalM=now.getMonth();c.style.display='block';renderMiniCal();}else{c.style.display='none';}}
-document.addEventListener('click',function(e){const cal=document.getElementById('miniCal');const btn=document.getElementById('calToggleBtn');if(cal&&cal.style.display!=='none'&&!cal.contains(e.target)&&e.target!==btn){cal.style.display='none';}});
+document.addEventListener('click',function(e){const cal=document.getElementById('miniCal');const btn=document.getElementById('calToggleBtn');if(cal&&cal.style.display!=='none'&&!cal.contains(e.target)&&!(btn&&btn.contains(e.target))){cal.style.display='none';}});
 function shiftMiniCal(d){_miniCalM+=d;if(_miniCalM>11){_miniCalM=0;_miniCalY++;}if(_miniCalM<0){_miniCalM=11;_miniCalY--;}renderMiniCal();}
 function renderMiniCal(){
   document.getElementById('miniCalHeader').textContent=_mcMonths[_miniCalM]+' '+_miniCalY;
@@ -492,11 +515,35 @@ function renderMiniCal(){
 const IS_MOBILE = window.innerWidth <= 900;
 if(IS_MOBILE) document.body.classList.add('mobile-ro');
 
+// Kompaktní jednořádkový header pro mobil (hmg_share — pouze týdenní pohled)
+function buildMobileHeader(){
+  const tb=document.querySelector('.topbar');
+  if(!tb)return;
+  tb.innerHTML=
+    '<span class="hdr-logo">TAXIS</span>'+
+    '<span class="hdr-sep"></span>'+
+    '<div class="m-weeknav"><button class="m-arrow" onclick="shiftWeek(-1)">‹</button>'+
+    '<button class="m-today" onclick="currentWeek()">Tento týden</button>'+
+    '<button class="m-arrow" onclick="shiftWeek(1)">›</button></div>'+
+    '<div class="m-weekinfo"><span id="mWeekNum"></span><span id="mWeekRange"></span></div>'+
+    '<div class="hdr-right"><span class="hdr-firma" id="hdrFirma" style="display:none"></span><span class="hdr-avatar" id="hdrAvatar"></span></div>';
+}
+async function loadMobileUser(){
+  try{
+    const me=await fetch('/api/me').then(r=>r.json());
+    _role=me.role||'';
+    const ha=document.getElementById('hdrAvatar');
+    if(ha&&me.username)ha.textContent=me.username.trim().charAt(0).toUpperCase();
+    if(me.firma){const f=document.getElementById('hdrFirma');if(f){f.textContent=me.firma;f.style.display='';}}
+  }catch(e){}
+}
+if(IS_MOBILE) buildMobileHeader();
+
 function renderMobileHead(){
   const start=_weekStart;const rows=_rows||[];const dates=dayKeys.map((_,i)=>isoDateFromStart(start,i));
   const week=isoWeek(new Date(start));
-  const twt=document.getElementById('topWeekTitle');if(twt)twt.textContent='KT '+week+' | '+fmtTitleRange(start);
-  updateWeekNavBtn();
+  const mn=document.getElementById('mWeekNum');if(mn)mn.textContent=week+'. týden';
+  const mr=document.getElementById('mWeekRange');if(mr)mr.textContent=fmtTitleRange(start);
   const total=dayKeys.reduce((s,k)=>s+daySum(rows,k),0);
   const maxDaily=parseInt(_settings.hmg_max_daily||'1000');
   const minDaily=parseInt(_settings.hmg_min_daily||'0')||0;
@@ -689,12 +736,14 @@ async function checkOperatorRole() {
     const me = await fetch('/api/me').then(r=>r.json());
     const role = me.role;
     _role = role;
-    // Zobraz username (a případně firmu) v hlavičce vlevo
-    const topUser = document.getElementById('topUsername');
-    if (topUser && me.username) topUser.textContent = '| ' + me.username;
+    // Zobraz username + avatar (a případně firmu) v hlavičce vpravo
+    const hu = document.getElementById('hdrUser');
+    if (hu && me.username) hu.textContent = me.username;
+    const ha = document.getElementById('hdrAvatar');
+    if (ha && me.username) ha.textContent = me.username.trim().charAt(0).toUpperCase();
     if (me.firma) {
-      const badge = document.getElementById('topFirmaBadge');
-      if (badge) { badge.textContent = '🏢 ' + me.firma; badge.style.display = ''; }
+      const badge = document.getElementById('hdrFirma');
+      if (badge) { badge.textContent = me.firma; badge.style.display = ''; }
     }
     // Navigace
     buildNav(role, 'weekly');
@@ -733,6 +782,7 @@ async function init(){
   await loadWeek(_weekStart);
   // Zjisti roli (před renderem, aby order řádky věděly zda admin)
   if(!IS_MOBILE) await checkOperatorRole();
+  else await loadMobileUser();
   if(IS_MOBILE) renderMobile(); else render();
   // Objednávky — jen admin, desktop, jen když je systém zapnut
   if(!IS_MOBILE && _role==='admin' && typeof OA!=='undefined' && _ordersEnabled){
@@ -761,7 +811,8 @@ async function init(){
   }
 }
 init();
-fetch('/api/me').then(r=>r.json()).then(d=>{if(d.role==='hmg_share')window.location.replace('/month');}).catch(()=>{});
+// Desktop: hmg_share přesměruj na měsíční přehled. Na mobilu hmg_share zůstává na týdenním pohledu.
+fetch('/api/me').then(r=>r.json()).then(d=>{if(!IS_MOBILE && d.role==='hmg_share')window.location.replace('/month');}).catch(()=>{});
 async function doLogout(){await fetch('/api/logout',{method:'POST'}).catch(()=>{});window.location.href='/login';}
 </script>
 <div style="border-top:1px solid #e5e7eb;padding:12px 20px;display:flex;justify-content:flex-end;align-items:center;gap:16px;background:#f8fafc;">

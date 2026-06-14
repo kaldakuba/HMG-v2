@@ -7,21 +7,28 @@
 <meta name="author" content="Jakub Kalousek">
 <meta name="copyright" content="Copyright 2026 Jakub Kalousek. All rights reserved.">
 <title>HARMONOGRAM VÝROBY – Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;-webkit-font-smoothing:antialiased;font-size:110%}
 
 /* ── Topbar ── */
-.topbar{background:#1a1a2e;color:#fff;min-height:64px;padding:0 16px;display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center;gap:12px;position:sticky;top:0;z-index:100}
-.topbar h1{margin:0;text-align:center;font-size:22px;font-weight:800;letter-spacing:2px;color:#fff}
-.title-left{font-size:15px;font-weight:700;color:#c8d0e0;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.topbar{background:#fff;color:#1a1a1a;border-bottom:1px solid #ebebeb;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:100}
+.hdr-brand{display:flex;align-items:center;gap:12px;flex-shrink:0}
+.hdr-logo{font-size:16px;font-weight:700;color:#1a1a1a;letter-spacing:-0.02em}
+.hdr-sep{width:1px;height:22px;background:#ccc;display:inline-block}
+.hdr-sub{font-size:15px;color:#555;font-weight:500;white-space:nowrap}
+.hdr-nav{display:flex;align-items:center;gap:4px;justify-content:center;flex-wrap:wrap}
+.hdr-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.hdr-firma{font-size:11px;color:#2c5545;background:#e6f0ec;padding:3px 10px;border-radius:20px;font-weight:500;white-space:nowrap}
+.hdr-user{font-size:14px;color:#666;white-space:nowrap}
+.hdr-avatar{width:32px;height:32px;border-radius:50%;background:#f0f0f0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#555;flex-shrink:0}
 .actions{display:flex;justify-content:flex-end;gap:8px;align-items:center;flex-wrap:wrap}
 .btn{border-radius:6px;border:none;color:#fff;font-family:'Inter',sans-serif;font-weight:700;cursor:pointer;padding:7px 14px;font-size:13px;white-space:nowrap;transition:filter .15s}
 .btn:hover:not(:disabled){filter:brightness(1.12)}
-.btn.nav{color:rgba(255,255,255,0.65);background:transparent;border:0.5px solid transparent;padding:6px 14px;border-radius:6px}
-.btn.nav:hover{color:#fff!important;background:rgba(255,255,255,0.1);filter:none}
-.btn.nav.active{color:#fff!important;background:rgba(255,255,255,0.15)!important;border:0.5px solid rgba(255,255,255,0.2)!important;cursor:default;pointer-events:none}
+.btn.nav{color:#555;background:transparent;border:none;padding:7px 13px;border-radius:6px;font-size:14px;font-weight:400}
+.btn.nav:hover{color:#444;background:#f5f5f5;filter:none}
+.btn.nav.active{color:#fff;background:#1a1a1a;font-weight:500;cursor:default;pointer-events:none}
 .btn.primary{background:#3b82f6}
 
 /* ── Layout ── */
@@ -42,9 +49,8 @@ h2.section-title .count-badge{background:#e2e8f0;color:#475569;border-radius:20p
 @media(max-width:768px){#ctaBar{display:none!important}}
 @media(max-width:640px){.summary-cards{display:none}}
 @media(max-width:900px){
-  .topbar{display:flex;flex-direction:column;align-items:stretch;padding:10px;min-height:auto}
-  .topbar h1{text-align:left;font-size:16px}
-  .actions{justify-content:flex-start}
+  .topbar{padding:10px 12px}
+  .hdr-sub{display:none}
   .wrap{padding:10px 12px}
   .summary-cards{grid-template-columns:repeat(2,1fr)}
 }
@@ -54,7 +60,7 @@ h2.section-title .count-badge{background:#e2e8f0;color:#475569;border-radius:20p
 .table-scroll{overflow-x:auto}
 table.orders{border-collapse:collapse;width:max-content;min-width:100%;font-size:13px}
 table.orders th,table.orders td{border:1px solid #d1d9e6;padding:6px 10px;text-align:left;white-space:nowrap}
-table.orders th{background:#f5f7fa;font-weight:700;font-size:11px;color:#374151;text-transform:uppercase;letter-spacing:.3px}
+table.orders th{background:#f5f5f2;font-weight:500;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid #e5e5e0}
 table.orders tr:hover td{background:#f0f9ff}
 
 /* ── Status badges ── */
@@ -149,12 +155,12 @@ h2.section-title{justify-content:space-between;flex-wrap:wrap}
 
 <!-- ══ Topbar ══════════════════════════════════════════════════════════════ -->
 <header class="topbar">
-  <div class="title-left">
-    <span id="userInfo" style="font-weight:700;color:#c8d0e0">Dashboard</span>
-  </div>
-  <h1>HARMONOGRAM VÝROBY</h1>
-  <div class="actions">
-    <div id="navMenu"></div>
+  <div class="hdr-brand"><span class="hdr-sub">Harmonogram výroby</span></div>
+  <nav class="hdr-nav" id="navMenu"></nav>
+  <div class="hdr-right">
+    <span class="hdr-firma" id="hdrFirma" style="display:none"></span>
+    <span class="hdr-user" id="userInfo"></span>
+    <span class="hdr-avatar" id="hdrAvatar"></span>
   </div>
 </header>
 
@@ -522,10 +528,20 @@ async function loadDashboard() {
 
     // Název stránky — title tag i hlavička (+ uživatel za | jako na jiných stránkách)
     document.title = 'HARMONOGRAM VÝROBY – ' + pageLabel;
-    document.getElementById('userInfo').textContent = pageLabel + (username ? ' | ' + username : '');
+    document.getElementById('userInfo').textContent = username;
+    const _ha = document.getElementById('hdrAvatar');
+    if (_ha && username) _ha.textContent = username.trim().charAt(0).toUpperCase();
+    if (me.firma) { const _fb = document.getElementById('hdrFirma'); if (_fb) { _fb.textContent = me.firma; _fb.style.display = ''; } }
 
     // ── Navigace v topbaru ──
     buildNav(isAdmin ? 'admin' : 'hmg_share', 'dashboard');
+
+    // Záložka „Odebrané stavby" — pro hmg_share viditelná jen když je přepínač zapnut.
+    // Admin a operátor mají přístup vždy (nezávisle na přepínači).
+    const odebraneBtn = document.querySelector('.dash-menu-item[data-tab="odebrane"]');
+    if (odebraneBtn && data.role === 'hmg_share' && !data.vazenky_share_enabled) {
+      odebraneBtn.style.display = 'none';
+    }
 
     // Souhrn vpravo v nadpisu sekce (na OBOU záložkách — plněno přes třídy)
     const confirmedList = data.confirmed_list || [];
@@ -535,7 +551,8 @@ async function loadDashboard() {
     document.querySelectorAll('.js-card-tons').forEach(el => el.textContent = tonsFormatted);
 
     // CTA bar „+ Nová objednávka" — skryj když je objednávkový systém vypnut
-    if (!data.orders_enabled) {
+    // CTA „Nová objednávka" skryj při globálním vypnutí NEBO když hmg_share nemá per-user povolení.
+    if (!data.orders_enabled || (data.role === 'hmg_share' && !data.orders_allowed)) {
       document.getElementById('ctaBar').style.display = 'none';
     }
 

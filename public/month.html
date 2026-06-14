@@ -2,29 +2,43 @@
 <!doctype html><html lang="cs"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.3,maximum-scale=5,user-scalable=yes">
 <meta name="author" content="Jakub Kalousek">
 <meta name="copyright" content="Copyright 2026 Jakub Kalousek. All rights reserved."><title>HARMONOGRAM VÝROBY - Měsíční přehled</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/order-approval.js"></script>
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;-webkit-font-smoothing:antialiased;font-size:100%}
-.topbar{background:#1a1a2e;color:#fff;min-height:64px;padding:0 16px;display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center;gap:12px;position:sticky;top:0;z-index:100}
-.title-left{font-size:18px;font-weight:700;color:#c8d0e0}
-.topbar h1{margin:0;text-align:center;font-size:22px;font-weight:800;letter-spacing:2px;color:#fff}
+.topbar{background:#fff;color:#1a1a1a;border-bottom:1px solid #ebebeb;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:100}
+.hdr-brand{display:flex;align-items:center;gap:12px;flex-shrink:0}
+.hdr-logo{font-size:16px;font-weight:700;color:#1a1a1a;letter-spacing:-0.02em}
+.hdr-sep{width:1px;height:22px;background:#ccc;display:inline-block}
+.hdr-sub{font-size:15px;color:#555;font-weight:500;white-space:nowrap}
+.hdr-nav{display:flex;align-items:center;gap:4px;justify-content:center;flex-wrap:wrap}
+.hdr-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.hdr-firma{font-size:11px;color:#2c5545;background:#e6f0ec;padding:3px 10px;border-radius:20px;font-weight:500;white-space:nowrap}
+.hdr-user{font-size:14px;color:#666;white-space:nowrap}
+.hdr-avatar{width:32px;height:32px;border-radius:50%;background:#f0f0f0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#555;flex-shrink:0}
+.navpill{padding:7px 13px;border-radius:6px;font-size:14px;color:#555;background:transparent;font-weight:400;text-decoration:none;cursor:pointer}
+.navpill:hover{color:#444;background:#f5f5f5}
+.navpill.active{color:#fff;background:#1a1a1a;font-weight:500;cursor:default;pointer-events:none}
 .actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;align-items:center}
 .btn{border-radius:6px;border:none;color:#fff;text-decoration:none;font-family:'Inter',sans-serif;font-weight:700;cursor:pointer;padding:7px 14px;font-size:13px;white-space:nowrap}
-.btn.green{background:#16a34a}.btn.week{background:#2563eb}.btn.nav{background:#64748b}
+.btn.green{background:#16a34a}.btn.week{background:#2563eb}
+.btn.nav{color:#888;background:#fff;border:1px solid #ddd;padding:5px 12px;border-radius:5px;font-size:12px;font-weight:500}
+.btn.nav.cur{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
+.month-toolbar .btn.export{font-size:12px;color:#2c5545;background:#e6f0ec;border:1px solid #c5ddd3;padding:5px 14px;border-radius:5px;font-weight:600}
+#monthContext{font-size:14px;font-weight:600;color:#1a1a1a;white-space:nowrap;padding:0 4px}
 .wrap{padding:10px 12px}
 .card{background:#fff;border:1px solid #a0aabb;border-radius:8px;overflow:hidden}
-.month-toolbar{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #a0aabb;background:#fff;flex-wrap:wrap}
+.month-toolbar{display:flex;align-items:center;gap:8px;padding:8px 24px;border-bottom:1px solid #ebebeb;background:#fafafa;flex-wrap:wrap}
 .month-toolbar .right{margin-left:auto}
 input[type=month]{height:34px;border:1px solid #a0aabb;border-radius:6px;padding:2px 10px;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;color:#374151;background:#f8fafc}
 .table-wrap{overflow:auto;background:#fff}
 table{border-collapse:collapse;table-layout:fixed;min-width:2350px;width:max-content;font-size:13px}
 th,td{border:1px solid #a0aabb;height:28px;padding:2px 4px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151}
+th{font-weight:500;background:#f5f5f2;font-size:12px;color:#888;border-bottom:1px solid #e5e5e0}
 .col-lok{width:150px}.col-obj{width:150px}.col-smes{width:230px}.col-itt{width:100px}.col-ceta{width:110px}.day{width:60px}
-.day-b{background:#eff6ff}
-.day-w{background:#d1d5db;color:#374151}
+.day-b{background:#fff}
+.day-w{background:#fafaf8;color:#374151}
 .day-h{background:#86efac;color:#14532d}
 .missing-order{background:#fff!important;color:#111;border:1px solid #374151!important}
 .sticky-head th{position:sticky;top:0;z-index:3}
@@ -41,11 +55,11 @@ th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151}
    MOBIL <= 900px  (portrait i landscape)
    ═══════════════════════════════════ */
 @media(max-width:900px){
-  .topbar{display:flex;flex-direction:row;align-items:center;padding:0 5px;min-height:26px;height:26px;gap:3px}
-  .topbar h1{font-size:9px;font-weight:700;letter-spacing:.1px;white-space:nowrap;margin:0;flex:1;text-align:center}
-  .title-left{font-size:8px;color:#94a3b8;white-space:nowrap;overflow:hidden;max-width:80px;text-overflow:ellipsis;flex-shrink:0}
-  .actions{gap:2px;flex-wrap:nowrap;flex-shrink:0}
-  .actions .btn{padding:1px 5px;font-size:8px;border-radius:3px}
+  .topbar{padding:6px 10px;gap:6px}
+  .hdr-logo{font-size:14px}
+  .hdr-sub{display:none}
+  .navpill{padding:5px 10px;font-size:12px}
+  .hdr-user{display:none}
   /* Skrýt export tlačítko na mobilu */
   .btn.green{display:none!important}
   .wrap{padding:1px 2px}
@@ -81,29 +95,23 @@ th{font-weight:700;background:#f5f7fa;font-size:12px;color:#374151}
 </style></head>
 <body>
 <header class="topbar">
-  <div class="title-left" id="pageTitle">Měsíční přehled</div>
-  <h1>HARMONOGRAM VÝROBY</h1>
-  <div class="actions">
-    <button class="btn nav" onclick="shiftMonth(-1)">‹ Předchozí</button>
-    <button class="btn nav" onclick="thisMonth()">Tento měsíc</button>
-    <button class="btn nav" onclick="shiftMonth(1)">Další ›</button>
-    <a class="btn week" href="/">Týdenní kalendář</a>
-  </div>
+  <div class="hdr-brand"><span class="hdr-sub">Harmonogram výroby</span></div>
+  <nav class="hdr-nav"><a href="/month-view.html" class="navpill active">Měsíční</a><a href="/dashboard" class="navpill">Seznam staveb</a></nav>
+  <div class="hdr-right"><span class="hdr-firma" id="hdrFirma" style="display:none"></span><span class="hdr-user" id="hdrUser"></span><span class="hdr-avatar" id="hdrAvatar"></span></div>
 </header>
 <main class="wrap"><section class="card">
   <div class="month-toolbar">
-    <div><button class="btn green" onclick="exportMonth()">⬇ Export tabulka</button></div>
-    <div class="right"><span id="monthTotal"></span><input id="monthPick" type="month" onchange="render()"></div>
+    <button class="btn green export" onclick="exportMonth()">Export dat</button>
+    <div class="right">
+      <button class="btn nav" onclick="shiftMonth(-1)">‹ Předchozí</button>
+      <button class="btn nav cur" onclick="thisMonth()">Tento měsíc</button>
+      <button class="btn nav" onclick="shiftMonth(1)">Další ›</button>
+      <span id="monthContext"></span>
+      <span id="monthTotal"></span>
+      <input id="monthPick" type="month" onchange="render()">
+    </div>
   </div>
   <div class="table-wrap" id="tableWrap"></div>
-  <div class="legend">
-    <span><i class="box" style="background:#eff6ff;border-color:#bfdbfe"></i> všední den</span>
-    <span><i class="box" style="background:#d1d5db;border-color:#9ca3af"></i> víkend</span>
-    <span><i class="box" style="background:#86efac;border-color:#4ade80"></i> svátek ČR</span>
-    <span><i class="box" style="background:#fff;border-color:#374151"></i> chybí objednávka</span>
-    <span><i class="box" style="background:#fee2e2;border-color:#fca5a5"></i> překročen MAX</span>
-    <span><i class="box" style="background:#fef9c3;border-color:#fde68a"></i> pod MIN</span>
-  </div>
   <div class="note">Data jsou navázaná na týdenní kalendář. Týdny jsou odděleny výraznou linkou.</div>
 </section></main>
 <script>
@@ -215,7 +223,7 @@ function render(){
   const val=monthPick.value||defaultMonth();
   localStorage.setItem('hmg_month_selected',val);
   const[yy,mm]=val.split('-');const y=parseInt(yy),m=parseInt(mm)-1;
-  pageTitle.textContent='Měsíční přehled | '+monthName(m)+' / '+y;
+  const _mc=document.getElementById('monthContext');if(_mc)_mc.textContent=monthName(m)+' '+y;
   const days=new Date(y,m+1,0).getDate();
   const rows=rowsForMonth(y,m);
 
@@ -302,6 +310,11 @@ async function checkViewerRole() {
     const me = await fetch('/api/me').then(r=>r.json());
     _isViewer = (me.role === 'hmg_share');
     _isAdmin  = (me.role === 'admin');
+    const hu = document.getElementById('hdrUser');
+    if (hu && me.username) hu.textContent = me.username;
+    const ha = document.getElementById('hdrAvatar');
+    if (ha && me.username) ha.textContent = me.username.trim().charAt(0).toUpperCase();
+    if (me.firma) { const fb = document.getElementById('hdrFirma'); if (fb) { fb.textContent = me.firma; fb.style.display = ''; } }
     if (_isViewer) {
       // Nastavit minimální měsíc na aktuální
       _minMonth = defaultMonth();

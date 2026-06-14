@@ -11,12 +11,18 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;font-size:100%;min-height:100vh;display:flex;flex-direction:column}
-.topbar{background:#1a1a2e;color:#fff;height:52px;padding:0 20px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100;flex-shrink:0}
-.topbar h1{font-size:16px;font-weight:700;letter-spacing:1px;color:#fff;flex:1;text-align:center}
-.actions{display:flex;gap:0;align-items:center}
-.btn.nav{color:rgba(255,255,255,0.65);background:transparent;border:0.5px solid transparent;padding:6px 14px;border-radius:6px;text-decoration:none;font-family:'Inter',sans-serif;font-size:13px;font-weight:700;white-space:nowrap}
-.btn.nav:hover{color:#fff!important;background:rgba(255,255,255,0.1);filter:none}
-.btn.nav.active{color:#fff!important;background:rgba(255,255,255,0.15)!important;border:0.5px solid rgba(255,255,255,0.2)!important;cursor:default;pointer-events:none}
+.topbar{background:#fff;color:#1a1a1a;border-bottom:1px solid #ebebeb;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:100;flex-shrink:0}
+.hdr-brand{display:flex;align-items:center;gap:12px;flex-shrink:0}
+.hdr-logo{font-size:16px;font-weight:700;color:#1a1a1a;letter-spacing:-0.02em}
+.hdr-sep{width:1px;height:22px;background:#ccc;display:inline-block}
+.hdr-sub{font-size:15px;color:#555;font-weight:500;white-space:nowrap}
+.hdr-nav{display:flex;align-items:center;gap:4px;justify-content:center;flex-wrap:wrap}
+.hdr-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.hdr-user{font-size:14px;color:#666;white-space:nowrap}
+.hdr-avatar{width:32px;height:32px;border-radius:50%;background:#f0f0f0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#555;flex-shrink:0}
+.btn.nav{color:#555;background:transparent;border:none;padding:7px 13px;border-radius:6px;text-decoration:none;font-family:'Inter',sans-serif;font-size:14px;font-weight:400;white-space:nowrap;cursor:pointer}
+.btn.nav:hover{color:#444;background:#f5f5f5;filter:none}
+.btn.nav.active{color:#fff;background:#1a1a1a;font-weight:500;cursor:default;pointer-events:none}
 .layout{display:flex;flex:1;max-width:1100px;margin:0 auto;width:100%;padding:20px 16px;gap:20px}
 .sidenav{width:180px;flex-shrink:0}
 .sidenav-inner{background:#fff;border:0.5px solid #d1d5db;border-radius:10px;overflow:hidden;position:sticky;top:72px}
@@ -100,8 +106,12 @@ input:checked + .toggle-sl::before{transform:translateX(20px)}
 <body>
 
 <header class="topbar">
-  <h1>NASTAVENÍ</h1>
-  <div class="actions" id="navMenu"></div>
+  <div class="hdr-brand"><span class="hdr-sub">Harmonogram výroby</span></div>
+  <nav class="hdr-nav" id="navMenu"></nav>
+  <div class="hdr-right">
+    <span class="hdr-user" id="hdrUser"></span>
+    <span class="hdr-avatar" id="hdrAvatar"></span>
+  </div>
 </header>
 
 <div class="layout">
@@ -352,6 +362,30 @@ input:checked + .toggle-sl::before{transform:translateX(20px)}
           </div>
         </div>
       </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-icon" style="background:#eff6ff"><i class="ti ti-truck-delivery" style="font-size:20px;color:#2563eb" aria-hidden="true"></i></div>
+          <div><div class="card-head h2">Odebrané stavby pro odběratele</div><div class="card-head sub">Umožní odběratelům (hmg_share) zobrazit, filtrovat a exportovat své odebrané stavby.</div></div>
+        </div>
+        <div class="card-body">
+          <div style="display:flex;align-items:center;gap:16px;padding:14px 16px;background:#f9fafb;border:0.5px solid #e5e7eb;border-radius:8px">
+            <label class="toggle-sw" title="Přepnout sdílení odebraných staveb">
+              <input type="checkbox" id="vazenkyShareToggle" onchange="saveVazenkyShare(this.checked)">
+              <span class="toggle-sl"></span>
+            </label>
+            <div>
+              <div id="vazenkyShareLabel" style="font-size:14px;font-weight:600;color:#111">Načítám…</div>
+              <div id="vazenkyShareDesc" style="font-size:12px;color:#6b7280;margin-top:2px">—</div>
+            </div>
+          </div>
+          <div id="vazenkyShareMsg" style="margin-top:10px"></div>
+          <div class="info" style="margin-top:12px">
+            <strong>Zapnuto:</strong> Odběratelé (hmg_share) vidí v Seznamu staveb záložku „Odebrané stavby" — pouze data své firmy, s filtry a exportem.<br>
+            <strong>Vypnuto:</strong> Záložka „Odebrané stavby" je pro odběratele skryta. Admin a operátor mají přístup vždy, nezávisle na tomto přepínači.
+          </div>
+        </div>
+      </div>
     </div>
 
   </main>
@@ -451,6 +485,9 @@ async function loadUsers() {
     const emailCell = u.email
       ? `<button onclick="changeEmail(${u.id},'${esc(u.username)}','${esc(u.email)}')" style="background:none;border:1px solid #dbeafe;border-radius:4px;color:#2563eb;font-size:11px;cursor:pointer;padding:2px 7px;font-family:inherit">${esc(u.email)}</button>`
       : `<button onclick="changeEmail(${u.id},'${esc(u.username)}')" style="background:none;border:1px dashed #d1d5db;border-radius:4px;color:#9ca3af;font-size:10px;cursor:pointer;padding:2px 7px;font-family:inherit">+ email</button>`;
+    const ordersCell = u.role === 'hmg_share'
+      ? `<label class="toggle-sw" style="transform:scale(.8);transform-origin:left center" title="Povolit objednávkový systém pro tohoto uživatele"><input type="checkbox" ${u.orders_allowed ? 'checked' : ''} onchange="toggleOrdersAllowed(${u.id},this.checked)"><span class="toggle-sl"></span></label>`
+      : '<span style="color:#d1d5db;font-size:11px" title="Relevantní jen pro odběratele (hmg_share)">—</span>';
     const actions = isAdmin
       ? `<button class="btn gray sm" onclick="resetPassword(${u.id},'${esc(u.username)}')" style="margin-right:4px">Heslo</button><span class="cant-delete">nelze smazat</span>`
       : `<button class="btn gray sm" onclick="resetPassword(${u.id},'${esc(u.username)}')" style="margin-right:4px">Heslo</button><button class="btn red sm" onclick="deleteUser(${u.id},'${esc(u.username)}')">Smazat</button>`;
@@ -459,6 +496,7 @@ async function loadUsers() {
       <td>${roleBadge(u.role)}</td>
       <td>${firmaCell}</td>
       <td>${emailCell}</td>
+      <td>${ordersCell}</td>
       <td class="td-date">${fmtDateShort(u.created_at)}</td>
       <td class="td-actions">${actions}</td>
     </tr>`;
@@ -472,12 +510,19 @@ async function loadUsers() {
           <th>Role</th>
           <th>Firma</th>
           <th>Email</th>
+          <th>Objednávky</th>
           <th>Vytvořen</th>
           <th>Akce</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>`;
+}
+
+// Per-user povolení objednávkového systému (jen hmg_share)
+async function toggleOrdersAllowed(id, allowed) {
+  const r = await api('PUT', `/api/users/${id}/orders-allowed`, { orders_allowed: allowed });
+  if (!r.ok) { alert(r.error || 'Nepodařilo se uložit nastavení.'); loadUsers(); }
 }
 
 let _companies = [];
@@ -785,6 +830,10 @@ fetch('/api/me').then(r=>r.json()).then(d=>{
   buildNav(d.role, 'settings');
   const el=document.getElementById('footerUser');
   if(el&&d.username)el.textContent=d.username;
+  const hu=document.getElementById('hdrUser');
+  if(hu&&d.username)hu.textContent=d.username;
+  const ha=document.getElementById('hdrAvatar');
+  if(ha&&d.username)ha.textContent=d.username.trim().charAt(0).toUpperCase();
   // Karta „Nahrát váženky z váhy" — jen admin (server endpoint navíc má requireAdmin)
   if (d.role === 'admin') {
     const c = document.getElementById('card-vazenky-upload');
@@ -916,8 +965,36 @@ async function loadSystemSettings() {
     const toggle = document.getElementById('ordersEnabledToggle');
     if (toggle) toggle.checked = enabled;
     _updateOrdersEnabledUI(enabled);
+    // Sdílení "Odebrané stavby" pro hmg_share — výchozí false
+    const vsEnabled = s.vazenky_share_enabled === 'true';
+    const vsToggle = document.getElementById('vazenkyShareToggle');
+    if (vsToggle) vsToggle.checked = vsEnabled;
+    _updateVazenkyShareUI(vsEnabled);
   } catch(e) {
     console.error('loadSystemSettings:', e);
+  }
+}
+function _updateVazenkyShareUI(enabled) {
+  const lbl  = document.getElementById('vazenkyShareLabel');
+  const desc = document.getElementById('vazenkyShareDesc');
+  if (lbl)  lbl.textContent  = enabled ? 'Zapnuto' : 'Vypnuto';
+  if (lbl)  lbl.style.color  = enabled ? '#16a34a' : '#dc2626';
+  if (desc) desc.textContent = enabled
+    ? 'Odběratelé vidí záložku „Odebrané stavby" (jen svoji firmu)'
+    : 'Záložka „Odebrané stavby" je pro odběratele skryta';
+}
+async function saveVazenkyShare(enabled) {
+  _updateVazenkyShareUI(enabled);
+  const msg = document.getElementById('vazenkyShareMsg');
+  const r = await api('POST', '/api/settings', { vazenky_share_enabled: enabled ? 'true' : 'false' });
+  if (r.ok) {
+    msg.innerHTML = '<span class="msg-ok">✓ Nastavení uloženo</span>';
+    setTimeout(() => { msg.innerHTML = ''; }, 2500);
+  } else {
+    msg.innerHTML = `<span class="msg-err">✗ ${esc(r.error || 'Chyba')}</span>`;
+    const vsToggle = document.getElementById('vazenkyShareToggle');
+    if (vsToggle) vsToggle.checked = !enabled;
+    _updateVazenkyShareUI(!enabled);
   }
 }
 function _updateOrdersEnabledUI(enabled) {

@@ -2,20 +2,27 @@
 <!doctype html><html lang="cs"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="author" content="Jakub Kalousek">
 <meta name="copyright" content="Copyright 2026 Jakub Kalousek. All rights reserved."><title>VSTUPY</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-size:110%}
-.topbar{background:#1a1a2e;color:#fff;min-height:64px;padding:0 16px;display:flex;align-items:center;justify-content:space-between;gap:16px;position:sticky;top:0;z-index:100}
-.topbar h1{margin:0;font-size:22px;font-weight:800;letter-spacing:2px;color:#fff}
-.top-left{font-size:18px;font-weight:700;color:#c8d0e0}
+.topbar{background:#fff;color:#1a1a1a;border-bottom:1px solid #ebebeb;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:100}
+.hdr-brand{display:flex;align-items:center;gap:12px;flex-shrink:0}
+.hdr-logo{font-size:16px;font-weight:700;color:#1a1a1a;letter-spacing:-0.02em}
+.hdr-sep{width:1px;height:22px;background:#ccc;display:inline-block}
+.hdr-sub{font-size:15px;color:#555;font-weight:500;white-space:nowrap}
+.hdr-nav{display:flex;align-items:center;gap:4px;justify-content:center;flex-wrap:wrap}
+.hdr-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.hdr-firma{font-size:11px;color:#2c5545;background:#e6f0ec;padding:3px 10px;border-radius:20px;font-weight:500;white-space:nowrap}
+.hdr-user{font-size:14px;color:#666;white-space:nowrap}
+.hdr-avatar{width:32px;height:32px;border-radius:50%;background:#f0f0f0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#555;flex-shrink:0}
 .actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .btn{border-radius:6px;border:none;color:#fff;text-decoration:none;font-family:'Inter',sans-serif;font-weight:700;cursor:pointer;padding:7px 14px;font-size:13px;white-space:nowrap;transition:filter .15s}
 .btn:hover{filter:brightness(1.1)}
 .btn.week,.btn.blue{background:#2563eb}.btn.month{background:#64748b}.btn.green{background:#16a34a}.btn.red{background:#dc2626}.btn.orange{background:#ea580c}.btn.graybtn{background:#64748b}
-.btn.nav{color:rgba(255,255,255,0.65);background:transparent;border:0.5px solid transparent;padding:6px 14px;border-radius:6px}
-.btn.nav:hover{color:#fff!important;background:rgba(255,255,255,0.1);filter:none}
-.btn.nav.active{color:#fff!important;background:rgba(255,255,255,0.15)!important;border:0.5px solid rgba(255,255,255,0.2)!important;cursor:default;pointer-events:none}
+.btn.nav{color:#555;background:transparent;border:none;padding:7px 13px;border-radius:6px;font-size:14px;font-weight:400}
+.btn.nav:hover{color:#444;background:#f5f5f5;filter:none}
+.btn.nav.active{color:#fff;background:#1a1a1a;font-weight:500;cursor:default;pointer-events:none}
 .wrap{padding:10px 12px}
 .card{background:#fff;border:1px solid #a0aabb;border-radius:8px;overflow:hidden;width:100%}
 .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid #a0aabb;background:#fff}
@@ -25,7 +32,7 @@ body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111
 .table-wrap{overflow-x:auto;background:#fff;width:100%}
 table{border-collapse:collapse;width:100%;min-width:1720px;font-size:13px;table-layout:fixed}
 th,td{border:1px solid #a0aabb;padding:3px 5px;height:30px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
-th{background:#f5f7fa;font-weight:700;font-size:12px;color:#374151;letter-spacing:.2px}
+th{background:#f5f5f2;font-weight:500;font-size:12px;color:#888;letter-spacing:.2px;border-bottom:1px solid #e5e5e0}
 .col-num{width:3.2%}.col-smes{width:18.6%}.col-itt{width:8.5%}.col-frakce{width:3.65%}.col-pojivo{width:5.35%}.col-2030{width:3.65%}.col-prach{width:3.65%}.col-vapenec{width:4.75%}.col-addbit{width:3.85%}.col-scel{width:3.65%}.col-ra{width:5.55%}.col-celkem{width:4.3%}
 .gray{background:#f3f4f6!important}.green-cell{background:#f0fdf4!important}
 .sum-bad{background:#fee2e2!important;color:#991b1b!important;font-weight:700!important}
@@ -88,14 +95,15 @@ th{background:#f5f7fa;font-weight:700;font-size:12px;color:#374151;letter-spacin
 .edit-input{width:100%;height:24px;border:1px solid #f59e0b;background:#fffbeb;text-align:center;font:inherit;font-family:'Inter',sans-serif;font-size:12px;padding:0 2px;border-radius:3px}
 
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#f1f5f9}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
-@media(max-width:900px){.topbar{padding:10px;min-height:auto}.topbar h1{font-size:16px}.wrap{padding:6px}}
+@media(max-width:900px){.topbar{padding:10px 12px}.hdr-sub{display:none}.wrap{padding:6px}}
 </style></head>
 <body>
 <header class="topbar">
-  <div class="top-left">Vstupy směsí</div>
-  <h1>VSTUPY</h1>
-  <div class="actions">
-    <div id="navMenu"></div>
+  <div class="hdr-brand"><span class="hdr-sub">Harmonogram výroby</span></div>
+  <nav class="hdr-nav" id="navMenu"></nav>
+  <div class="hdr-right">
+    <span class="hdr-user" id="hdrUser"></span>
+    <span class="hdr-avatar" id="hdrAvatar"></span>
   </div>
 </header>
 <main class="wrap"><section class="card">
@@ -313,6 +321,10 @@ fetch('/api/me').then(r=>r.json()).then(d=>{
   buildNav(d.role, 'inputs');
   const el = document.getElementById('footerUser');
   if(el && d.username) el.textContent = d.username;
+  const hu = document.getElementById('hdrUser');
+  if(hu && d.username) hu.textContent = d.username;
+  const ha = document.getElementById('hdrAvatar');
+  if(ha && d.username) ha.textContent = d.username.trim().charAt(0).toUpperCase();
 }).catch(()=>{});
 
 // ── Unified navigation ──

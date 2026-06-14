@@ -18,7 +18,7 @@ const helmet = require('helmet');
 const { parseVazenky } = require('./lib/vazenky-parser');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.43';
+const APP_VERSION = '3.63';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -219,6 +219,9 @@ async function initDb() {
     -- HMG V4 — vynucená změna hesla při prvním přihlášení
     ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false;
 
+    -- Per-user povolení objednávkového systému (relevantní pro hmg_share) — default vypnuto
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS orders_allowed BOOLEAN NOT NULL DEFAULT false;
+
     -- HMG V5 — vážní data (váženky z exportu váhy)
     CREATE TABLE IF NOT EXISTS vazenky (
       id              SERIAL PRIMARY KEY,
@@ -259,6 +262,11 @@ async function initDb() {
   // HMG V4 — výchozí hodnota přepínače objednávkového systému
   await pool.query(
     `INSERT INTO settings (key, value) VALUES ('orders_enabled', 'true') ON CONFLICT (key) DO NOTHING`
+  );
+
+  // Výchozí hodnota přepínače sdílení "Odebrané stavby" (váženky) pro hmg_share — default vypnuto
+  await pool.query(
+    `INSERT INTO settings (key, value) VALUES ('vazenky_share_enabled', 'false') ON CONFLICT (key) DO NOTHING`
   );
 
   // HMG V4 — Admin účet z ADMIN_PASSWORD (bez výchozího hesla)
@@ -369,6 +377,13 @@ async function requireOrdersEnabled(req, res, next) {
     const r = await pool.query("SELECT value FROM settings WHERE key='orders_enabled'");
     const enabled = r.rows.length === 0 || r.rows[0].value !== 'false';
     if (!enabled) return res.status(403).json({ error: 'Objednávkový systém je vypnut' });
+    // Per-user: hmg_share musí mít navíc orders_allowed=true (admin/operátor neomezeni tímto příznakem).
+    // Globální vypnutí má přednost (řeší se výše). Hodnota se bere z DB, nikdy z klienta.
+    if (req.session.role === 'hmg_share') {
+      const u = await pool.query('SELECT orders_allowed FROM users WHERE id=$1', [req.session.userId]);
+      const allowed = !!(u.rows[0] && u.rows[0].orders_allowed === true);
+      if (!allowed) return res.status(403).json({ error: 'Objednávky nemáte povolené' });
+    }
     next();
   } catch(err) {
     console.error('requireOrdersEnabled: chyba čtení settings.orders_enabled, FAIL-CLOSED:', err.message);
@@ -469,13 +484,15 @@ app.post('/api/change-password', requireAuth, async (req, res) => {
 
 app.get('/api/me', requireAuth, async (req, res) => {
   try {
-    const r = await pool.query('SELECT firma FROM users WHERE id=$1', [req.session.userId]);
+    const r = await pool.query('SELECT firma, orders_allowed FROM users WHERE id=$1', [req.session.userId]);
     const firma = r.rows[0] ? r.rows[0].firma : null;
+    const ordersAllowed = !!(r.rows[0] && r.rows[0].orders_allowed === true);
     res.json({
       username: req.session.username,
       role: req.session.role,
       userId: req.session.userId,
       firma,
+      orders_allowed: ordersAllowed,
       mustChangePassword: req.session.mustChangePassword || false
     });
   } catch(err) {
@@ -582,15 +599,15 @@ app.get('/api/settings', requireAuth, async (req, res) => {
 });
 
 app.post('/api/settings', requireAuth, requireAdmin, async (req, res) => {
-  const allowed = ['hmg_max_daily', 'hmg_min_daily', 'hmg_plant_rate', 'hmg_gas_capacity', 'orders_enabled'];
+  const allowed = ['hmg_max_daily', 'hmg_min_daily', 'hmg_plant_rate', 'hmg_gas_capacity', 'orders_enabled', 'vazenky_share_enabled'];
   for (const [k, v] of Object.entries(req.body)) {
     if (!allowed.includes(k)) continue;
     if (['hmg_max_daily', 'hmg_min_daily', 'hmg_plant_rate', 'hmg_gas_capacity'].includes(k)) {
       const n = parseInt(v, 10);
       if (isNaN(n) || n <= 0 || n > 1000000) return res.status(400).json({ error: `${k} musí být kladné číslo` });
     }
-    if (k === 'orders_enabled') {
-      if (v !== 'true' && v !== 'false') return res.status(400).json({ error: 'orders_enabled musí být true nebo false' });
+    if (k === 'orders_enabled' || k === 'vazenky_share_enabled') {
+      if (v !== 'true' && v !== 'false') return res.status(400).json({ error: `${k} musí být true nebo false` });
     }
     await pool.query(
       `INSERT INTO settings (key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,
@@ -1710,11 +1727,19 @@ app.get('/api/export-excel', requireAuth, requireOperator, async (req, res) => {
 // ── Správa uživatelů ──
 app.get('/api/users', requireAuth, requireAdmin, async (req, res) => {
   const r = await pool.query(`
-    SELECT u.id, u.username, u.role, u.firma, u.email, u.created_at, u.last_seen,
+    SELECT u.id, u.username, u.role, u.firma, u.email, u.orders_allowed, u.created_at, u.last_seen,
       (SELECT COUNT(*) FROM session s WHERE s.sess->>'userId' = u.id::text AND s.expire > NOW()) as session_count
     FROM users u ORDER BY u.created_at
   `);
   res.json(r.rows);
+});
+
+// Per-user povolení objednávkového systému (relevantní jen pro hmg_share).
+app.put('/api/users/:id/orders-allowed', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id);
+  const allowed = req.body.orders_allowed === true || req.body.orders_allowed === 'true';
+  await pool.query('UPDATE users SET orders_allowed=$1 WHERE id=$2', [allowed, id]);
+  res.json({ ok: true, orders_allowed: allowed });
 });
 
 app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
@@ -2689,6 +2714,10 @@ async function buildVazenkyQuery(req) {
   // SCOPE podle role (klient nemůže obejít) — VŽDY před uživatelskými filtry.
   // Pro hmg_share je scope zamčen na users.firma; req.query.firma je IGNOROVÁN.
   if (role === 'hmg_share') {
+    // Přepínač viditelnosti "Odebrané stavby" pro odběratele (admin/operátor NEJSOU omezeni).
+    const shRes = await pool.query("SELECT value FROM settings WHERE key='vazenky_share_enabled'");
+    const shareEnabled = (shRes.rows[0] ? shRes.rows[0].value : 'false') === 'true';
+    if (!shareEnabled) return { role, firma, stavba, od, doD, firma_filter: '', forbidden: true };
     if (!firma) return { role, firma, stavba, od, doD, firma_filter: '', empty: true };
     params.push(firma);
     where.push(`firma_taxis = $${params.length}`);
@@ -2727,6 +2756,7 @@ async function buildVazenkyQuery(req) {
 app.get('/api/vazenky', requireAuth, async (req, res) => {
   try {
     const q = await buildVazenkyQuery(req);
+    if (q.forbidden) return res.status(403).json({ error: 'Přístup k odebraným stavbám není povolen.' });
     if (q.empty) return res.json({ role: q.role, rows: [], stavby: [], total_tuny: 0 });
 
     const dataQ = `
@@ -2793,6 +2823,7 @@ app.get('/api/vazenky', requireAuth, async (req, res) => {
 app.get('/api/vazenky/export', requireAuth, async (req, res) => {
   try {
     const q = await buildVazenkyQuery(req);
+    if (q.forbidden) return res.status(403).json({ error: 'Přístup k odebraným stavbám není povolen.' });
     const rowsRes = q.empty
       ? { rows: [] }
       : await pool.query(
@@ -2818,24 +2849,10 @@ app.get('/api/vazenky/export', requireAuth, async (req, res) => {
     const wb = new ExcelJS.Workbook();
     wb.creator = 'HMG TAXIS';
     wb.created = new Date();
-    const ws = wb.addWorksheet('Odebrané stavby', { views: [{ state: 'frozen', ySplit: 4 }] });
+    const ws = wb.addWorksheet('Odebrané stavby', { views: [{ state: 'frozen', ySplit: 1 }] });
 
-    // Titulek (mergované přes celou šířku tabulky — dynamicky podle headers.length)
-    const scopeLabel  = isAdmin ? 'Vše (admin)' : (q.firma || '(bez firmy)');
-    const filtrLabel  =
-      `Stavba: ${q.stavba || '— všechny —'} · ` +
-      `Od: ${q.od || '—'} · Do: ${q.doD || '—'}` +
-      (!q.stavba && !q.od && !q.doD ? ' (default: posledních 30 dní)' : '');
-    ws.mergeCells(`A1:${lastCol}1`); ws.getCell('A1').value = 'Odebrané stavby — export';
-    ws.getCell('A1').font = { bold: true, size: 14 };
-    ws.mergeCells(`A2:${lastCol}2`); ws.getCell('A2').value = `Rozsah: ${scopeLabel}    |    ${filtrLabel}`;
-    ws.getCell('A2').font = { size: 10, color: { argb: 'FF475569' } };
-    ws.mergeCells(`A3:${lastCol}3`); ws.getCell('A3').value = `Vygenerováno: ${new Date().toLocaleString('cs-CZ')}`;
-    ws.getCell('A3').font = { size: 10, color: { argb: 'FF94A3B8' } };
-
-    // Hlavička — řádek 4
-    const headerRow = ws.addRow([]);  // pomocný; přepneme na řádek 4
-    headerRow.values = headers;
+    // Hlavička — řádek 1 (bez úvodních titulkových řádků)
+    const headerRow = ws.addRow(headers);
     headerRow.eachCell(c => {
       c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
       c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
@@ -2852,20 +2869,36 @@ app.get('/api/vazenky/export', requireAuth, async (req, res) => {
     // „Číslo DL" jako text (Excel ho jinak může vyhodnotit jako číslo a uříznout nuly)
     ws.getColumn(1).numFmt = '@';
 
+    // Datum jako jednotný TEXT 'dd.mm.yyyy' (zabrání zobrazení Excelového sériového čísla).
+    // Zvládne Date i string z DB; neplatná/prázdná hodnota → prázdná buňka.
+    const fmtDatumCell = (v) => {
+      if (v == null || v === '') return '';
+      if (typeof v === 'string') {
+        const m = v.slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return `${m[3]}.${m[2]}.${m[1]}`;
+        const d = new Date(v);
+        return isNaN(d.getTime()) ? '' : `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}`;
+      }
+      if (v instanceof Date) {
+        return isNaN(v.getTime()) ? '' : `${String(v.getDate()).padStart(2,'0')}.${String(v.getMonth()+1).padStart(2,'0')}.${v.getFullYear()}`;
+      }
+      return '';
+    };
+
     // Datové řádky
     let total = 0;
     for (const r of rowsRes.rows) {
       const cisloDL = String(r.cislo_vazenky || '');
       const firmaCell = r.firma_taxis || '(nepřiřazeno)';
-      const dateObj = r.datum instanceof Date ? r.datum : new Date(String(r.datum) + 'T00:00:00Z');
+      const datumStr = fmtDatumCell(r.datum);
       const tuny = Number(r.tuny) || 0;
       total += tuny;
       const values = isAdmin
-        ? [cisloDL, firmaCell, r.stavba || '(neuvedeno)', dateObj, r.cas || '', r.smes || '', r.itt || '', tuny, r.spz || '', r.ridic || '']
-        : [cisloDL,            r.stavba || '(neuvedeno)', dateObj, r.cas || '', r.smes || '', r.itt || '', tuny, r.spz || '', r.ridic || ''];
+        ? [cisloDL, firmaCell, r.stavba || '(neuvedeno)', datumStr, r.cas || '', r.smes || '', r.itt || '', tuny, r.spz || '', r.ridic || '']
+        : [cisloDL,            r.stavba || '(neuvedeno)', datumStr, r.cas || '', r.smes || '', r.itt || '', tuny, r.spz || '', r.ridic || ''];
       const row = ws.addRow(values);
-      // Formátování data + tun
-      row.getCell(datumColIdx).numFmt = 'dd.mm.yyyy';
+      // Datum je text → bez numFmt; formátujeme jen Tuny.
+      row.getCell(datumColIdx).numFmt = '@';
       row.getCell(tunyColIdx).numFmt  = '#,##0.00';
       row.getCell(tunyColIdx).alignment = { horizontal: 'right' };
     }
@@ -2883,8 +2916,8 @@ app.get('/api/vazenky/export', requireAuth, async (req, res) => {
     sumRow.getCell(tunyColIdx).numFmt = '#,##0.00';
     sumRow.getCell(tunyColIdx).alignment = { horizontal: 'right' };
 
-    // Auto-filtr na hlavičku
-    ws.autoFilter = `A4:${lastCol}4`;
+    // Auto-filtr na hlavičku (řádek 1)
+    ws.autoFilter = `A1:${lastCol}1`;
 
     const buf = await wb.xlsx.writeBuffer();
 
@@ -2979,12 +3012,16 @@ async function loadConfirmedForDashboard(req) {
 // role=admin → vidí objednávky všech firem; ostatní → jen svoji firmu.
 app.get('/api/dashboard', requireAuth, async (req, res) => {
   try {
-    const [confirmedData, oeRes] = await Promise.all([
+    const [confirmedData, oeRes, vsRes, uaRes] = await Promise.all([
       loadConfirmedForDashboard(req),
       pool.query("SELECT value FROM settings WHERE key='orders_enabled'"),
+      pool.query("SELECT value FROM settings WHERE key='vazenky_share_enabled'"),
+      pool.query('SELECT orders_allowed FROM users WHERE id=$1', [req.session.userId]),
     ]);
     const { role, firma, confirmedList, confirmedTons, confirmedCount } = confirmedData;
     const ordersEnabled = (oeRes.rows[0] ? oeRes.rows[0].value : 'true') === 'true';
+    const vazenkyShareEnabled = (vsRes.rows[0] ? vsRes.rows[0].value : 'false') === 'true';
+    const ordersAllowed = !!(uaRes.rows[0] && uaRes.rows[0].orders_allowed === true);
 
     let pendingList, recentOrders;
 
@@ -3028,6 +3065,8 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
       role,
       firma,
       orders_enabled: ordersEnabled,
+      orders_allowed: ordersAllowed,
+      vazenky_share_enabled: vazenkyShareEnabled,
       pending:        pendingList.length,
       pending_list:   pendingList,
       confirmed:      confirmedCount,
