@@ -3,6 +3,8 @@
 <html lang="cs">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.3,maximum-scale=5,user-scalable=yes">
+<meta name="author" content="Jakub Kalousek">
+<meta name="copyright" content="Copyright 2026 Jakub Kalousek. All rights reserved.">
 <title>HARMONOGRAM VÝROBY</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script src="/order-approval.js"></script>
@@ -761,7 +763,7 @@ async function init(){
 init();
 fetch('/api/me').then(r=>r.json()).then(d=>{if(d.role==='hmg_share')window.location.replace('/month');}).catch(()=>{});
 async function doLogout(){await fetch('/api/logout',{method:'POST'}).catch(()=>{});window.location.href='/login';}
-</script><meta name="author" content="Jakub Kalousek"><meta name="copyright" content="Copyright 2026 Jakub Kalousek. All rights reserved.">
+</script>
 <div style="border-top:1px solid #e5e7eb;padding:12px 20px;display:flex;justify-content:flex-end;align-items:center;gap:16px;background:#f8fafc;">
   <span id="footerVersion" style="font-size:13px;font-weight:500;color:#9ca3af;letter-spacing:1.5px">TAXIS · 2026</span>
   <button onclick="doLogout()" style="display:inline-flex;align-items:center;gap:6px;background:transparent;border:1px solid #fca5a5;border-radius:6px;color:#dc2626;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;padding:6px 14px;line-height:1;" onmouseenter="this.style.background='#fff1f2'" onmouseleave="this.style.background='transparent'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Odhlásit se</button>

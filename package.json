@@ -3,6 +3,8 @@
   "version": "2.3.0",
   "description": "Harmonogram výroby - webová aplikace",
   "main": "server.js",
+  "author": "Jakub Kalousek",
+  "license": "UNLICENSED",
   "scripts": {
     "start": "node server.js",
     "test": "jest --selectProjects tier1",
