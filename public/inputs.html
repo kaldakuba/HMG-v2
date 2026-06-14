@@ -6,7 +6,7 @@
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-size:110%}
-.topbar{background:#fff;color:#1a1a1a;border-bottom:1px solid #ebebeb;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:100}
+.topbar{background:#f3efe7;color:#1a1a1a;border-bottom:1px solid #ebebeb;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:100}
 .hdr-brand{display:flex;align-items:center;gap:12px;flex-shrink:0}
 .hdr-logo{font-size:16px;font-weight:700;color:#1a1a1a;letter-spacing:-0.02em}
 .hdr-sep{width:1px;height:22px;background:#ccc;display:inline-block}
@@ -23,6 +23,19 @@ body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111
 .btn.nav{color:#555;background:transparent;border:none;padding:7px 13px;border-radius:6px;font-size:14px;font-weight:400}
 .btn.nav:hover{color:#444;background:#f5f5f5;filter:none}
 .btn.nav.active{color:#fff;background:#1a1a1a;font-weight:500;cursor:default;pointer-events:none}
+/* Světlý "soft" styl tlačítek (vzor: Export dat) — jeden zdroj stylu + barevné tóny */
+.btn-soft{display:inline-flex;align-items:center;gap:6px;border-radius:5px;border:1px solid transparent;padding:6px 14px;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;text-decoration:none;transition:background .12s;filter:none}
+.btn-soft:hover{filter:none}
+.btn-soft.green{color:#2c5545;background:#e6f0ec;border-color:#c5ddd3}
+.btn-soft.green:hover{background:#dceae3}
+.btn-soft.orange{color:#9a5520;background:#fbe9d8;border-color:#f0d2b3}
+.btn-soft.orange:hover{background:#f7ddc6}
+.btn-soft.gray{color:#555;background:#eeeeee;border-color:#dcdcdc}
+.btn-soft.gray:hover{background:#e4e4e4}
+.btn-soft.red{color:#9a2f2f;background:#fbe2e2;border-color:#f0c0c0}
+.btn-soft.red:hover{background:#f6d4d4}
+.btn-soft.blue{color:#1e4e8c;background:#e4eefb;border-color:#bcd4f0}
+.btn-soft.blue:hover{background:#d6e4f7}
 .wrap{padding:10px 12px}
 .card{background:#fff;border:1px solid #a0aabb;border-radius:8px;overflow:hidden;width:100%}
 .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid #a0aabb;background:#fff}
@@ -110,15 +123,15 @@ th{background:#f5f5f2;font-weight:500;font-size:12px;color:#888;letter-spacing:.
 
   <div class="toolbar">
     <div class="toolbar-left">
-      <button class="btn orange" onclick="document.getElementById('importFile').click()">↑ Import směsí</button>
+      <button class="btn-soft orange" onclick="document.getElementById('importFile').click()">↑ Import směsí</button>
 
       <input id="importFile" class="file-hidden" type="file" accept=".xls,.html,.htm,.csv" onchange="importExcel(event)">
-      <button class="btn blue" onclick="exportExcel()">⬇ Export směsí</button>
+      <button class="btn-soft blue" onclick="exportExcel()">⬇ Export směsí</button>
     </div>
     <div class="toolbar-right">
-      <button class="btn green" id="editBtn" onclick="toggleEdit()">Editovat recepturu</button>
-      <button class="btn red" onclick="deleteSelectedRow()">Smazat označený</button>
-      <button class="btn graybtn" onclick="undoLast()">↩ Zpět</button>
+      <button class="btn-soft green" id="editBtn" onclick="toggleEdit()">Editovat recepturu</button>
+      <button class="btn-soft red" onclick="deleteSelectedRow()">Smazat označený</button>
+      <button class="btn-soft gray" onclick="undoLast()">↩ Zpět</button>
       <span id="selectedInfo">Není označen žádný řádek</span>
     </div>
   </div>
@@ -136,8 +149,8 @@ th{background:#f5f5f2;font-weight:500;font-size:12px;color:#888;letter-spacing:.
     <div class="total-row"><div class="total-field"><label>Celkem</label><input id="in_celkem" readonly value="0"></div></div>
     <div id="inputGrid"></div>
     <div class="form-actions">
-      <button class="btn green" onclick="addMix()">+ Přidat směs</button>
-      <button class="btn graybtn" onclick="clearForm()">Vyčistit formulář</button>
+      <button class="btn-soft green" onclick="addMix()">+ Přidat směs</button>
+      <button class="btn-soft gray" onclick="clearForm()">Vyčistit formulář</button>
     </div>
   </div>
 
@@ -160,7 +173,7 @@ th{background:#f5f5f2;font-weight:500;font-size:12px;color:#888;letter-spacing:.
     <label>Min. denní výkon (t):</label>
     <input id="minDailyInput" type="number" step="10" value="0">
   </div>
-  <button class="btn green" onclick="saveSettings()">Uložit nastavení</button>
+  <button class="btn-soft green" onclick="saveSettings()">Uložit nastavení</button>
   <span id="settingsSaved" style="font-size:13px;color:#16a34a;font-weight:700;display:none">✓ Uloženo</span>
 </div>
 
@@ -181,7 +194,7 @@ th{background:#f5f5f2;font-weight:500;font-size:12px;color:#888;letter-spacing:.
   <div class="cpanel-addrow">
     <input id="companyName" type="text" placeholder="Název firmy">
     <input id="companyColor" type="color" value="#fff2a8">
-    <button class="btn green" onclick="saveCompany()">+ Přidat firmu</button>
+    <button class="btn-soft green" onclick="saveCompany()">+ Přidat firmu</button>
   </div>
   <div class="cpanel-hint">Správa firem je pouze legenda. Pořadí firem určuje řazení v měsíčním přehledu. Přetažením změníš pořadí.</div>
 </div>
@@ -281,7 +294,7 @@ async function initInputs(){
 }
 initInputs();
 let _editMode=false;
-function toggleEdit(){_editMode=!_editMode;const btn=document.getElementById('editBtn');const tbody=document.getElementById('mixBody');if(_editMode){btn.textContent='Uložit změny';btn.className='btn orange';tbody.classList.add('edit-mode');renderEditable();}else{btn.textContent='Editovat recepturu';btn.className='btn green';tbody.classList.remove('edit-mode');saveEdits();render();}}
+function toggleEdit(){_editMode=!_editMode;const btn=document.getElementById('editBtn');const tbody=document.getElementById('mixBody');if(_editMode){btn.textContent='Uložit změny';btn.className='btn-soft orange';tbody.classList.add('edit-mode');renderEditable();}else{btn.textContent='Editovat recepturu';btn.className='btn-soft green';tbody.classList.remove('edit-mode');saveEdits();render();}}
 function calcRowTotal(tr){let sum=0;tr.querySelectorAll('.edit-input[data-col]').forEach(inp=>{if(inp.getAttribute('data-col')!=='celkem'){sum+=parseNumber(inp.value);}});return Math.round(sum*10)/10;}
 function updateCelkem(tr){const total=calcRowTotal(tr);const ok=Math.abs(total-100)<0.05;const td=tr.querySelector('.celkem-td');if(td){td.textContent=formatNumber(total);td.style.background=ok?'#f0fdf4':'#fee2e2';td.style.color=ok?'#15803d':'#991b1b';td.style.fontWeight='700';}}
 function renderEditable(){const rows=loadRows();const b=document.getElementById('mixBody');b.innerHTML='';rows.forEach((r,idx)=>{const tr=document.createElement('tr');if(idx===selectedIndex)tr.classList.add('selected-row');if(['10','15','20','22'].includes(String(r.cislo||'')))tr.classList.add('thick-top');tr.onclick=()=>selectRow(idx);cols.forEach((c,i)=>{const td=document.createElement('td');if(c==='celkem'){td.classList.add('celkem-td');const total=rowTotal(r);const ok=rowTotalOk(r);td.textContent=formatNumber(total);td.style.background=ok?'#f0fdf4':'#fee2e2';td.style.color=ok?'#15803d':'#991b1b';td.style.fontWeight='700';}else if(c!=='celkem'){td.classList.add('editable-cell');const inp=document.createElement('input');inp.className='edit-input';inp.value=r[c]||'';inp.setAttribute('data-row',idx);inp.setAttribute('data-col',c);inp.onclick=e=>e.stopPropagation();if(i>=3)inp.addEventListener('input',()=>updateCelkem(tr));td.appendChild(inp);}else{td.textContent=r[c]||'';}if(i>=9&&i<=12)td.classList.add('gray');if(i===17||i===18)td.classList.add('green-cell');tr.appendChild(td);});b.appendChild(tr);});}

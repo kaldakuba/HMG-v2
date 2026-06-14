@@ -11,7 +11,7 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;font-size:100%;min-height:100vh;display:flex;flex-direction:column}
-.topbar{background:#fff;color:#1a1a1a;border-bottom:1px solid #ebebeb;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:100;flex-shrink:0}
+.topbar{background:#f3efe7;color:#1a1a1a;border-bottom:1px solid #ebebeb;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:100;flex-shrink:0}
 .hdr-brand{display:flex;align-items:center;gap:12px;flex-shrink:0}
 .hdr-logo{font-size:16px;font-weight:700;color:#1a1a1a;letter-spacing:-0.02em}
 .hdr-sep{width:1px;height:22px;background:#ccc;display:inline-block}
@@ -47,6 +47,22 @@ body{font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;font-siz
 .btn.sm{padding:4px 10px;font-size:11px}
 .btn.green{background:#16a34a}.btn.red{background:#dc2626}.btn.blue{background:#2563eb}.btn.gray{background:#6b7280}.btn.purple{background:#7c3aed}.btn.teal{background:#0f766e}.btn.orange{background:#ea580c}
 .btn:disabled{opacity:.5;cursor:not-allowed;filter:none}
+/* Světlý "soft" styl tlačítek — jeden zdroj stylu + barevné tóny */
+.btn-soft{display:inline-flex;align-items:center;gap:5px;border-radius:5px;border:1px solid transparent;padding:6px 14px;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;text-decoration:none;transition:background .12s;filter:none}
+.btn-soft:hover{filter:none}
+.btn-soft.sm{padding:4px 10px;font-size:11px}
+.btn-soft.green{color:#2c5545;background:#e6f0ec;border-color:#c5ddd3}
+.btn-soft.green:hover{background:#dceae3}
+.btn-soft.orange{color:#9a5520;background:#fbe9d8;border-color:#f0d2b3}
+.btn-soft.orange:hover{background:#f7ddc6}
+.btn-soft.gray{color:#555;background:#f3f4f6;border-color:#dcdcdc}
+.btn-soft.gray:hover{background:#e9ebee}
+.btn-soft.red{color:#9a2f2f;background:#fbe2e2;border-color:#f0c0c0}
+.btn-soft.red:hover{background:#f6d4d4}
+.btn-soft.blue{color:#1e4e8c;background:#e4eefb;border-color:#bcd4f0}
+.btn-soft.blue:hover{background:#d6e4f7}
+.btn-soft.violet{color:#5b3a8c;background:#efe8fb;border-color:#d6c8f0}
+.btn-soft.violet:hover{background:#e4d8f6}
 label{display:block;font-size:11px;font-weight:600;color:#374151;margin-bottom:4px;letter-spacing:.2px}
 input[type=text],input[type=password],select{height:36px;border:0.5px solid #d1d5db;border-radius:6px;padding:0 10px;font-family:'Inter',sans-serif;font-size:13px;color:#111;background:#fff;outline:none;width:100%}
 input:focus,select:focus{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,235,.1)}
@@ -62,10 +78,11 @@ input:focus,select:focus{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,23
 .users-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:0.5px solid #e5e7eb}
 .users-title{font-size:14px;font-weight:600;color:#111}
 .users-count{font-weight:400;color:#6b7280}
+#usersBody{width:100%;overflow-x:auto}
 .users-table{width:100%;border-collapse:collapse;font-size:13px}
-.users-table th{text-align:left;font-size:11px;font-weight:600;color:#6b7280;letter-spacing:.3px;text-transform:uppercase;padding:9px 14px;border-bottom:0.5px solid #e5e7eb;background:#f9fafb}
+.users-table th{text-align:left;font-size:11px;font-weight:600;color:#6b7280;letter-spacing:.3px;text-transform:uppercase;padding:9px 10px;border-bottom:0.5px solid #e5e7eb;background:#f9fafb}
 .users-table th:last-child{text-align:right}
-.users-table td{padding:11px 14px;border-bottom:0.5px solid #f3f4f6;vertical-align:middle}
+.users-table td{padding:9px 10px;border-bottom:0.5px solid #f3f4f6;vertical-align:middle}
 .users-table tr:last-child td{border-bottom:none}
 .users-table tr:hover td{background:#fafafa}
 .users-table .td-name{font-weight:600;color:#111}
@@ -145,7 +162,7 @@ input:checked + .toggle-sl::before{transform:translateX(20px)}
       <div class="card">
         <div class="users-header">
           <span class="users-title">Správa uživatelů <span class="users-count" id="usersCountLabel"></span></span>
-          <button class="btn green sm" onclick="toggleAddUser()" id="btnAddUser">+ Přidat uživatele</button>
+          <button class="btn-soft green sm" onclick="toggleAddUser()" id="btnAddUser">+ Přidat uživatele</button>
         </div>
         <div class="add-form" id="addUserForm" style="margin:0;border-radius:0;border-left:none;border-right:none;border-top:none;border-bottom:0.5px solid #e5e7eb;padding:14px 18px">
           <div class="form-row" style="margin-bottom:8px">
@@ -190,13 +207,13 @@ input:checked + .toggle-sl::before{transform:translateX(20px)}
             <div style="border:0.5px solid #e5e7eb;border-radius:8px;padding:14px">
               <div style="font-size:13px;font-weight:500;color:#111;margin-bottom:4px">Import z Excelu HMG</div>
               <div class="info" style="margin-bottom:10px">Naimportuje týdny a receptury. Existující data nepřepíše.</div>
-              <button class="btn purple" onclick="document.getElementById('settImportXlsx').click()"><i class="ti ti-file-spreadsheet" style="font-size:13px" aria-hidden="true"></i> Vybrat Excel</button>
+              <button class="btn-soft violet" onclick="document.getElementById('settImportXlsx').click()"><i class="ti ti-file-spreadsheet" style="font-size:13px" aria-hidden="true"></i> Vybrat Excel</button>
               <input id="settImportXlsx" type="file" accept=".xlsx" style="display:none" onchange="settImportFromExcel(event)">
             </div>
             <div style="border:0.5px solid #e5e7eb;border-radius:8px;padding:14px">
               <div style="font-size:13px;font-weight:500;color:#111;margin-bottom:4px">Import dat HMG</div>
               <div class="info" style="margin-bottom:10px">Import týdenních dat ze starého formátu HMG.</div>
-              <button class="btn orange" onclick="document.getElementById('settImportWeek').click()"><i class="ti ti-upload" style="font-size:13px" aria-hidden="true"></i> Vybrat soubor</button>
+              <button class="btn-soft orange" onclick="document.getElementById('settImportWeek').click()"><i class="ti ti-upload" style="font-size:13px" aria-hidden="true"></i> Vybrat soubor</button>
               <input id="settImportWeek" type="file" accept=".xls,.html,.htm,.json,.txt" style="display:none" onchange="settImportWeekData(event)">
             </div>
           </div>
@@ -205,12 +222,12 @@ input:checked + .toggle-sl::before{transform:translateX(20px)}
             <div style="border:0.5px solid #e5e7eb;border-radius:8px;padding:14px">
               <div style="font-size:13px;font-weight:500;color:#111;margin-bottom:4px">Záloha Excel</div>
               <div class="info" style="margin-bottom:10px">Stáhne zálohu všech dat jako .xlsx soubor.</div>
-              <button class="btn teal" onclick="settZalohaDB()"><i class="ti ti-download" style="font-size:13px" aria-hidden="true"></i> Stáhnout</button>
+              <button class="btn-soft green" onclick="settZalohaDB()"><i class="ti ti-download" style="font-size:13px" aria-hidden="true"></i> Stáhnout</button>
             </div>
             <div style="border:1px solid #fbbf24;border-radius:8px;padding:14px;background:#fffbeb">
               <div style="font-size:13px;font-weight:500;color:#92400e;margin-bottom:4px"><i class="ti ti-database-import" style="font-size:13px" aria-hidden="true"></i> Obnovit ze zálohy</div>
               <div class="info" style="margin-bottom:10px;color:#78350f">Přepíše VŠECHNA data ze snímku. Záloha aktuálního stavu se uloží automaticky před obnovou.</div>
-              <button class="btn orange" onclick="document.getElementById('settObnovaFile').click()"><i class="ti ti-upload" style="font-size:13px" aria-hidden="true"></i> Vybrat JSON snímek</button>
+              <button class="btn-soft orange" onclick="document.getElementById('settObnovaFile').click()"><i class="ti ti-upload" style="font-size:13px" aria-hidden="true"></i> Vybrat JSON snímek</button>
               <input id="settObnovaFile" type="file" accept=".json" style="display:none" onchange="restoreStep1(event)">
             </div>
           </div>
@@ -235,12 +252,12 @@ input:checked + .toggle-sl::before{transform:translateX(20px)}
             <div style="border:1px solid #fca5a5;border-radius:8px;padding:14px;background:#fff5f5">
               <div style="font-size:13px;font-weight:500;color:#991b1b;margin-bottom:4px"><i class="ti ti-alert-triangle" style="font-size:13px" aria-hidden="true"></i> Smazat data HMG</div>
               <div class="info" style="margin-bottom:10px;color:#dc2626">Smaže všechna data ze všech týdnů a měsíců. Receptury zůstanou zachovány.</div>
-              <button class="btn red" onclick="confirmDelete('weeks')"><i class="ti ti-trash" style="font-size:13px" aria-hidden="true"></i> Smazat data</button>
+              <button class="btn-soft red" onclick="confirmDelete('weeks')"><i class="ti ti-trash" style="font-size:13px" aria-hidden="true"></i> Smazat data</button>
             </div>
             <div style="border:1px solid #fca5a5;border-radius:8px;padding:14px;background:#fff5f5">
               <div style="font-size:13px;font-weight:500;color:#991b1b;margin-bottom:4px"><i class="ti ti-alert-triangle" style="font-size:13px" aria-hidden="true"></i> Smazat receptury</div>
               <div class="info" style="margin-bottom:10px;color:#dc2626">Smaže všechny receptury směsí. Data týdnů zůstanou zachována.</div>
-              <button class="btn red" onclick="confirmDelete('inputs')"><i class="ti ti-trash" style="font-size:13px" aria-hidden="true"></i> Smazat receptury</button>
+              <button class="btn-soft red" onclick="confirmDelete('inputs')"><i class="ti ti-trash" style="font-size:13px" aria-hidden="true"></i> Smazat receptury</button>
             </div>
           </div>
           <div id="deleteMsg" style="margin-top:8px"></div>
@@ -256,7 +273,7 @@ input:checked + .toggle-sl::before{transform:translateX(20px)}
         <div class="card-body">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <input id="vzSettFile" type="file" accept=".tsv,.txt,.csv,.xlsx,.xls" style="display:none" onchange="vzSettOnFileChange(event)">
-            <button class="btn purple" onclick="document.getElementById('vzSettFile').click()" type="button">
+            <button class="btn-soft violet" onclick="document.getElementById('vzSettFile').click()" type="button">
               <i class="ti ti-file-spreadsheet" style="font-size:13px" aria-hidden="true"></i> Vybrat soubor
             </button>
             <span id="vzSettFileName" style="font-size:13px;color:#475569">žádný soubor</span>
@@ -288,7 +305,7 @@ input:checked + .toggle-sl::before{transform:translateX(20px)}
             </div>
           </div>
           <div id="backupError" style="display:none;padding:10px 12px;border-radius:8px;background:#fef2f2;border:0.5px solid #fecaca;color:#991b1b;font-size:12px;margin-bottom:10px"></div>
-          <button class="btn green" onclick="runBackup()" id="backupBtn"><i class="ti ti-player-play" style="font-size:13px" aria-hidden="true"></i> Spustit zálohu teď</button>
+          <button class="btn-soft green" onclick="runBackup()" id="backupBtn"><i class="ti ti-player-play" style="font-size:13px" aria-hidden="true"></i> Spustit zálohu teď</button>
           <div id="backupMsg" style="margin-top:10px"></div>
         </div>
       </div>
@@ -322,8 +339,8 @@ input:checked + .toggle-sl::before{transform:translateX(20px)}
             <div class="form-group"><label>Admin emaily pro notifikace <span style="font-weight:400;color:#9ca3af">(oddělte čárkou)</span></label><input type="text" id="smtpAdminEmails" placeholder="admin@firma.cz, dalsi@firma.cz" autocomplete="off"></div>
           </div>
           <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center">
-            <button class="btn blue" onclick="saveSmtpSettings()"><i class="ti ti-device-floppy" style="font-size:13px"></i> Uložit</button>
-            <button class="btn gray" onclick="testSmtpEmail()"><i class="ti ti-mail-forward" style="font-size:13px"></i> Otestovat odeslání</button>
+            <button class="btn-soft blue" onclick="saveSmtpSettings()"><i class="ti ti-device-floppy" style="font-size:13px"></i> Uložit</button>
+            <button class="btn-soft gray" onclick="testSmtpEmail()"><i class="ti ti-mail-forward" style="font-size:13px"></i> Otestovat odeslání</button>
           </div>
           <div id="smtpMsg" style="margin-top:10px"></div>
           <hr>
@@ -489,8 +506,8 @@ async function loadUsers() {
       ? `<label class="toggle-sw" style="transform:scale(.8);transform-origin:left center" title="Povolit objednávkový systém pro tohoto uživatele"><input type="checkbox" ${u.orders_allowed ? 'checked' : ''} onchange="toggleOrdersAllowed(${u.id},this.checked)"><span class="toggle-sl"></span></label>`
       : '<span style="color:#d1d5db;font-size:11px" title="Relevantní jen pro odběratele (hmg_share)">—</span>';
     const actions = isAdmin
-      ? `<button class="btn gray sm" onclick="resetPassword(${u.id},'${esc(u.username)}')" style="margin-right:4px">Heslo</button><span class="cant-delete">nelze smazat</span>`
-      : `<button class="btn gray sm" onclick="resetPassword(${u.id},'${esc(u.username)}')" style="margin-right:4px">Heslo</button><button class="btn red sm" onclick="deleteUser(${u.id},'${esc(u.username)}')">Smazat</button>`;
+      ? `<button class="btn-soft gray sm" onclick="resetPassword(${u.id},'${esc(u.username)}')" style="margin-right:4px">Heslo</button><span class="cant-delete">nelze smazat</span>`
+      : `<button class="btn-soft gray sm" onclick="resetPassword(${u.id},'${esc(u.username)}')" style="margin-right:4px">Heslo</button><button class="btn-soft red sm" onclick="deleteUser(${u.id},'${esc(u.username)}')">Smazat</button>`;
     return `<tr>
       <td class="td-name">${esc(u.username)}</td>
       <td>${roleBadge(u.role)}</td>
