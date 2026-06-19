@@ -14,6 +14,7 @@ module.exports = {
         '<rootDir>/__tests__/utils.test.js',
         '<rootDir>/__tests__/backup-integration.test.js',
         '<rootDir>/__tests__/restore-integration.test.js',
+        '<rootDir>/__tests__/week-save-scheduler.test.js',
       ],
     },
 

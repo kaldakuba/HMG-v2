@@ -8,6 +8,7 @@
 <title>HARMONOGRAM VÝROBY</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/order-approval.js"></script>
+<script src="/week-save-scheduler.js"></script>
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f0f2f5;color:#111;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-size:100%}
@@ -209,7 +210,7 @@ let _rows = null;
 let _mixes = [];
 let _companies = [{name:'Colas',color:'#fff2a8'},{name:'Firesta',color:'#d9ead3'},{name:'Mi Roads',color:'#ff7f86'}];
 let _settings = {hmg_plant_rate:'150',hmg_gas_capacity:'10 000',hmg_max_daily:'1000'};
-let _saveTimer = null;
+let _loading = false;      // true během načítání týdne → saveRows() se ignoruje
 let _role = '';
 let _weekOrderDaySums = {d0:0,d1:0,d2:0,d3:0,d4:0,d5:0,d6:0};
 
@@ -277,14 +278,29 @@ function buildMonthEntries(rows,start){
 }
 
 async function loadWeek(start){
-  const data=await apiLoadWeek(start);
-  _rows=data||defaultRows();
+  _loading=true;                       // pojistka: během načítání se neukládá
+  try{
+    const data=await apiLoadWeek(start);
+    _rows=data||defaultRows();
+  }finally{
+    _loading=false;
+  }
 }
 
-async function saveRows(){
+// Scheduler ukládání: zachytí cílový týden + řádky v okamžiku editace (viz week-save-scheduler.js)
+const _saveScheduler=createWeekSaveScheduler((w,r)=>apiSaveWeek(w,r),{delay:400});
+
+function saveRows(){
   if(!_rows)return;
-  clearTimeout(_saveTimer);
-  _saveTimer=setTimeout(()=>apiSaveWeek(_weekStart,[..._rows]),400);
+  if(_loading)return;                   // neukládej nad polovičně načteným týdnem
+  // Zamkni cílový týden + kopii řádků k tomuto naplánovanému uložení (timeout nečte _weekStart)
+  _saveScheduler.schedule(_weekStart,[..._rows]);
+}
+
+// Flush + cancel: zruš čekající debounce a OKAMŽITĚ doulož na PŮVODNÍ týden.
+// Volat PŘED jakoukoli změnou _weekStart a PŘED loadWeek.
+async function flushPendingSave(){
+  await _saveScheduler.flush();
 }
 
 // ── RENDER ──
@@ -408,6 +424,7 @@ function deleteCheckedRows(){if(!_rows.some(r=>r.checked)){alert('Nejdřív zatr
 function undoLast(){if(!undoStack.length){alert('Není co vrátit zpět.');return}_rows=JSON.parse(undoStack.pop());render();saveRows()}
 
 async function shiftWeek(delta){
+  await flushPendingSave();             // doulož rozpracovaný týden, než přepneme
   const d=new Date(_weekStart);d.setDate(d.getDate()+delta*7);
   _weekStart=d.toISOString().slice(0,10);
   await loadWeek(_weekStart);
@@ -415,6 +432,7 @@ async function shiftWeek(delta){
   if(IS_MOBILE)renderMobile();else render();
 }
 async function currentWeek(){
+  await flushPendingSave();             // doulož rozpracovaný týden, než přepneme
   _weekStart=defaultMonday();await loadWeek(_weekStart);
   if(_role==='admin'&&typeof OA!=='undefined'&&_settings.orders_enabled!=='false')await OA.loadPendingGroups();
   if(IS_MOBILE)renderMobile();else render();
@@ -510,7 +528,7 @@ function renderMiniCal(){
     if(isToday){bg='#2563eb';color='#fff';}
     el.style.cssText='padding:5px;font-size:13px;text-align:center;border-radius:'+br+';cursor:pointer;background:'+bg+';color:'+color+';font-weight:'+fw+';box-sizing:border-box;border:'+border+';font-family:Inter,sans-serif;';
     el.textContent=d;el.title=dd.toLocaleDateString('cs-CZ');
-    el.onclick=(function(m){return async function(){setWeekStart(m);await loadWeek(m);render();document.getElementById('miniCal').style.display='none';};})(mon);
+    el.onclick=(function(m){return async function(){await flushPendingSave();setWeekStart(m);await loadWeek(m);render();document.getElementById('miniCal').style.display='none';};})(mon);
     grid.appendChild(el);
   }
 }
@@ -808,6 +826,7 @@ async function init(){
       d.setDate(d.getDate()-day+1);
       const targetWeek=localIso(d);
       if(targetWeek!==_weekStart){
+        await flushPendingSave();        // doulož rozpracovaný týden, než přepneme
         _weekStart=targetWeek;
         await loadWeek(_weekStart);
         await OA.loadPendingGroups();

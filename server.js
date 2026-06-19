@@ -18,7 +18,7 @@ const helmet = require('helmet');
 const { parseVazenky } = require('./lib/vazenky-parser');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.67';
+const APP_VERSION = '3.68';
 
 const app = express();
 app.set('trust proxy', 1);
