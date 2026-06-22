@@ -16,9 +16,10 @@ const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
 const helmet = require('helmet');
 const { parseVazenky } = require('./lib/vazenky-parser');
+const { buildMonthWorkbook } = require('./lib/month-export');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.68';
+const APP_VERSION = '3.73';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -534,6 +535,34 @@ app.post('/api/week/:start', requireAuth, requireAdmin, async (req, res) => {
 app.get('/api/weeks', requireAuth, async (req, res) => {
   const r = await pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start');
   res.json(r.rows.map(r => ({ start: r.week_start, rows: JSON.parse(r.rows_json) })));
+});
+
+// Export měsíčního harmonogramu: .xlsx, 12 listů (Leden…Prosinec) pro daný rok (default = aktuální).
+// Přístup jako month-view (requireAuth) — vidí admin/operátor/hmg_share, všechny firmy.
+app.get('/api/month/export', requireAuth, async (req, res) => {
+  try {
+    let year = parseInt(req.query.year, 10);
+    if (isNaN(year) || year < 2000 || year > 2100) year = new Date().getFullYear();
+
+    const [wRes, cRes] = await Promise.all([
+      pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start'),
+      pool.query('SELECT data_json FROM companies WHERE id=1'),
+    ]);
+    const weeks = wRes.rows.map(r => ({ start: r.week_start, rows: JSON.parse(r.rows_json) }));
+    const companies = cRes.rows[0] ? JSON.parse(cRes.rows[0].data_json) : [];
+
+    const wb = buildMonthWorkbook({ weeks, companies, year });
+    const buf = await wb.xlsx.writeBuffer();
+
+    const fullName = `harmonogram ${year}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="${fullName}"; filename*=UTF-8''${encodeURIComponent(fullName)}`);
+    res.send(Buffer.from(buf));
+  } catch (err) {
+    console.error('GET /api/month/export error:', err);
+    res.status(500).json({ error: 'Chyba serveru při generování měsíčního exportu' });
+  }
 });
 
 app.get('/api/month-entries', requireAuth, async (req, res) => {
@@ -2738,8 +2767,8 @@ async function buildVazenkyQuery(req) {
   if (od)     { params.push(od);     where.push(`datum >= $${params.length}`); }
   if (doD)    { params.push(doD);    where.push(`datum <= $${params.length}`); }
 
-  // Default: bez filtru = posledních 30 dní (jen na uživatelské datum, scope zůstává)
-  if (!stavba && !od && !doD && !adminFirma) where.push(`datum >= CURRENT_DATE - INTERVAL '30 days'`);
+  // Bez datumového filtru = CELÁ historie (žádné výchozí časové okno).
+  // OD/DO se aplikuje jen když je zadáno; scoping dle role zůstává beze změny.
 
   return {
     role, firma, stavba, od, doD,
@@ -2796,6 +2825,15 @@ app.get('/api/vazenky', requireAuth, async (req, res) => {
 
     const total = data.rows.reduce((s, r) => s + Number(r.tuny || 0), 0);
 
+    // ADMIN: zobrazovaný název firmy = firma_taxis, jinak nazev_partnera (skutečný název
+    // partnera z importu), jinak „(neuvedeno)". Žádné „(nepřiřazeno)". Pro ostatní role
+    // se nic nepřidává (scoping drží jen vlastní firmu = firma_taxis vždy vyplněna).
+    if (q.role === 'admin') {
+      data.rows.forEach(r => {
+        r.firma_display = r.firma_taxis || r.nazev_partnera || '(neuvedeno)';
+      });
+    }
+
     // Sestav admin číselník: distinct firma_taxis + "(nepřiřazeno)" pokud existuje NULL
     let firmyList = [];
     if (q.role === 'admin') {
@@ -2827,7 +2865,7 @@ app.get('/api/vazenky/export', requireAuth, async (req, res) => {
     const rowsRes = q.empty
       ? { rows: [] }
       : await pool.query(
-          `SELECT cislo_vazenky, firma_taxis, stavba, datum, cas, smes, itt, tuny, spz, ridic
+          `SELECT cislo_vazenky, firma_taxis, nazev_partnera, stavba, datum, cas, smes, itt, tuny, spz, ridic
            FROM vazenky
            ${q.whereSQL}
            ORDER BY datum ASC, cas ASC
@@ -2889,7 +2927,8 @@ app.get('/api/vazenky/export', requireAuth, async (req, res) => {
     let total = 0;
     for (const r of rowsRes.rows) {
       const cisloDL = String(r.cislo_vazenky || '');
-      const firmaCell = r.firma_taxis || '(nepřiřazeno)';
+      // Admin (jediný, kdo má sloupec Firma): firma_taxis → skutečný název partnera → „(neuvedeno)"
+      const firmaCell = r.firma_taxis || r.nazev_partnera || '(neuvedeno)';
       const datumStr = fmtDatumCell(r.datum);
       const tuny = Number(r.tuny) || 0;
       total += tuny;

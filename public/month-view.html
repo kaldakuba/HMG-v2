@@ -74,6 +74,13 @@ td.today-col{background:#fff7cc!important}
 .sticky-lok{position:sticky;left:0;z-index:3}
 .sticky-smes{position:sticky;left:150px;z-index:3}
 th.sticky-lok,th.sticky-smes{z-index:6!important}
+/* Koncový sloupec „Celkem za měsíc" — sticky u pravého okraje */
+.col-total{width:110px;min-width:110px}
+.col-total-sticky{position:sticky;right:0;z-index:3;white-space:nowrap;box-shadow:-3px 0 6px rgba(0,0,0,.10)}
+.sticky-head .col-total-sticky,.sticky-head-2 .col-total-sticky{z-index:7!important}
+.tot-sum{background:#cfe0fa!important;color:#1e3a8a!important;font-weight:800;text-align:center}
+.tot-head{background:#1e293b!important;color:#fff!important;font-weight:700;text-align:center}
+.tot-body{background:#fff}
 tr.row-hover td,td.col-hover{background:#fefce8!important}
 @media(max-width:900px){.topbar{padding:10px 12px}.wrap{padding:6px}}
 .btn.nav.active{color:#fff;background:#1a1a1a;font-weight:500;cursor:default;pointer-events:none}
@@ -441,13 +448,17 @@ async function renderMonth(){
   let h='<table id="monthTable"><thead>';
   // Řádek součtů (harmonogram + objednávky)
   h+='<tr class="sticky-head"><th class="left-head col-lok sticky-lok"></th><th class="left-head col-obj"></th><th class="left-head col-smes sticky-smes"></th><th class="left-head col-itt"></th><th class="left-head col-ceta">Součet t/den:</th>';
+  let _monthTotal=0;
   visibleDays.forEach(d=>{
     const dateId=iso(y,m,d);
     const _ds=dayTotalWithOrders(entries,_orders,dateId);
+    _monthTotal+=_ds;
     const _overMax=_maxDaily&&_ds>=_maxDaily;
     const _underMin=_minDaily>0&&_ds>0&&_ds<_minDaily;
     h+='<th class="sum-head day'+(_overMax?' over-limit':_underMin?' under-limit':'')+'">'+_ds+'</th>';
   });
+  // Koncová sticky buňka: celkový součet všech denních součtů zobrazeného měsíce
+  h+='<th class="col-total col-total-sticky tot-sum">Celkem '+_monthTotal.toLocaleString('cs-CZ')+' t</th>';
   h+='</tr>';
   // Řádek datumů – bez onclick pro objednávky (objednávka jen přes tlačítko)
   h+='<tr class="sticky-head-2"><th class="col-lok sticky-lok">lokalita</th><th class="col-obj">objednávka</th><th class="col-smes sticky-smes">Směs a průkazná zk. typu</th><th class="col-itt">ITT</th><th class="col-ceta">četa</th>';
@@ -455,12 +466,14 @@ async function renderMonth(){
     const cls=dayClass(y,m,d);
     h+='<th class="day '+cls+'" style="font-size:11px">'+d+'.'+(m+1)+'.'+(cls==='today-col'?' ▲':'')+'</th>';
   });
+  h+='<th class="col-total col-total-sticky tot-head" style="font-size:11px">Σ celkem</th>';
   h+='</tr></thead><tbody>';
 
   if(!rows.length&&!orderRows.length){
     for(let i=0;i<10;i++){
       h+='<tr><td class="sticky-lok" style="background:#fff"></td><td></td><td class="sticky-smes" style="background:#fff"></td><td></td><td></td>';
       visibleDays.forEach(d=>h+='<td class="'+dayClass(y,m,d)+'"></td>');
+      h+='<td class="col-total col-total-sticky tot-body"></td>';
       h+='</tr>';
     }
   } else {
@@ -474,6 +487,7 @@ async function renderMonth(){
       h+='<td class="sticky-smes" style="background:'+(color||'#fff')+';text-align:left;padding-left:6px">'+esc(r.smes)+'</td>';
       h+='<td style="font-size:11px">'+esc(r.itt)+'</td><td>'+esc(r.ceta)+'</td>';
       visibleDays.forEach(d=>h+='<td class="'+dayClass(y,m,d)+'">'+(r.days[d]||'')+'</td>');
+      h+='<td class="col-total col-total-sticky tot-body" style="background:'+(color||'#fff')+'"></td>';
       h+='</tr>';
     });
 
@@ -512,6 +526,7 @@ async function renderMonth(){
           h+='<td style="background:'+bg+'"></td>';
         }
       });
+      h+='<td class="col-total col-total-sticky tot-body" style="background:'+bg+'"></td>';
       h+='</tr>';
     });
   }
@@ -577,48 +592,13 @@ function setMonthMin(){document.getElementById('monthPick').min=defaultMonth();}
 // ── EXPORT ──
 function downloadBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
 
+// Export: celý rok (12 listů, Leden…Prosinec) jako .xlsx přes server (ExcelJS).
+// Rok se bere ze zobrazeného měsíce; barvy řádků dle firmy generuje server.
 function exportMonth(){
   const val=monthPick.value||defaultMonth();
-  const[yy,mm]=val.split('-');
-  const y=parseInt(yy),m=parseInt(mm)-1;
-  const totalDays=new Date(y,m+1,0).getDate();
-  const allDays=[];for(let d=1;d<=totalDays;d++)allDays.push(d);
-
-  const rows=rowsForMonth(y,m,_entries);
-
-  const css='table{border-collapse:collapse;font-family:Arial;font-size:10pt}'+
-    'th,td{border:1px solid #222;padding:4px;text-align:center}'+
-    'th{font-weight:bold;background:#f2f2f2}'+
-    '.b{background:#ddebf7}.g{background:#d9d9d9}.h{background:#f0fdf4;color:#15803d}'+
-    '.sum{background:#dbeafe;font-weight:bold}';
-
-  function cl(d){const id=iso(y,m,d);const dow=new Date(y,m,d).getDay();return isHoliday(id)?'h':(dow===0||dow===6)?'g':'b'}
-
-  // Řádek součtů
-  let sumRow='<tr><th colspan="5" style="text-align:right;background:#f2f2f2">Součet t/den:</th>';
-  allDays.forEach(d=>sumRow+='<th class="sum '+cl(d)+'">'+(daySum(_entries,iso(y,m,d))||'')+'</th>');
-  sumRow+='</tr>';
-
-  // Řádek záhlaví
-  let headRow='<tr><th>Lokalita</th><th>Objednávka</th><th>Směs</th><th>ITT</th><th>Četa</th>';
-  allDays.forEach(d=>headRow+='<th class="'+cl(d)+'">'+d+'.'+(m+1)+'.</th>');
-  headRow+='</tr>';
-
-  // Datové řádky
-  let body='';
-  rows.forEach(r=>{
-    const sep=r._firstInWeek?'border-top:3px solid #1a1a2e':'';
-    body+='<tr style="'+sep+'"><td>'+esc(r.lokalita)+'</td><td>'+esc(r.objednavka)+'</td>'+
-      '<td style="text-align:left">'+esc(r.smes)+'</td><td>'+esc(r.itt)+'</td><td>'+esc(r.ceta)+'</td>';
-    allDays.forEach(d=>body+='<td class="'+cl(d)+'">'+(r.days[d]||'')+'</td>');
-    body+='</tr>';
-  });
-
-  const html='<html><head><meta charset="UTF-8"><style>'+css+'</style></head><body>'+
-    '<h1>HARMONOGRAM VÝROBY – '+monthName(m)+' '+y+'</h1>'+
-    '<table>'+sumRow+headRow+body+'</table></body></html>';
-
-  downloadBlob(new Blob(['﻿'+html],{type:'application/vnd.ms-excel;charset=utf-8'}),'HMG_mesic_'+yy+'_'+mm+'.xls');
+  const y=parseInt(val.split('-')[0],10)||new Date().getFullYear();
+  const url='/api/month/export?year='+y+(_urlToken?'&t='+encodeURIComponent(_urlToken):'');
+  window.location.href=url;
 }
 
 // ── MAPOVÉ FUNKCE (Leaflet – přetahovatelný praporek) ────────────────────────

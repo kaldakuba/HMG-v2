@@ -679,8 +679,10 @@ async function loadVazenky() {
     }
     empty.style.display = 'none';
     tbody.innerHTML = data.rows.map(r => {
+      // Admin: zobraz firma_display (firma_taxis → skutečný název partnera). Nenamapované
+      // (bez firma_taxis) odliš třídou, ale text = reálný název partnera, ne „(nepřiřazeno)".
       const firmaCell = _vzIsAdmin
-        ? `<td class="${r.firma_taxis ? '' : 'firma-unassigned'}">${esc(r.firma_taxis || '(nepřiřazeno)')}</td>`
+        ? `<td class="${r.firma_taxis ? '' : 'firma-unassigned'}">${esc(r.firma_display || r.firma_taxis || '(neuvedeno)')}</td>`
         : '';
       return `<tr>
         ${firmaCell}
