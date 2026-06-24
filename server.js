@@ -21,7 +21,7 @@ const { migrateObalovny, listObalovny } = require('./lib/obalovny');
 const { migrateObalovnaId } = require('./lib/obalovna-id');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.77';
+const APP_VERSION = '3.78';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -440,6 +440,14 @@ app.get('/dashboard', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
+// ── Aktivní obalovna přihlášeného uživatele (multi-obalovna, krok 3) ──
+// Zdroj pravdy = session (nastaveno při loginu z users.obalovna_id). Default 'holubice'
+// kvůli starším sessions bez tohoto pole i kvůli Holubici. NEzávisí na subdoméně/routingu.
+// Slouží jako DALŠÍ podmínka v dotazech vedle stávajícího role/firma scopingu (ne náhrada).
+function getObalovnaId(req) {
+  return (req.session && req.session.obalovnaId) || 'holubice';
+}
+
 // ── Auth API ──
 app.post('/api/login', loginLimiter, async (req, res) => {
   try {
@@ -453,6 +461,8 @@ app.post('/api/login', loginLimiter, async (req, res) => {
     req.session.userId = user.id;
     req.session.username = user.username;
     req.session.role = user.role;
+    // Aktivní obalovna uživatele (multi-obalovna). Default 'holubice' kdyby chybělo.
+    req.session.obalovnaId = user.obalovna_id || 'holubice';
     req.session.userAgent = req.headers['user-agent'] || '';
     req.session.loginIp = req.ip || '';
     req.session.mustChangePassword = !!user.must_change_password;
@@ -515,7 +525,10 @@ app.get('/api/me', requireAuth, async (req, res) => {
 
 // ── Data API (chráněno přihlášením) ──
 app.get('/api/week/:start', requireAuth, async (req, res) => {
-  const r = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1', [req.params.start]);
+  const r = await pool.query(
+    'SELECT rows_json FROM week_data WHERE week_start=$1 AND obalovna_id=$2',
+    [req.params.start, getObalovnaId(req)]
+  );
   res.json(r.rows[0] ? JSON.parse(r.rows[0].rows_json) : null);
 });
 
@@ -537,15 +550,18 @@ app.post('/api/week/:start', requireAuth, requireAdmin, async (req, res) => {
     lng: (r.lng != null && isFinite(+r.lng)) ? +r.lng : null,
   }));
   await pool.query(
-    `INSERT INTO week_data (week_start,rows_json,updated_at) VALUES($1,$2,NOW())
+    `INSERT INTO week_data (week_start,rows_json,obalovna_id,updated_at) VALUES($1,$2,$3,NOW())
      ON CONFLICT(week_start) DO UPDATE SET rows_json=EXCLUDED.rows_json, updated_at=NOW()`,
-    [req.params.start, JSON.stringify(safeRows)]
+    [req.params.start, JSON.stringify(safeRows), getObalovnaId(req)]
   );
   res.json({ ok: true });
 });
 
 app.get('/api/weeks', requireAuth, async (req, res) => {
-  const r = await pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start');
+  const r = await pool.query(
+    'SELECT week_start,rows_json FROM week_data WHERE obalovna_id=$1 ORDER BY week_start',
+    [getObalovnaId(req)]
+  );
   res.json(r.rows.map(r => ({ start: r.week_start, rows: JSON.parse(r.rows_json) })));
 });
 
@@ -556,9 +572,10 @@ app.get('/api/month/export', requireAuth, async (req, res) => {
     let year = parseInt(req.query.year, 10);
     if (isNaN(year) || year < 2000 || year > 2100) year = new Date().getFullYear();
 
+    const obalovnaId = getObalovnaId(req);
     const [wRes, cRes] = await Promise.all([
-      pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start'),
-      pool.query('SELECT data_json FROM companies WHERE id=1'),
+      pool.query('SELECT week_start,rows_json FROM week_data WHERE obalovna_id=$1 ORDER BY week_start', [obalovnaId]),
+      pool.query('SELECT data_json FROM companies WHERE id=1 AND obalovna_id=$1', [obalovnaId]),
     ]);
     const weeks = wRes.rows.map(r => ({ start: r.week_start, rows: JSON.parse(r.rows_json) }));
     const companies = cRes.rows[0] ? JSON.parse(cRes.rows[0].data_json) : [];
@@ -578,36 +595,36 @@ app.get('/api/month/export', requireAuth, async (req, res) => {
 });
 
 app.get('/api/month-entries', requireAuth, async (req, res) => {
-  const r = await pool.query('SELECT data_json FROM month_entries WHERE id=1');
+  const r = await pool.query('SELECT data_json FROM month_entries WHERE id=1 AND obalovna_id=$1', [getObalovnaId(req)]);
   res.json(r.rows[0] ? JSON.parse(r.rows[0].data_json) : {});
 });
 
 app.post('/api/month-entries', requireAuth, requireAdmin, async (req, res) => {
   await pool.query(
-    `INSERT INTO month_entries (id,data_json,updated_at) VALUES(1,$1,NOW())
+    `INSERT INTO month_entries (id,data_json,obalovna_id,updated_at) VALUES(1,$1,$2,NOW())
      ON CONFLICT(id) DO UPDATE SET data_json=EXCLUDED.data_json, updated_at=NOW()`,
-    [JSON.stringify(req.body)]
+    [JSON.stringify(req.body), getObalovnaId(req)]
   );
   res.json({ ok: true });
 });
 
 app.get('/api/inputs', requireAuth, async (req, res) => {
-  const r = await pool.query('SELECT rows_json FROM inputs WHERE id=1');
+  const r = await pool.query('SELECT rows_json FROM inputs WHERE id=1 AND obalovna_id=$1', [getObalovnaId(req)]);
   res.json(r.rows[0] ? JSON.parse(r.rows[0].rows_json) : null);
 });
 
 app.post('/api/inputs', requireAuth, requireAdmin, async (req, res) => {
   const { rows } = req.body;
   await pool.query(
-    `INSERT INTO inputs (id,rows_json,updated_at) VALUES(1,$1,NOW())
+    `INSERT INTO inputs (id,rows_json,obalovna_id,updated_at) VALUES(1,$1,$2,NOW())
      ON CONFLICT(id) DO UPDATE SET rows_json=EXCLUDED.rows_json, updated_at=NOW()`,
-    [JSON.stringify(rows)]
+    [JSON.stringify(rows), getObalovnaId(req)]
   );
   res.json({ ok: true });
 });
 
 app.get('/api/companies', requireAuth, async (req, res) => {
-  const r = await pool.query('SELECT data_json FROM companies WHERE id=1');
+  const r = await pool.query('SELECT data_json FROM companies WHERE id=1 AND obalovna_id=$1', [getObalovnaId(req)]);
   res.json(r.rows[0] ? JSON.parse(r.rows[0].data_json) : null);
 });
 
@@ -619,9 +636,9 @@ app.post('/api/companies', requireAuth, requireAdmin, async (req, res) => {
     if (c.color && !/^#[0-9a-fA-F]{3,6}$/.test(c.color)) return res.status(400).json({ error: 'neplatný formát barvy' });
   }
   await pool.query(
-    `INSERT INTO companies (id,data_json,updated_at) VALUES(1,$1,NOW())
+    `INSERT INTO companies (id,data_json,obalovna_id,updated_at) VALUES(1,$1,$2,NOW())
      ON CONFLICT(id) DO UPDATE SET data_json=EXCLUDED.data_json, updated_at=NOW()`,
-    [JSON.stringify(companies)]
+    [JSON.stringify(companies), getObalovnaId(req)]
   );
   res.json({ ok: true });
 });
@@ -659,7 +676,8 @@ app.post('/api/settings', requireAuth, requireAdmin, async (req, res) => {
 });
 
 app.get('/api/export', requireAuth, requireOperator, async (req, res) => {
-  const r = await pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start');
+  const r = await pool.query(
+    'SELECT week_start,rows_json FROM week_data WHERE obalovna_id=$1 ORDER BY week_start', [getObalovnaId(req)]);
   res.json({
     version: 2, type: 'HMG_WEEK_DATA',
     created: new Date().toISOString(),
@@ -1738,9 +1756,10 @@ app.get('/settings', requireAuth, requireAdmin, (req, res) => {
 
 
 app.get('/api/export-excel', requireAuth, requireOperator, async (req, res) => {
+  const obalovnaId = getObalovnaId(req);
   const [weeks, inputs] = await Promise.all([
-    pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start'),
-    pool.query('SELECT rows_json FROM inputs WHERE id=1')
+    pool.query('SELECT week_start,rows_json FROM week_data WHERE obalovna_id=$1 ORDER BY week_start', [obalovnaId]),
+    pool.query('SELECT rows_json FROM inputs WHERE id=1 AND obalovna_id=$1', [obalovnaId])
   ]);
   const wb = XLSX.utils.book_new();
   weeks.rows.forEach(w => {
@@ -1805,8 +1824,8 @@ app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
     const firmaVal = (role === 'hmg_share' && firma) ? sanitizeStr(firma, 100) : null;
     const hash = await bcrypt.hash(password, 12);
     const r = await pool.query(
-      'INSERT INTO users (username, password_hash, role, firma, email) VALUES ($1,$2,$3,$4,$5) RETURNING id,username,role,firma,email',
-      [username.trim(), hash, role, firmaVal, emailVal]
+      'INSERT INTO users (username, password_hash, role, firma, email, obalovna_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id,username,role,firma,email',
+      [username.trim(), hash, role, firmaVal, emailVal, getObalovnaId(req)]
     );
     res.json({ ok: true, user: r.rows[0] });
   } catch (err) {
@@ -1929,14 +1948,16 @@ app.get('/api/orders', requireAuth, async (req, res) => {
   try {
     const { month, pending } = req.query;
 
+    const obalovnaId = getObalovnaId(req);   // multi-obalovna: další podmínka navíc
     // Admin: načti všechny pending skupiny bez filtru měsíce
     if (pending === '1' && req.session.role === 'admin') {
       const r = await pool.query(
         `SELECT o.*, u.username
          FROM orders o
          LEFT JOIN users u ON u.id = o.user_id
-         WHERE o.status = 'pending'
-         ORDER BY o.created_at ASC`
+         WHERE o.obalovna_id=$1 AND o.status = 'pending'
+         ORDER BY o.created_at ASC`,
+        [obalovnaId]
       );
       return res.json(r.rows);
     }
@@ -1954,10 +1975,10 @@ app.get('/api/orders', requireAuth, async (req, res) => {
     // ale při POST /api/orders se firma bere z users.firma → nemůže objednat za cizí firmu.
     const r = await pool.query(
       `SELECT * FROM orders
-       WHERE datum >= $1 AND datum <= $2
+       WHERE obalovna_id=$3 AND datum >= $1 AND datum <= $2
          AND status IN ('pending','pre_approved','pre_rejected','approved')
        ORDER BY datum, firma, created_at`,
-      [from, to]
+      [from, to, obalovnaId]
     );
     res.json(r.rows);
   } catch (err) {
@@ -1982,7 +2003,9 @@ app.get('/api/day-capacity', requireAuth, async (req, res) => {
     const weekStart = monday.toISOString().slice(0, 10);
     const di = daysFromMonday;
 
-    const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1', [weekStart]);
+    const obalovnaId = getObalovnaId(req);   // multi-obalovna: další podmínka navíc
+    const wRes = await pool.query(
+      'SELECT rows_json FROM week_data WHERE week_start=$1 AND obalovna_id=$2', [weekStart, obalovnaId]);
     let harmonogram = 0;
     if (wRes.rows[0]) {
       const rows = JSON.parse(wRes.rows[0].rows_json);
@@ -1993,10 +2016,10 @@ app.get('/api/day-capacity', requireAuth, async (req, res) => {
     const oRes = await pool.query(
       `SELECT firma, SUM(tuny)::int AS tuny, status
        FROM orders
-       WHERE datum=$1 AND status IN ('pending','pre_approved','pre_rejected','approved')
+       WHERE obalovna_id=$2 AND datum=$1 AND status IN ('pending','pre_approved','pre_rejected','approved')
        GROUP BY firma, status
        ORDER BY firma, status`,
-      [date]
+      [date, obalovnaId]
     );
 
     // Denní limity
@@ -2077,6 +2100,7 @@ app.post('/api/orders', requireAuth, requireOrdersEnabled, async (req, res) => {
     const minDaily = limits.hmg_min_daily || null;
 
     // Kapacitní kontrola per den (server-side bezpečnost)
+    const obalovnaId = getObalovnaId(req);   // multi-obalovna: scope kapacity i zápisu
     const datumSet = [...new Set(items.map(i => i.datum))];
     const warnings = [];
     const errors   = [];
@@ -2094,7 +2118,8 @@ app.post('/api/orders', requireAuth, requireOrdersEnabled, async (req, res) => {
       const weekStart = monday.toISOString().slice(0, 10);
       const di = daysFromMonday;
 
-      const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1', [weekStart]);
+      const wRes = await pool.query(
+        'SELECT rows_json FROM week_data WHERE week_start=$1 AND obalovna_id=$2', [weekStart, obalovnaId]);
       let weekTuny = 0;
       if (wRes.rows[0]) {
         const rows = JSON.parse(wRes.rows[0].rows_json);
@@ -2103,8 +2128,8 @@ app.post('/api/orders', requireAuth, requireOrdersEnabled, async (req, res) => {
 
       const pRes = await pool.query(
         `SELECT COALESCE(SUM(tuny),0) AS total FROM orders
-         WHERE datum=$1 AND status IN ('pending','pre_approved','pre_rejected','approved')`,
-        [datum]
+         WHERE obalovna_id=$2 AND datum=$1 AND status IN ('pending','pre_approved','pre_rejected','approved')`,
+        [datum, obalovnaId]
       );
       const existingTuny = parseInt(pRes.rows[0].total) || 0;
 
@@ -2129,8 +2154,8 @@ app.post('/api/orders', requireAuth, requireOrdersEnabled, async (req, res) => {
       await client.query('BEGIN');
       for (const item of items) {
         await client.query(
-          `INSERT INTO orders (order_group_id, user_id, firma, datum, smes, itt, tuny, komentar, lokalita, lat, lng)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          `INSERT INTO orders (order_group_id, user_id, firma, datum, smes, itt, tuny, komentar, lokalita, lat, lng, obalovna_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
           [
             groupId,
             req.session.userId,
@@ -2142,7 +2167,8 @@ app.post('/api/orders', requireAuth, requireOrdersEnabled, async (req, res) => {
             item.komentar ? sanitizeStr(item.komentar, 500) : null,
             lokSafe,
             groupLat,
-            groupLng
+            groupLng,
+            obalovnaId
           ]
         );
       }
@@ -2726,11 +2752,11 @@ app.post('/api/vazenky/upload', requireAuth, requireAdmin, vazenkyUpload.single(
       const ins = await pool.query(
         `INSERT INTO vazenky
           (cislo_vazenky, datum, cas, smes, itt, tuny, spz, ridic, stavba,
-           nazev_partnera, ico, firma_taxis, uploaded_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+           nazev_partnera, ico, firma_taxis, uploaded_by, obalovna_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
          ON CONFLICT (cislo_vazenky) DO NOTHING`,
         [r.cislo_vazenky, r.datum, r.cas, r.smes, r.itt, r.tuny, r.spz, r.ridic, r.stavba,
-         r.nazev_partnera, r.ico, r.firma_taxis, req.session.userId]
+         r.nazev_partnera, r.ico, r.firma_taxis, req.session.userId, getObalovnaId(req)]
       );
       if (ins.rowCount === 1) inserted++; else duplicates++;
     }
@@ -2747,6 +2773,7 @@ async function buildVazenkyQuery(req) {
   const uRes = await pool.query('SELECT role, firma FROM users WHERE id=$1', [req.session.userId]);
   const role  = (uRes.rows[0] && uRes.rows[0].role)  || req.session.role;
   const firma = (uRes.rows[0] && uRes.rows[0].firma) || null;
+  const obalovnaId = getObalovnaId(req);   // multi-obalovna: další podmínka navíc
 
   const stavba = (req.query.stavba || '').trim();
   const od     = (req.query.od     || '').trim();
@@ -2759,6 +2786,11 @@ async function buildVazenkyQuery(req) {
 
   const where = [];
   const params = [];
+
+  // MULTI-OBALOVNA: VŽDY první podmínka (klient nemůže obejít parametrem).
+  // Je to DALŠÍ omezení vedle role/firma scopingu níže, ne jeho náhrada.
+  params.push(obalovnaId);
+  where.push(`obalovna_id = $${params.length}`);
 
   // SCOPE podle role (klient nemůže obejít) — VŽDY před uživatelskými filtry.
   // Pro hmg_share je scope zamčen na users.firma; req.query.firma je IGNOROVÁN.
@@ -2791,7 +2823,7 @@ async function buildVazenkyQuery(req) {
   // OD/DO se aplikuje jen když je zadáno; scoping dle role zůstává beze změny.
 
   return {
-    role, firma, stavba, od, doD,
+    role, firma, stavba, od, doD, obalovnaId,
     firma_filter: adminFirma,    // co se reálně použilo (prázdné = bez filtru)
     empty:    false,
     whereSQL: where.length ? 'WHERE ' + where.join(' AND ') : '',
@@ -2816,14 +2848,16 @@ app.get('/api/vazenky', requireAuth, async (req, res) => {
       ORDER BY datum DESC, cas DESC
       LIMIT 5000
     `;
-    // Číselník stavby (pro select v UI) — bez datumového filtru, jen scope
-    const scopeWhere  = q.role === 'hmg_share' ? `WHERE firma_taxis = $1` : '';
-    const scopeParams = q.role === 'hmg_share' ? [q.firma] : [];
+    // Číselník stavby (pro select v UI) — bez datumového filtru, jen scope.
+    // Multi-obalovna: VŽDY scope na obalovna_id ($1) + případně firma_taxis (hmg_share).
+    const scopeParams = [q.obalovnaId];
+    let   scopeWhere  = `WHERE obalovna_id = $1`;
+    if (q.role === 'hmg_share') { scopeParams.push(q.firma); scopeWhere += ` AND firma_taxis = $${scopeParams.length}`; }
     const stavbyQ = `
       SELECT DISTINCT stavba
       FROM vazenky
       ${scopeWhere}
-      ${scopeWhere ? 'AND' : 'WHERE'} stavba IS NOT NULL AND stavba <> ''
+      AND stavba IS NOT NULL AND stavba <> ''
       ORDER BY stavba ASC
     `;
 
@@ -2832,9 +2866,10 @@ app.get('/api/vazenky', requireAuth, async (req, res) => {
       ? pool.query(`
           SELECT firma_taxis, COUNT(*)::int AS n
           FROM vazenky
+          WHERE obalovna_id = $1
           GROUP BY firma_taxis
           ORDER BY firma_taxis NULLS LAST
-        `)
+        `, [q.obalovnaId])
       : Promise.resolve({ rows: [] });
 
     const [data, stavby, firmy] = await Promise.all([
@@ -3029,14 +3064,14 @@ async function loadConfirmedForDashboard(req) {
          jsonb_array_elements(wd.rows_json::jsonb) AS row_data,
          (VALUES (0),(1),(2),(3),(4),(5),(6)) AS offs(n)
   `;
-  // SCOPE: klient dostane jen řádky se svou firmou (klient nemůže obejít — řešeno server-side)
-  const whereScope = isAdmin
-    ? `WHERE ${dayVal} > 0
-       AND (wd.week_start::date + (offs.n || ' days')::interval)::date >= CURRENT_DATE`
-    : `WHERE row_data->>'ceta' = $1
+  // SCOPE: multi-obalovna (wd.obalovna_id = $1) VŽDY + role/firma scope (klient nemůže obejít).
+  // obalovna_id je DALŠÍ podmínka navíc, role/firma scoping zůstává beze změny.
+  const obalovnaId = getObalovnaId(req);
+  const params = [obalovnaId];
+  let whereScope = `WHERE wd.obalovna_id = $1
        AND ${dayVal} > 0
        AND (wd.week_start::date + (offs.n || ' days')::interval)::date >= CURRENT_DATE`;
-  const params = isAdmin ? [] : [firma || ''];
+  if (!isAdmin) { params.push(firma || ''); whereScope += ` AND row_data->>'ceta' = $${params.length}`; }
 
   // Pole pro výpis — admin má navíc firmu (ceta)
   const selectCols = isAdmin
@@ -3084,20 +3119,24 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
 
     let pendingList, recentOrders;
 
+    const obalovnaId = getObalovnaId(req);   // multi-obalovna: další podmínka navíc
     if (role === 'admin') {
       const [pRes, rRes] = await Promise.all([
         pool.query(
           `SELECT o.*, u.username
            FROM orders o
            LEFT JOIN users u ON u.id = o.user_id
-           WHERE o.status IN ('pending','pre_approved','pre_rejected')
-           ORDER BY o.created_at ASC`
+           WHERE o.obalovna_id=$1 AND o.status IN ('pending','pre_approved','pre_rejected')
+           ORDER BY o.created_at ASC`,
+          [obalovnaId]
         ),
         pool.query(
           `SELECT o.*, u.username
            FROM orders o
            LEFT JOIN users u ON u.id = o.user_id
-           ORDER BY o.created_at DESC LIMIT 10`
+           WHERE o.obalovna_id=$1
+           ORDER BY o.created_at DESC LIMIT 10`,
+          [obalovnaId]
         ),
       ]);
       pendingList  = pRes.rows;
@@ -3107,13 +3146,13 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
       const [pRes, rRes] = await Promise.all([
         pool.query(
           `SELECT * FROM orders
-           WHERE firma=$1 AND status IN ('pending','pre_approved','pre_rejected')
+           WHERE obalovna_id=$2 AND firma=$1 AND status IN ('pending','pre_approved','pre_rejected')
            ORDER BY created_at ASC`,
-          [firmaParam]
+          [firmaParam, obalovnaId]
         ),
         pool.query(
-          `SELECT * FROM orders WHERE firma=$1 ORDER BY created_at DESC LIMIT 10`,
-          [firmaParam]
+          `SELECT * FROM orders WHERE obalovna_id=$2 AND firma=$1 ORDER BY created_at DESC LIMIT 10`,
+          [firmaParam, obalovnaId]
         ),
       ]);
       pendingList  = pRes.rows;
