@@ -21,7 +21,7 @@ const { migrateObalovny, listObalovny } = require('./lib/obalovny');
 const { migrateObalovnaId } = require('./lib/obalovna-id');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.78';
+const APP_VERSION = '3.79';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -363,6 +363,17 @@ function requireAdmin(req, res, next) {
   res.redirect('/login');
 }
 
+// Superadmin stojí NAD obalovnami (multi-obalovna, krok 4). NENÍ to admin obalovny —
+// requireAdmin ho záměrně NEpustí (a naopak), aby se role nemíchaly. Chrání superadmin
+// rozhraní (/api/obalovny a budoucí). Roli nelze nastavit přes API (jen seed skript).
+function requireSuperadmin(req, res, next) {
+  if (req.session && req.session.role === 'superadmin') return next();
+  if (req.path.startsWith('/api/')) {
+    return res.status(403).json({ error: 'Nedostatečná oprávnění (jen superadmin)' });
+  }
+  res.redirect('/login');
+}
+
 // Operator + Admin mohou číst data
 function requireOperator(req, res, next) {
   const role = req.session && req.session.role;
@@ -418,9 +429,16 @@ app.get('/login', (req, res) => {
 });
 
 app.get('/', requireAuth, (req, res) => {
+  // superadmin stojí nad obalovnami → nevstupuje do harmonogramu, ale na rozcestník
+  if (req.session.role === 'superadmin') return res.redirect('/superadmin');
   // hmg_share vidí dashboard (má tam tlačítko do month-view)
   if (req.session.role === 'hmg_share') return res.redirect('/dashboard');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Rozcestník superadmina (seznam obaloven) — jen pro roli superadmin.
+app.get('/superadmin', requireAuth, requireSuperadmin, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'superadmin.html'));
 });
 
 app.get('/month', requireAuth, requireViewer, (req, res) => {
@@ -444,7 +462,11 @@ app.get('/dashboard', requireAuth, (req, res) => {
 // Zdroj pravdy = session (nastaveno při loginu z users.obalovna_id). Default 'holubice'
 // kvůli starším sessions bez tohoto pole i kvůli Holubici. NEzávisí na subdoméně/routingu.
 // Slouží jako DALŠÍ podmínka v dotazech vedle stávajícího role/firma scopingu (ne náhrada).
+// Superadmin NEMÁ konkrétní obalovnu → vrací null. Datové dotazy mají `obalovna_id = $1`,
+// takže s null nevrátí žádný řádek (prázdno) — superadmin nevidí data žádné obalovny jako
+// její uživatel. Pro běžné role default 'holubice' (i pro starší sessions bez pole).
 function getObalovnaId(req) {
+  if (req.session && req.session.role === 'superadmin') return null;
   return (req.session && req.session.obalovnaId) || 'holubice';
 }
 
@@ -865,9 +887,9 @@ app.get('/api/config', requireAuth, (req, res) => {
 });
 
 // ── Seznam obaloven (organizační struktura TAXIS) ──
-// Zatím jen pro budoucí superadmin; prozatím chráněno běžným requireAuth.
-// Čistě čtecí, nemění žádný stávající endpoint.
-app.get('/api/obalovny', requireAuth, async (req, res) => {
+// Jen pro roli superadmin (krok 4). Běžný admin/operator/hmg_share NEMÁ přístup.
+// Čistě čtecí.
+app.get('/api/obalovny', requireAuth, requireSuperadmin, async (req, res) => {
   const obalovny = await listObalovny(pool);
   res.json(obalovny);
 });
@@ -1838,7 +1860,13 @@ app.put('/api/users/:id/role', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id);
   if (id === req.session.userId) return res.status(400).json({ error: 'Nemůžeš změnit vlastní roli' });
   const { role } = req.body;
+  // 'superadmin' NENÍ v povolených hodnotách → nelze povýšit přes API (jen seed skript).
   if (!['admin','operator','hmg_share'].includes(role)) return res.status(400).json({ error: 'Neplatná role' });
+  // Roli superadmina nelze měnit přes admin API obalovny (superadmin stojí nad obalovnami).
+  const tRes = await pool.query('SELECT role FROM users WHERE id=$1', [id]);
+  if (tRes.rows[0] && tRes.rows[0].role === 'superadmin') {
+    return res.status(403).json({ error: 'Roli superadmina nelze měnit přes toto rozhraní' });
+  }
   await pool.query('UPDATE users SET role=$1 WHERE id=$2', [role, id]);
   // Smazat sessions uživatele aby se znovu přihlásil s novou rolí
   await pool.query("DELETE FROM session WHERE sess->>'userId'=$1", [String(id)]);
@@ -3351,6 +3379,8 @@ if (require.main === module) {
     isIsoDate, isIntOrEmpty, sanitizeStr, validateRows, fv, fmtDateCz, escHtml,
     // Záloha + obnova (Tier 1 integrační)
     sendBackup, restoreFromSnapshot,
+    // Multi-obalovna (Tier 1 unit) — aktivní obalovna + superadmin gate
+    getObalovnaId, requireSuperadmin,
     // HTTP + DB přístup (Tier 2 supertest)
     app, pool, initDb,
   };

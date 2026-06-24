@@ -18,6 +18,7 @@ module.exports = {
         '<rootDir>/__tests__/month-export.test.js',
         '<rootDir>/__tests__/obalovny.test.js',
         '<rootDir>/__tests__/obalovna-id.test.js',
+        '<rootDir>/__tests__/superadmin.test.js',
       ],
     },
 

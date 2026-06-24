@@ -1,0 +1,97 @@
+<!-- Copyright (c) 2026 Jakub Kalousek. All rights reserved. Proprietary and confidential. -->
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="author" content="Jakub Kalousek">
+<title>Superadmin – Obalovny TAXIS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',Arial,sans-serif;background:#f0f2f5;min-height:100vh;color:#111;padding:28px}
+.wrap{max-width:1000px;margin:0 auto}
+.bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
+.logo{font-size:11px;font-weight:700;color:#6b7280;letter-spacing:2px;text-transform:uppercase}
+h1{font-size:22px;font-weight:800;letter-spacing:.5px;color:#1a1a2e;margin-top:2px}
+.logout{height:38px;padding:0 16px;background:#1a1a2e;color:#fff;border:none;border-radius:7px;font-family:'Inter',sans-serif;font-size:13px;font-weight:700;cursor:pointer}
+.logout:hover{background:#2d2d4e}
+.card{background:#fff;border:1px solid #a0aabb;border-radius:12px;padding:22px 24px}
+.hint{font-size:13px;color:#6b7280;margin-bottom:16px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #e5e7eb}
+th{font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px}
+td.mods{white-space:nowrap}
+.badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin-right:4px}
+.on{background:#dcfce7;color:#166534}
+.off{background:#f1f5f9;color:#94a3b8}
+.stav{font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px}
+.stav-aktivni{background:#dbeafe;color:#1d4ed8}
+.stav-demo{background:#fef9c3;color:#854d0e}
+.err{background:#fef2f2;border:1px solid #fca5a5;border-radius:7px;padding:12px 14px;font-size:13px;color:#991b1b;font-weight:600;display:none}
+.muted{color:#6b7280;font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar">
+    <div>
+      <div class="logo">TAXIS · Superadmin</div>
+      <h1>Obalovny</h1>
+    </div>
+    <button class="logout" onclick="doLogout()">Odhlásit se</button>
+  </div>
+
+  <div class="card">
+    <div class="hint">Přehled obaloven (jen čtení). Vstup do dat konkrétní obalovny a editace přijdou v dalších krocích.</div>
+    <div class="err" id="errBox"></div>
+    <table id="tbl" style="display:none">
+      <thead>
+        <tr>
+          <th>Název</th><th>Subdoména</th><th>Stav</th><th>Moduly</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="muted" id="empty" style="display:none">Žádné obalovny.</div>
+  </div>
+</div>
+
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function badge(on,label){return '<span class="badge '+(on?'on':'off')+'">'+label+'</span>';}
+
+async function load(){
+  const err = document.getElementById('errBox');
+  try{
+    const res = await fetch('/api/obalovny');
+    if(res.status===401){ window.location.href='/login'; return; }
+    if(res.status===403){ showErr('Tato stránka je jen pro superadmina.'); return; }
+    if(!res.ok){ showErr('Chyba načtení ('+res.status+').'); return; }
+    const rows = await res.json();
+    if(!Array.isArray(rows) || rows.length===0){ document.getElementById('empty').style.display='block'; return; }
+    const tb = document.getElementById('tbody');
+    tb.innerHTML = rows.map(o=>{
+      const stav = esc(o.stav);
+      const stavCls = stav==='demo' ? 'stav-demo' : 'stav-aktivni';
+      const mods = badge(o.mod_harmonogram,'Harmonogram')+badge(o.mod_vazenky,'Váženky')
+                 + badge(o.mod_objednavky,'Objednávky')+badge(o.mod_hod_objednavky,'Hod. objednávky');
+      return '<tr><td><strong>'+esc(o.nazev)+'</strong><br><span class="muted">'+esc(o.id)+'</span></td>'
+           + '<td>'+esc(o.subdomena)+'</td>'
+           + '<td><span class="stav '+stavCls+'">'+stav+'</span></td>'
+           + '<td class="mods">'+mods+'</td></tr>';
+    }).join('');
+    document.getElementById('tbl').style.display='table';
+  }catch(e){ showErr('Chyba připojení k serveru.'); }
+}
+
+async function doLogout(){
+  try{ await fetch('/api/logout',{method:'POST'}); }catch(e){}
+  window.location.href='/login';
+}
+function showErr(m){ const e=document.getElementById('errBox'); e.textContent=m; e.style.display='block'; }
+
+load();
+</script>
+</body>
+</html>
