@@ -21,7 +21,11 @@ h1{font-size:22px;font-weight:800;letter-spacing:.5px;color:#1a1a2e;margin-top:2
 table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #e5e7eb}
 th{font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px}
-td.mods{white-space:nowrap}
+td.mods{white-space:normal}
+.modchk{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:#374151;margin:2px 10px 2px 0;cursor:pointer}
+.modchk input{cursor:pointer}
+.modchk.dis{color:#94a3b8;cursor:not-allowed}
+.modchk.dis input{cursor:not-allowed}
 .badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin-right:4px}
 .on{background:#dcfce7;color:#166534}
 .off{background:#f1f5f9;color:#94a3b8}
@@ -112,11 +116,19 @@ async function load(){
     if(!Array.isArray(rows) || rows.length===0){ document.getElementById('empty').style.display='block'; return; }
     const tb = document.getElementById('tbody');
     tb.innerHTML = rows.map(o=>{
+      const id = esc(o.id);
       const stav = esc(o.stav);
       const stavCls = stav==='demo' ? 'stav-demo' : 'stav-aktivni';
-      const mods = badge(o.mod_harmonogram,'Harmonogram')+badge(o.mod_vazenky,'Váženky')
-                 + badge(o.mod_objednavky,'Objednávky')+badge(o.mod_hod_objednavky,'Hod. objednávky');
-      return '<tr><td><strong>'+esc(o.nazev)+'</strong><br><span class="muted">'+esc(o.id)+'</span></td>'
+      // Harmonogram = vždy zapnutý, needitovatelný. Ostatní = editovatelný STROP.
+      const chk = (key,label,checked,disabled)=>{
+        return '<label class="modchk'+(disabled?' dis':'')+'"><input type="checkbox" data-ob="'+id+'" data-mod="'+key+'"'
+             + (checked?' checked':'')+(disabled?' disabled':'')+' onchange="onMod(this)"> '+label+'</label>';
+      };
+      const mods = '<label class="modchk dis"><input type="checkbox" checked disabled> Harmonogram</label>'
+                 + chk('mod_vazenky','Váženky',o.mod_vazenky,false)
+                 + chk('mod_objednavky','Objednávky',o.mod_objednavky,false)
+                 + chk('mod_hod_objednavky','Hodinové objednávky',o.mod_hod_objednavky,!o.mod_objednavky);
+      return '<tr data-row="'+id+'"><td><strong>'+esc(o.nazev)+'</strong><br><span class="muted">'+id+'</span></td>'
            + '<td>'+esc(o.subdomena)+'</td>'
            + '<td><span class="stav '+stavCls+'">'+stav+'</span></td>'
            + '<td class="mods">'+mods+'</td></tr>';
@@ -132,6 +144,22 @@ async function doLogout(){
 function showErr(m){ const e=document.getElementById('errBox'); e.textContent=m; e.style.display='block'; }
 function show(id,m){ const e=document.getElementById(id); if(m!=null)e.textContent=m; e.style.display='block'; }
 function hide(id){ document.getElementById(id).style.display='none'; }
+
+// ── STROP modulů obalovny (superadmin) ──
+// Pravidlo závislosti (Hodinové jen při Objednávkách) vynucuje i server (normalizeModuly);
+// po uložení překreslíme tabulku podle normalizovaného stavu.
+async function onMod(el){
+  hide('errBox');
+  const ob = el.getAttribute('data-ob');
+  const boxes = document.querySelectorAll('input[data-ob="'+(window.CSS&&CSS.escape?CSS.escape(ob):ob)+'"][data-mod]');
+  const body = {};
+  boxes.forEach(b=>{ body[b.getAttribute('data-mod')] = b.checked; });
+  try{
+    const res = await fetch('/api/obalovny/'+encodeURIComponent(ob)+'/moduly',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!res.ok){ const d=await res.json().catch(()=>({})); showErr(d.error||'Uložení modulů selhalo.'); }
+  }catch(e){ showErr('Chyba připojení.'); }
+  await load(); // překreslit dle normalizovaného stavu (závislost vynucena serverem)
+}
 
 // ── Změna vlastního hesla ──
 async function changePw(){

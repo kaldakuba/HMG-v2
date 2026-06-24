@@ -21,7 +21,7 @@ jest.mock('connect-pg-simple', () => () => {
   };
 });
 
-const { getObalovnaId, requireSuperadmin, isLastSuperadmin } = require('../server');
+const { getObalovnaId, requireSuperadmin, isLastSuperadmin, normalizeModuly } = require('../server');
 
 describe('Tier 1 — multi-obalovna: superadmin', () => {
   describe('getObalovnaId', () => {
@@ -75,6 +75,27 @@ describe('Tier 1 — multi-obalovna: superadmin', () => {
     test('2 a více → smazat lze', () => {
       expect(isLastSuperadmin(2)).toBe(false);
       expect(isLastSuperadmin(5)).toBe(false);
+    });
+  });
+
+  describe('normalizeModuly (strop + pravidlo závislosti)', () => {
+    test('Harmonogram je vždy true (i bez vstupu)', () => {
+      expect(normalizeModuly({}).mod_harmonogram).toBe(true);
+      expect(normalizeModuly({ mod_harmonogram: false }).mod_harmonogram).toBe(true);
+    });
+    test('Hodinové objednávky NELZE bez Objednávek (auto-vypnutí)', () => {
+      const m = normalizeModuly({ mod_objednavky: false, mod_hod_objednavky: true });
+      expect(m.mod_objednavky).toBe(false);
+      expect(m.mod_hod_objednavky).toBe(false);
+    });
+    test('Hodinové objednávky lze JEN s Objednávkami', () => {
+      const m = normalizeModuly({ mod_objednavky: true, mod_hod_objednavky: true });
+      expect(m.mod_objednavky).toBe(true);
+      expect(m.mod_hod_objednavky).toBe(true);
+    });
+    test('Holubice (vazenky+objednavky=true, hod=false) → beze změny', () => {
+      const m = normalizeModuly({ mod_vazenky: true, mod_objednavky: true, mod_hod_objednavky: false });
+      expect(m).toEqual({ mod_harmonogram: true, mod_vazenky: true, mod_objednavky: true, mod_hod_objednavky: false });
     });
   });
 });

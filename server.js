@@ -17,11 +17,11 @@ const pgSession = require('connect-pg-simple')(session);
 const helmet = require('helmet');
 const { parseVazenky } = require('./lib/vazenky-parser');
 const { buildMonthWorkbook } = require('./lib/month-export');
-const { migrateObalovny, listObalovny } = require('./lib/obalovny');
+const { migrateObalovny, listObalovny, normalizeModuly, getObalovnaModuly, updateObalovnaModuly } = require('./lib/obalovny');
 const { migrateObalovnaId } = require('./lib/obalovna-id');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.80';
+const APP_VERSION = '3.81';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -404,6 +404,10 @@ function requireViewer(req, res, next) {
 // FAIL-CLOSED: při chybě DB raději odmítnout než tiše pustit přes neověřený stav.
 async function requireOrdersEnabled(req, res, next) {
   try {
+    // KASKÁDA krok 6: STROP obalovny (mod_objednavky) má přednost. Když superadmin modul
+    // nepovolil, objednávky jsou vypnuté bez ohledu na settings.orders_enabled.
+    const moduly = await getObalovnaModuly(pool, getObalovnaId(req));
+    if (!moduly.mod_objednavky) return res.status(403).json({ error: 'Objednávkový modul není pro tuto obalovnu povolen' });
     const r = await pool.query("SELECT value FROM settings WHERE key='orders_enabled'");
     const enabled = r.rows.length === 0 || r.rows[0].value !== 'false';
     if (!enabled) return res.status(403).json({ error: 'Objednávkový systém je vypnut' });
@@ -686,6 +690,9 @@ app.get('/api/settings', requireAuth, async (req, res) => {
 
 app.post('/api/settings', requireAuth, requireAdmin, async (req, res) => {
   const allowed = ['hmg_max_daily', 'hmg_min_daily', 'hmg_plant_rate', 'hmg_gas_capacity', 'orders_enabled', 'vazenky_share_enabled'];
+  // KASKÁDA krok 6: zapnout (true) přepínač lze JEN když je odpovídající modul obalovny
+  // povolen shora (superadmin strop). Vypnout (false) jde vždy. Holubice má oba moduly true.
+  const moduly = await getObalovnaModuly(pool, getObalovnaId(req));
   for (const [k, v] of Object.entries(req.body)) {
     if (!allowed.includes(k)) continue;
     if (['hmg_max_daily', 'hmg_min_daily', 'hmg_plant_rate', 'hmg_gas_capacity'].includes(k)) {
@@ -694,6 +701,12 @@ app.post('/api/settings', requireAuth, requireAdmin, async (req, res) => {
     }
     if (k === 'orders_enabled' || k === 'vazenky_share_enabled') {
       if (v !== 'true' && v !== 'false') return res.status(400).json({ error: `${k} musí být true nebo false` });
+      if (v === 'true' && k === 'orders_enabled' && !moduly.mod_objednavky) {
+        return res.status(403).json({ error: 'Modul Objednávky není pro tuto obalovnu povolen' });
+      }
+      if (v === 'true' && k === 'vazenky_share_enabled' && !moduly.mod_vazenky) {
+        return res.status(403).json({ error: 'Modul Váženky není pro tuto obalovnu povolen' });
+      }
     }
     await pool.query(
       `INSERT INTO settings (key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,
@@ -898,6 +911,27 @@ app.get('/api/config', requireAuth, (req, res) => {
 app.get('/api/obalovny', requireAuth, requireSuperadmin, async (req, res) => {
   const obalovny = await listObalovny(pool);
   res.json(obalovny);
+});
+
+// STROP modulů obalovny (superadmin). Harmonogram je vždy true (needitovatelný).
+// Pravidlo závislosti (Hodinové jen při Objednávkách) vynucuje normalizeModuly v lib/obalovny.
+app.patch('/api/obalovny/:id/moduly', requireAuth, requireSuperadmin, async (req, res) => {
+  try {
+    const { mod_vazenky, mod_objednavky, mod_hod_objednavky } = req.body;
+    const updated = await updateObalovnaModuly(pool, req.params.id, { mod_vazenky, mod_objednavky, mod_hod_objednavky });
+    if (!updated) return res.status(404).json({ error: 'Obalovna neexistuje' });
+    res.json({ ok: true, obalovna: updated });
+  } catch (err) {
+    console.error('PATCH /api/obalovny/:id/moduly error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+// Moduly AKTUÁLNÍ obalovny přihlášeného uživatele — pro Nastavení (admin vidí jen povolené).
+// Čistě čtecí; pro superadmina (bez obalovny) vrací vše false.
+app.get('/api/obalovna/moduly', requireAuth, async (req, res) => {
+  const moduly = await getObalovnaModuly(pool, getObalovnaId(req));
+  res.json(moduly);
 });
 
 // ── Předatelnost aplikace: správa superadminů (multi-obalovna, krok 5) ──────────
@@ -2913,8 +2947,10 @@ async function buildVazenkyQuery(req) {
   // Pro hmg_share je scope zamčen na users.firma; req.query.firma je IGNOROVÁN.
   if (role === 'hmg_share') {
     // Přepínač viditelnosti "Odebrané stavby" pro odběratele (admin/operátor NEJSOU omezeni).
+    // KASKÁDA krok 6: zapnuté JEN když je modul obalovny (mod_vazenky) povolen shora.
     const shRes = await pool.query("SELECT value FROM settings WHERE key='vazenky_share_enabled'");
-    const shareEnabled = (shRes.rows[0] ? shRes.rows[0].value : 'false') === 'true';
+    const moduly = await getObalovnaModuly(pool, obalovnaId);
+    const shareEnabled = (shRes.rows[0] ? shRes.rows[0].value : 'false') === 'true' && moduly.mod_vazenky;
     if (!shareEnabled) return { role, firma, stavba, od, doD, firma_filter: '', forbidden: true };
     if (!firma) return { role, firma, stavba, od, doD, firma_filter: '', empty: true };
     params.push(firma);
@@ -3230,13 +3266,16 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
       pool.query('SELECT orders_allowed FROM users WHERE id=$1', [req.session.userId]),
     ]);
     const { role, firma, confirmedList, confirmedTons, confirmedCount } = confirmedData;
-    const ordersEnabled = (oeRes.rows[0] ? oeRes.rows[0].value : 'true') === 'true';
-    const vazenkyShareEnabled = (vsRes.rows[0] ? vsRes.rows[0].value : 'false') === 'true';
+    const obalovnaId = getObalovnaId(req);   // multi-obalovna: další podmínka navíc
+    // KASKÁDA krok 6: efektivní stav = strop modulu (obalovna) AND přepínač (settings).
+    // Pro Holubici jsou moduly true → efektivní = settings → identické s dneškem.
+    const moduly = await getObalovnaModuly(pool, obalovnaId);
+    const ordersEnabled = ((oeRes.rows[0] ? oeRes.rows[0].value : 'true') === 'true') && moduly.mod_objednavky;
+    const vazenkyShareEnabled = ((vsRes.rows[0] ? vsRes.rows[0].value : 'false') === 'true') && moduly.mod_vazenky;
     const ordersAllowed = !!(uaRes.rows[0] && uaRes.rows[0].orders_allowed === true);
 
     let pendingList, recentOrders;
 
-    const obalovnaId = getObalovnaId(req);   // multi-obalovna: další podmínka navíc
     if (role === 'admin') {
       const [pRes, rRes] = await Promise.all([
         pool.query(
@@ -3468,8 +3507,8 @@ if (require.main === module) {
     isIsoDate, isIntOrEmpty, sanitizeStr, validateRows, fv, fmtDateCz, escHtml,
     // Záloha + obnova (Tier 1 integrační)
     sendBackup, restoreFromSnapshot,
-    // Multi-obalovna (Tier 1 unit) — aktivní obalovna + superadmin gate + pojistka
-    getObalovnaId, requireSuperadmin, isLastSuperadmin,
+    // Multi-obalovna (Tier 1 unit) — aktivní obalovna + superadmin gate + pojistka + moduly
+    getObalovnaId, requireSuperadmin, isLastSuperadmin, normalizeModuly,
     // HTTP + DB přístup (Tier 2 supertest)
     app, pool, initDb,
   };

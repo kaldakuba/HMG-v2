@@ -356,7 +356,7 @@ input:checked + .toggle-sl::before{transform:translateX(20px)}
 
     <!-- SYSTÉM -->
     <div class="section" id="sec-system">
-      <div class="card">
+      <div class="card" id="card-orders" style="display:none">
         <div class="card-head">
           <div class="card-head-icon" style="background:#f0fdf4"><i class="ti ti-toggle-right" style="font-size:20px;color:#16a34a" aria-hidden="true"></i></div>
           <div><div class="card-head h2">Objednávkový systém</div><div class="card-head sub">Zapnutí nebo vypnutí objednávkového modulu pro celou instalaci</div></div>
@@ -380,7 +380,7 @@ input:checked + .toggle-sl::before{transform:translateX(20px)}
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" id="card-vazenky-share" style="display:none">
         <div class="card-head">
           <div class="card-head-icon" style="background:#eff6ff"><i class="ti ti-truck-delivery" style="font-size:20px;color:#2563eb" aria-hidden="true"></i></div>
           <div><div class="card-head h2">Odebrané stavby pro odběratele</div><div class="card-head sub">Umožní odběratelům (hmg_share) zobrazit, filtrovat a exportovat své odebrané stavby.</div></div>
@@ -977,16 +977,29 @@ async function testSmtpEmail() {
 // ── Objednávkový systém (přepínač) ──
 async function loadSystemSettings() {
   try {
+    // KASKÁDA krok 6: admin vidí přepínač JEN pro modul povolený superadminem (strop).
+    // Co není povolené shora, je skryté a chová se jako vypnuté.
+    let moduly = { mod_objednavky: false, mod_vazenky: false };
+    try { moduly = await api('GET', '/api/obalovna/moduly') || moduly; } catch(e) {}
     const s = await api('GET', '/api/settings');
-    const enabled = s.orders_enabled !== 'false'; // výchozí true
-    const toggle = document.getElementById('ordersEnabledToggle');
-    if (toggle) toggle.checked = enabled;
-    _updateOrdersEnabledUI(enabled);
-    // Sdílení "Odebrané stavby" pro hmg_share — výchozí false
-    const vsEnabled = s.vazenky_share_enabled === 'true';
-    const vsToggle = document.getElementById('vazenkyShareToggle');
-    if (vsToggle) vsToggle.checked = vsEnabled;
-    _updateVazenkyShareUI(vsEnabled);
+
+    const cardOrders = document.getElementById('card-orders');
+    if (cardOrders) cardOrders.style.display = moduly.mod_objednavky ? '' : 'none';
+    if (moduly.mod_objednavky) {
+      const enabled = s.orders_enabled !== 'false'; // výchozí true
+      const toggle = document.getElementById('ordersEnabledToggle');
+      if (toggle) toggle.checked = enabled;
+      _updateOrdersEnabledUI(enabled);
+    }
+
+    const cardVs = document.getElementById('card-vazenky-share');
+    if (cardVs) cardVs.style.display = moduly.mod_vazenky ? '' : 'none';
+    if (moduly.mod_vazenky) {
+      const vsEnabled = s.vazenky_share_enabled === 'true';
+      const vsToggle = document.getElementById('vazenkyShareToggle');
+      if (vsToggle) vsToggle.checked = vsEnabled;
+      _updateVazenkyShareUI(vsEnabled);
+    }
   } catch(e) {
     console.error('loadSystemSettings:', e);
   }
