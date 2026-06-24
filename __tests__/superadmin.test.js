@@ -21,7 +21,7 @@ jest.mock('connect-pg-simple', () => () => {
   };
 });
 
-const { getObalovnaId, requireSuperadmin } = require('../server');
+const { getObalovnaId, requireSuperadmin, isLastSuperadmin } = require('../server');
 
 describe('Tier 1 — multi-obalovna: superadmin', () => {
   describe('getObalovnaId', () => {
@@ -64,6 +64,17 @@ describe('Tier 1 — multi-obalovna: superadmin', () => {
       requireSuperadmin({ session: {}, path: '/superadmin' }, res, () => { called = true; });
       expect(called).toBe(false);
       expect(res.redirected).toBe('/login');
+    });
+  });
+
+  describe('isLastSuperadmin (pojistka: poslední nejde smazat)', () => {
+    test('0 nebo 1 superadmin → poslední (nelze smazat)', () => {
+      expect(isLastSuperadmin(1)).toBe(true);
+      expect(isLastSuperadmin(0)).toBe(true);
+    });
+    test('2 a více → smazat lze', () => {
+      expect(isLastSuperadmin(2)).toBe(false);
+      expect(isLastSuperadmin(5)).toBe(false);
     });
   });
 });

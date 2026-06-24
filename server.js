@@ -21,7 +21,7 @@ const { migrateObalovny, listObalovny } = require('./lib/obalovny');
 const { migrateObalovnaId } = require('./lib/obalovna-id');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.79';
+const APP_VERSION = '3.80';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -372,6 +372,12 @@ function requireSuperadmin(req, res, next) {
     return res.status(403).json({ error: 'Nedostatečná oprávnění (jen superadmin)' });
   }
   res.redirect('/login');
+}
+
+// Pojistka předatelnosti: posledního/jediného superadmina nelze smazat (systém nesmí
+// zůstat bez správce). Čistá funkce kvůli testovatelnosti.
+function isLastSuperadmin(superadminCount) {
+  return superadminCount <= 1;
 }
 
 // Operator + Admin mohou číst data
@@ -892,6 +898,89 @@ app.get('/api/config', requireAuth, (req, res) => {
 app.get('/api/obalovny', requireAuth, requireSuperadmin, async (req, res) => {
   const obalovny = await listObalovny(pool);
   res.json(obalovny);
+});
+
+// ── Předatelnost aplikace: správa superadminů (multi-obalovna, krok 5) ──────────
+// Vše jen pro roli superadmin (requireSuperadmin). Superadmin existuje VÝHRADNĚ jako
+// řádek v DB (users.role='superadmin') → při prodeji přechází s databází. Žádný hardcode.
+
+// Seznam superadmin účtů (pro správu/předání).
+app.get('/api/superadmin/list', requireAuth, requireSuperadmin, async (req, res) => {
+  const r = await pool.query(
+    "SELECT id, username, created_at FROM users WHERE role='superadmin' ORDER BY username"
+  );
+  res.json({ superadmins: r.rows, currentUserId: req.session.userId });
+});
+
+// Změna VLASTNÍHO hesla superadmina. Heslo se NIKDY neloguje.
+app.post('/api/superadmin/change-password', requireAuth, requireSuperadmin, async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
+      return res.status(400).json({ error: 'Nové heslo musí mít alespoň 8 znaků' });
+    }
+    const hash = await bcrypt.hash(newPassword, 12);
+    await pool.query(
+      "UPDATE users SET password_hash=$1, must_change_password=false WHERE id=$2 AND role='superadmin'",
+      [hash, req.session.userId]
+    );
+    console.log(`Superadmin ${req.session.username} si změnil heslo.`);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('POST /api/superadmin/change-password error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+// Založení DALŠÍHO superadmin účtu (pro předání novému majiteli). Heslo se NIKDY neloguje.
+// Toto je JEDINÁ API cesta vytvoření superadmina — a je pod requireSuperadmin, takže
+// žádná jiná role se nemůže self-povýšit (POST /api/users 'superadmin' nadále odmítá).
+app.post('/api/superadmin/create', requireAuth, requireSuperadmin, async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || typeof username !== 'string' || username.trim().length < 3 || username.trim().length > 50) {
+      return res.status(400).json({ error: 'Uživatelské jméno musí mít 3–50 znaků' });
+    }
+    if (!password || typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({ error: 'Heslo musí mít alespoň 8 znaků' });
+    }
+    const hash = await bcrypt.hash(password, 12);
+    const r = await pool.query(
+      "INSERT INTO users (username, password_hash, role) VALUES ($1, $2, 'superadmin') RETURNING id, username, created_at",
+      [username.trim(), hash]
+    );
+    console.log(`Vytvořen nový superadmin '${r.rows[0].username}' (založil ${req.session.username}).`);
+    res.json({ ok: true, superadmin: r.rows[0] });
+  } catch (err) {
+    if (err.code === '23505') return res.status(400).json({ error: 'Uživatel s tímto jménem již existuje' });
+    console.error('POST /api/superadmin/create error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+// Smazání EXISTUJÍCÍHO superadmina. POJISTKA: nelze smazat posledního/jediného superadmina
+// (systém nesmí zůstat bez superadmina). Lze smazat i sám sebe, pokud není poslední.
+app.delete('/api/superadmin/:id', requireAuth, requireSuperadmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ error: 'Neplatné id' });
+
+    const tRes = await pool.query("SELECT role FROM users WHERE id=$1", [id]);
+    if (!tRes.rows[0] || tRes.rows[0].role !== 'superadmin') {
+      return res.status(404).json({ error: 'Superadmin s tímto id neexistuje' });
+    }
+    const cRes = await pool.query("SELECT COUNT(*)::int AS n FROM users WHERE role='superadmin'");
+    if (isLastSuperadmin(cRes.rows[0].n)) {
+      return res.status(400).json({ error: 'Nelze smazat posledního superadmina — systém by zůstal bez správce.' });
+    }
+    await pool.query("DELETE FROM session WHERE sess->>'userId' = $1", [String(id)]);
+    await pool.query('DELETE FROM users WHERE id=$1', [id]);
+    console.log(`Smazán superadmin id=${id} (smazal ${req.session.username}).`);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /api/superadmin/:id error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
 });
 
 // ── Globální error handler ──
@@ -3379,8 +3468,8 @@ if (require.main === module) {
     isIsoDate, isIntOrEmpty, sanitizeStr, validateRows, fv, fmtDateCz, escHtml,
     // Záloha + obnova (Tier 1 integrační)
     sendBackup, restoreFromSnapshot,
-    // Multi-obalovna (Tier 1 unit) — aktivní obalovna + superadmin gate
-    getObalovnaId, requireSuperadmin,
+    // Multi-obalovna (Tier 1 unit) — aktivní obalovna + superadmin gate + pojistka
+    getObalovnaId, requireSuperadmin, isLastSuperadmin,
     // HTTP + DB přístup (Tier 2 supertest)
     app, pool, initDb,
   };

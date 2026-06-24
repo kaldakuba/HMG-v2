@@ -28,8 +28,18 @@ td.mods{white-space:nowrap}
 .stav{font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px}
 .stav-aktivni{background:#dbeafe;color:#1d4ed8}
 .stav-demo{background:#fef9c3;color:#854d0e}
-.err{background:#fef2f2;border:1px solid #fca5a5;border-radius:7px;padding:12px 14px;font-size:13px;color:#991b1b;font-weight:600;display:none}
+.err{background:#fef2f2;border:1px solid #fca5a5;border-radius:7px;padding:12px 14px;font-size:13px;color:#991b1b;font-weight:600;display:none;margin-bottom:12px}
+.ok{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:7px;padding:12px 14px;font-size:13px;color:#166534;font-weight:600;display:none;margin-bottom:12px}
 .muted{color:#6b7280;font-size:13px}
+h2.sect{font-size:15px;font-weight:800;color:#1a1a2e;margin-bottom:6px}
+.formrow{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.formrow input{height:40px;border:1px solid #a0aabb;border-radius:7px;padding:0 12px;font-family:'Inter',sans-serif;font-size:14px;background:#f8fafc;flex:1;min-width:180px}
+.formrow input:focus{border-color:#2563eb;background:#fff;outline:none}
+.btn{height:40px;padding:0 16px;background:#1a1a2e;color:#fff;border:none;border-radius:7px;font-family:'Inter',sans-serif;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn:hover{background:#2d2d4e}
+.btn-del{height:32px;padding:0 12px;background:#fff;color:#b91c1c;border:1px solid #fca5a5;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
+.btn-del:hover{background:#fef2f2}
+.btn-del:disabled{color:#cbd5e1;border-color:#e5e7eb;cursor:not-allowed}
 </style>
 </head>
 <body>
@@ -54,6 +64,36 @@ td.mods{white-space:nowrap}
       <tbody id="tbody"></tbody>
     </table>
     <div class="muted" id="empty" style="display:none">Žádné obalovny.</div>
+  </div>
+
+  <!-- Můj účet: změna hesla -->
+  <div class="card" style="margin-top:18px">
+    <h2 class="sect">Můj účet</h2>
+    <div class="hint">Změna vlastního hesla superadmina (min. 8 znaků).</div>
+    <div class="err" id="pwErr"></div>
+    <div class="ok" id="pwOk">Heslo změněno.</div>
+    <div class="formrow">
+      <input type="password" id="newPw"  autocomplete="new-password" placeholder="Nové heslo">
+      <input type="password" id="newPw2" autocomplete="new-password" placeholder="Nové heslo znovu">
+      <button class="btn" onclick="changePw()">Změnit heslo</button>
+    </div>
+  </div>
+
+  <!-- Správa superadminů (předatelnost) -->
+  <div class="card" style="margin-top:18px">
+    <h2 class="sect">Superadmini</h2>
+    <div class="hint">Pro předání aplikace: založ účet novému majiteli a starý smaž. Posledního superadmina nelze smazat.</div>
+    <div class="err" id="saErr"></div>
+    <div class="ok" id="saOk"></div>
+    <table id="saTbl" style="display:none">
+      <thead><tr><th>Uživatel</th><th>Vytvořen</th><th></th></tr></thead>
+      <tbody id="saBody"></tbody>
+    </table>
+    <div class="formrow" style="margin-top:16px">
+      <input type="text" id="saUser" autocomplete="off" placeholder="Nový superadmin – jméno">
+      <input type="password" id="saPw" autocomplete="new-password" placeholder="Heslo (min. 8 znaků)">
+      <button class="btn" onclick="createSa()">Založit superadmina</button>
+    </div>
   </div>
 </div>
 
@@ -90,8 +130,71 @@ async function doLogout(){
   window.location.href='/login';
 }
 function showErr(m){ const e=document.getElementById('errBox'); e.textContent=m; e.style.display='block'; }
+function show(id,m){ const e=document.getElementById(id); if(m!=null)e.textContent=m; e.style.display='block'; }
+function hide(id){ document.getElementById(id).style.display='none'; }
+
+// ── Změna vlastního hesla ──
+async function changePw(){
+  hide('pwErr'); hide('pwOk');
+  const p1=document.getElementById('newPw').value, p2=document.getElementById('newPw2').value;
+  if(!p1 || p1.length<8){ show('pwErr','Heslo musí mít alespoň 8 znaků.'); return; }
+  if(p1!==p2){ show('pwErr','Hesla se neshodují.'); return; }
+  try{
+    const res=await fetch('/api/superadmin/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({newPassword:p1})});
+    const d=await res.json();
+    if(res.ok&&d.ok){ document.getElementById('newPw').value='';document.getElementById('newPw2').value=''; show('pwOk','Heslo změněno.'); }
+    else show('pwErr',d.error||'Nepodařilo se změnit heslo.');
+  }catch(e){ show('pwErr','Chyba připojení.'); }
+}
+
+// ── Správa superadminů ──
+let currentUserId=null;
+async function loadSa(){
+  hide('saErr');
+  try{
+    const res=await fetch('/api/superadmin/list');
+    if(!res.ok){ show('saErr','Chyba načtení superadminů.'); return; }
+    const d=await res.json(); currentUserId=d.currentUserId;
+    const rows=d.superadmins||[];
+    const last = rows.length<=1;
+    document.getElementById('saBody').innerHTML = rows.map(s=>{
+      const me = s.id===currentUserId ? ' <span class="muted">(já)</span>' : '';
+      const created = s.created_at ? new Date(s.created_at).toLocaleDateString('cs-CZ') : '';
+      const disabled = last ? 'disabled title="Posledního superadmina nelze smazat"' : '';
+      return '<tr><td><strong>'+esc(s.username)+'</strong>'+me+'</td><td class="muted">'+created+'</td>'
+           + '<td style="text-align:right"><button class="btn-del" '+disabled+' onclick="delSa('+s.id+",'"+esc(s.username).replace(/'/g,"\\'")+"')\">Smazat</button></td></tr>";
+    }).join('');
+    document.getElementById('saTbl').style.display='table';
+  }catch(e){ show('saErr','Chyba připojení.'); }
+}
+async function createSa(){
+  hide('saErr'); hide('saOk');
+  const u=document.getElementById('saUser').value.trim(), p=document.getElementById('saPw').value;
+  if(u.length<3){ show('saErr','Jméno musí mít alespoň 3 znaky.'); return; }
+  if(!p || p.length<8){ show('saErr','Heslo musí mít alespoň 8 znaků.'); return; }
+  try{
+    const res=await fetch('/api/superadmin/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
+    const d=await res.json();
+    if(res.ok&&d.ok){ document.getElementById('saUser').value='';document.getElementById('saPw').value=''; show('saOk','Superadmin „'+esc(u)+'" založen.'); loadSa(); }
+    else show('saErr',d.error||'Nepodařilo se založit superadmina.');
+  }catch(e){ show('saErr','Chyba připojení.'); }
+}
+async function delSa(id,name){
+  hide('saErr'); hide('saOk');
+  if(!confirm('Opravdu smazat superadmina „'+name+'"?')) return;
+  try{
+    const res=await fetch('/api/superadmin/'+id,{method:'DELETE'});
+    const d=await res.json();
+    if(res.ok&&d.ok){
+      show('saOk','Superadmin smazán.');
+      if(id===currentUserId){ window.location.href='/login'; return; } // smazal sám sebe
+      loadSa();
+    } else show('saErr',d.error||'Nepodařilo se smazat.');
+  }catch(e){ show('saErr','Chyba připojení.'); }
+}
 
 load();
+loadSa();
 </script>
 </body>
 </html>
