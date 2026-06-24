@@ -21,7 +21,7 @@ const { migrateObalovny, listObalovny } = require('./lib/obalovny');
 const { migrateObalovnaId } = require('./lib/obalovna-id');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.76';
+const APP_VERSION = '3.77';
 
 const app = express();
 app.set('trust proxy', 1);

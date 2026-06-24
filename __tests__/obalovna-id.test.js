@@ -19,10 +19,9 @@ function makeMockPool() {
 
 describe('Tier 1 — lib/obalovna-id', () => {
   test('očekávané a vynechané tabulky', () => {
-    expect(TABLES).toEqual(['week_data', 'vazenky', 'users', 'companies', 'month_entries', 'orders']);
-    // settings (globální), inputs (mimo seznam), session (technická) NEjsou zahrnuty
+    expect(TABLES).toEqual(['week_data', 'vazenky', 'users', 'companies', 'month_entries', 'inputs', 'orders']);
+    // settings (globální) a session (technická) NEjsou zahrnuty
     expect(TABLES).not.toContain('settings');
-    expect(TABLES).not.toContain('inputs');
     expect(TABLES).not.toContain('session');
     expect(INDEX_TABLES).toEqual(['week_data', 'vazenky', 'orders']);
   });
