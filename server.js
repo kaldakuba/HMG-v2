@@ -17,9 +17,10 @@ const pgSession = require('connect-pg-simple')(session);
 const helmet = require('helmet');
 const { parseVazenky } = require('./lib/vazenky-parser');
 const { buildMonthWorkbook } = require('./lib/month-export');
+const { migrateObalovny, listObalovny } = require('./lib/obalovny');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.73';
+const APP_VERSION = '3.75';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -289,6 +290,11 @@ async function initDb() {
       console.warn('VAROVÁNÍ: ADMIN_PASSWORD není nastaveno v .env, admin účet nebyl vytvořen. Nastavte ADMIN_PASSWORD a restartujte server.');
     }
   }
+
+  // ── Organizační struktura TAXIS (multi-obalovna) ──
+  // Čistě aditivní: založí novou tabulku `obalovny` + první obalovnu Holubice.
+  // Idempotentní (IF NOT EXISTS / ON CONFLICT DO NOTHING) — nemění stávající data.
+  await migrateObalovny(pool);
 }
 
 app.use(express.json({ limit: '10mb' }));
@@ -832,6 +838,14 @@ app.get('/api/version', (req, res) => {
 // ── Konfigurace pro frontend (Mapy.cz klíč + verze aplikace, chráněno autentizací) ──
 app.get('/api/config', requireAuth, (req, res) => {
   res.json({ mapyCzKey: process.env.MAPY_CZ_KEY || '', version: APP_VERSION });
+});
+
+// ── Seznam obaloven (organizační struktura TAXIS) ──
+// Zatím jen pro budoucí superadmin; prozatím chráněno běžným requireAuth.
+// Čistě čtecí, nemění žádný stávající endpoint.
+app.get('/api/obalovny', requireAuth, async (req, res) => {
+  const obalovny = await listObalovny(pool);
+  res.json(obalovny);
 });
 
 // ── Globální error handler ──
