@@ -18,9 +18,10 @@ const helmet = require('helmet');
 const { parseVazenky } = require('./lib/vazenky-parser');
 const { buildMonthWorkbook } = require('./lib/month-export');
 const { migrateObalovny, listObalovny } = require('./lib/obalovny');
+const { migrateObalovnaId } = require('./lib/obalovna-id');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.75';
+const APP_VERSION = '3.76';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -295,6 +296,11 @@ async function initDb() {
   // Čistě aditivní: založí novou tabulku `obalovny` + první obalovnu Holubice.
   // Idempotentní (IF NOT EXISTS / ON CONFLICT DO NOTHING) — nemění stávající data.
   await migrateObalovny(pool);
+
+  // ── Multi-obalovna krok 2: sloupec obalovna_id do datových tabulek ──
+  // Čistě aditivní/idempotentní: ADD COLUMN IF NOT EXISTS ... DEFAULT 'holubice' (+FK, index).
+  // V tomto kroku se podle obalovna_id NEFILTRUJE — appka vrací přesně totéž.
+  await migrateObalovnaId(pool);
 }
 
 app.use(express.json({ limit: '10mb' }));
