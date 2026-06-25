@@ -19,9 +19,10 @@ const { parseVazenky } = require('./lib/vazenky-parser');
 const { buildMonthWorkbook } = require('./lib/month-export');
 const { migrateObalovny, listObalovny, normalizeModuly, getObalovnaModuly, updateObalovnaModuly } = require('./lib/obalovny');
 const { migrateObalovnaId } = require('./lib/obalovna-id');
+const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.84';
+const APP_VERSION = '3.85';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -301,6 +302,9 @@ async function initDb() {
   // Čistě aditivní/idempotentní: ADD COLUMN IF NOT EXISTS ... DEFAULT 'holubice' (+FK, index).
   // V tomto kroku se podle obalovna_id NEFILTRUJE — appka vrací přesně totéž.
   await migrateObalovnaId(pool);
+
+  // ── Audit / log událostí (dávka D) — nová tabulka audit_log (aditivní) ──
+  await migrateAudit(pool);
 }
 
 app.use(express.json({ limit: '10mb' }));
@@ -494,12 +498,20 @@ function getObalovnaId(req) {
 app.post('/api/login', loginLimiter, async (req, res) => {
   try {
     const { username, password } = req.body;
+    const ipMeta = req.ip || null, hostMeta = req.hostname || null;
     if (!username || !password) return res.status(400).json({ error: 'Vyplňte jméno a heslo' });
     const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
     const user = result.rows[0];
-    if (!user) return res.status(401).json({ error: 'Nesprávné jméno nebo heslo' });
+    if (!user) {
+      // AUDIT: neúspěšný login (jen zadané jméno + ip/hostname; NIKDY heslo).
+      logAudit(pool, { typ: 'login_fail', akter: String(username).slice(0, 100), ip: ipMeta, hostname: hostMeta });
+      return res.status(401).json({ error: 'Nesprávné jméno nebo heslo' });
+    }
     const ok = await bcrypt.compare(password, user.password_hash);
-    if (!ok) return res.status(401).json({ error: 'Nesprávné jméno nebo heslo' });
+    if (!ok) {
+      logAudit(pool, { typ: 'login_fail', akter: String(username).slice(0, 100), ip: ipMeta, hostname: hostMeta });
+      return res.status(401).json({ error: 'Nesprávné jméno nebo heslo' });
+    }
     req.session.userId = user.id;
     req.session.username = user.username;
     req.session.role = user.role;
@@ -509,6 +521,9 @@ app.post('/api/login', loginLimiter, async (req, res) => {
     req.session.loginIp = req.ip || '';
     req.session.mustChangePassword = !!user.must_change_password;
     await pool.query('UPDATE users SET last_seen = NOW() WHERE id = $1', [user.id]);
+    // AUDIT: úspěšný login.
+    logAudit(pool, { typ: 'login_ok', akter: user.username, role: user.role,
+      obalovna_id: user.role === 'superadmin' ? null : (user.obalovna_id || 'holubice'), ip: ipMeta, hostname: hostMeta });
     if (user.must_change_password) {
       return res.json({ ok: true, must_change_password: true });
     }
@@ -930,6 +945,10 @@ app.patch('/api/obalovny/:id/moduly', requireAuth, requireSuperadmin, async (req
     const { mod_vazenky, mod_objednavky, mod_hod_objednavky } = req.body;
     const updated = await updateObalovnaModuly(pool, req.params.id, { mod_vazenky, mod_objednavky, mod_hod_objednavky });
     if (!updated) return res.status(404).json({ error: 'Obalovna neexistuje' });
+    const onoff = b => b ? 'on' : 'off';
+    const detail = `vazenky=${onoff(updated.mod_vazenky)}, objednavky=${onoff(updated.mod_objednavky)}, hod_objednavky=${onoff(updated.mod_hod_objednavky)}`;
+    logAudit(pool, { typ: 'obalovna_moduly', akter: req.session.username, role: 'superadmin',
+      obalovna_id: req.params.id, detail, ip: req.ip || null, hostname: req.hostname || null });
     res.json({ ok: true, obalovna: updated });
   } catch (err) {
     console.error('PATCH /api/obalovny/:id/moduly error:', err);
@@ -942,6 +961,22 @@ app.patch('/api/obalovny/:id/moduly', requireAuth, requireSuperadmin, async (req
 app.get('/api/obalovna/moduly', requireAuth, async (req, res) => {
   const moduly = await getObalovnaModuly(pool, getObalovnaId(req));
   res.json(moduly);
+});
+
+// Audit / log událostí (dávka D) — JEN superadmin. Posledních N záznamů (ts DESC),
+// volitelně filtr ?typ= a ?obalovna_id=. SOUKROMÍ: žádný obsah dat obalovny, jen kdo/kdy/co.
+app.get('/api/superadmin/audit', requireAuth, requireSuperadmin, async (req, res) => {
+  try {
+    const zaznamy = await listAudit(pool, {
+      typ:         (req.query.typ || '').trim() || undefined,
+      obalovna_id: (req.query.obalovna_id || '').trim() || undefined,
+      limit:       req.query.limit,
+    });
+    res.json({ zaznamy });
+  } catch (err) {
+    console.error('GET /api/superadmin/audit error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
 });
 
 // ── Superadmin panel — dávka A (čistě čtecí přehledy) ───────────────────────────
@@ -1081,6 +1116,10 @@ app.post('/api/superadmin/obalovny/:id/reset-admin-heslo', requireAuth, requireS
     // Zruš aktivní sessions, aby se admin musel přihlásit dočasným heslem.
     await pool.query("DELETE FROM session WHERE sess->>'userId' = $1", [String(target.id)]);
     console.log(`Superadmin ${req.session.username} resetoval heslo admina '${username}' (obalovna ${obalovnaId}).`);
+    // AUDIT (BEZ hesla): kdo resetoval, komu, v jaké obalovně.
+    logAudit(pool, { typ: 'reset_admin_hesla', akter: req.session.username, role: 'superadmin',
+      obalovna_id: obalovnaId, cil: username, detail: 'reset hesla admina obalovny',
+      ip: req.ip || null, hostname: req.hostname || null });
 
     // Dočasné heslo se vrací JEN v této odpovědi superadminovi (k jednorázovému předání).
     res.json({ ok: true, username, tempPassword });
@@ -1140,6 +1179,8 @@ app.post('/api/superadmin/create', requireAuth, requireSuperadmin, async (req, r
       [username.trim(), hash]
     );
     console.log(`Vytvořen nový superadmin '${r.rows[0].username}' (založil ${req.session.username}).`);
+    logAudit(pool, { typ: 'superadmin_create', akter: req.session.username, role: 'superadmin',
+      cil: r.rows[0].username, ip: req.ip || null, hostname: req.hostname || null });
     res.json({ ok: true, superadmin: r.rows[0] });
   } catch (err) {
     if (err.code === '23505') return res.status(400).json({ error: 'Uživatel s tímto jménem již existuje' });
@@ -1155,7 +1196,7 @@ app.delete('/api/superadmin/:id', requireAuth, requireSuperadmin, async (req, re
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).json({ error: 'Neplatné id' });
 
-    const tRes = await pool.query("SELECT role FROM users WHERE id=$1", [id]);
+    const tRes = await pool.query("SELECT role, username FROM users WHERE id=$1", [id]);
     if (!tRes.rows[0] || tRes.rows[0].role !== 'superadmin') {
       return res.status(404).json({ error: 'Superadmin s tímto id neexistuje' });
     }
@@ -1166,6 +1207,8 @@ app.delete('/api/superadmin/:id', requireAuth, requireSuperadmin, async (req, re
     await pool.query("DELETE FROM session WHERE sess->>'userId' = $1", [String(id)]);
     await pool.query('DELETE FROM users WHERE id=$1', [id]);
     console.log(`Smazán superadmin id=${id} (smazal ${req.session.username}).`);
+    logAudit(pool, { typ: 'superadmin_delete', akter: req.session.username, role: 'superadmin',
+      cil: tRes.rows[0].username, ip: req.ip || null, hostname: req.hostname || null });
     res.json({ ok: true });
   } catch (err) {
     console.error('DELETE /api/superadmin/:id error:', err);

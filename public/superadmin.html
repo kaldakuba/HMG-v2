@@ -132,6 +132,30 @@ th{font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-
       </div>
     </div>
   </div>
+
+  <!-- Audit a přihlášení -->
+  <div class="card" style="margin-top:18px">
+    <h2 class="sect">Audit a přihlášení</h2>
+    <div class="hint">Kdo / kdy / co. Bez obsahu dat obalovny (žádné tonáže, ceny, počty/tuny váženek).</div>
+    <div class="formrow" style="margin-bottom:12px">
+      <select id="auditTyp" onchange="loadAudit()" style="height:40px;border:1px solid #a0aabb;border-radius:7px;padding:0 10px;font-family:'Inter',sans-serif;font-size:13px;background:#f8fafc">
+        <option value="">Vše</option>
+        <option value="login_ok">Přihlášení OK</option>
+        <option value="login_fail">Přihlášení – neúspěch</option>
+        <option value="reset_admin_hesla">Reset hesla admina</option>
+        <option value="superadmin_create">Založení superadmina</option>
+        <option value="superadmin_delete">Smazání superadmina</option>
+        <option value="obalovna_moduly">Změna modulů obalovny</option>
+      </select>
+      <button class="btn btn-ghost" onclick="loadAudit()">Obnovit</button>
+    </div>
+    <div class="err" id="auditErr"></div>
+    <table id="auditTbl" style="display:none">
+      <thead><tr><th>Čas</th><th>Typ</th><th>Aktér</th><th>Role</th><th>Obalovna</th><th>Cíl / detail</th></tr></thead>
+      <tbody id="auditBody"></tbody>
+    </table>
+    <div class="muted" id="auditEmpty" style="display:none">Žádné záznamy.</div>
+  </div>
 </div>
 
 <script>
@@ -331,9 +355,38 @@ async function delSa(id,name){
   }catch(e){ show('saErr','Chyba připojení.'); }
 }
 
+// ── Audit a přihlášení ──
+var AUDIT_TYP = {
+  login_ok:'Přihlášení OK', login_fail:'Přihlášení – neúspěch', reset_admin_hesla:'Reset hesla admina',
+  superadmin_create:'Založení superadmina', superadmin_delete:'Smazání superadmina', obalovna_moduly:'Změna modulů obalovny'
+};
+async function loadAudit(){
+  hide('auditErr');
+  const typ = document.getElementById('auditTyp').value;
+  try{
+    const res = await fetch('/api/superadmin/audit'+(typ?('?typ='+encodeURIComponent(typ)):''));
+    if(!res.ok){ show('auditErr','Chyba načtení auditu ('+res.status+').'); return; }
+    const d = await res.json();
+    const rows = d.zaznamy||[];
+    if(rows.length===0){ document.getElementById('auditTbl').style.display='none'; document.getElementById('auditEmpty').style.display='block'; return; }
+    document.getElementById('auditEmpty').style.display='none';
+    document.getElementById('auditBody').innerHTML = rows.map(z=>{
+      const cilDetail = [z.cil, z.detail].filter(Boolean).map(esc).join(' · ') || '—';
+      return '<tr><td class="muted">'+fmtDateTime(z.ts)+'</td>'
+        + '<td>'+esc(AUDIT_TYP[z.typ]||z.typ)+'</td>'
+        + '<td>'+esc(z.akter||'—')+'</td>'
+        + '<td>'+esc(z.role||'—')+'</td>'
+        + '<td>'+esc(z.obalovna_id||'—')+'</td>'
+        + '<td>'+cilDetail+'</td></tr>';
+    }).join('');
+    document.getElementById('auditTbl').style.display='table';
+  }catch(e){ show('auditErr','Chyba připojení.'); }
+}
+
 loadPrehled();
 load();
 loadSa();
+loadAudit();
 </script>
 </body>
 </html>

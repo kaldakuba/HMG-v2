@@ -19,6 +19,7 @@ module.exports = {
         '<rootDir>/__tests__/obalovny.test.js',
         '<rootDir>/__tests__/obalovna-id.test.js',
         '<rootDir>/__tests__/superadmin.test.js',
+        '<rootDir>/__tests__/audit.test.js',
       ],
     },
 
