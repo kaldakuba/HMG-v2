@@ -18,17 +18,26 @@ h1{font-size:22px;font-weight:800;letter-spacing:.5px;color:#1a1a2e;margin-top:2
 .logout:hover{background:#2d2d4e}
 .card{background:#fff;border:1px solid #a0aabb;border-radius:12px;padding:22px 24px}
 .hint{font-size:13px;color:#6b7280;margin-bottom:16px}
-table{width:100%;border-collapse:collapse;font-size:14px}
-th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #e5e7eb}
-th{font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px}
-td.mods{white-space:normal}
+/* globální přehled */
+.stats{display:flex;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+.stat{flex:1;min-width:150px;background:#fff;border:1px solid #a0aabb;border-radius:12px;padding:16px 18px}
+.stat-n{font-size:26px;font-weight:800;color:#1a1a2e;line-height:1}
+.stat-l{font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-top:6px}
+/* obalovny */
+.ob{border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:12px}
+.ob-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.ob-title{font-size:15px;font-weight:700;color:#1a1a2e}
+.ob-sub{font-size:12px;color:#6b7280;margin-top:2px}
+.ob-mods{margin-top:10px}
+.ob-detail{margin-top:12px;padding-top:12px;border-top:1px dashed #e5e7eb}
+.det-grid{display:flex;gap:24px;flex-wrap:wrap}
+.det-col{min-width:200px}
+.det-h{font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.det-row{font-size:13px;color:#111;margin:3px 0}
 .modchk{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:#374151;margin:2px 10px 2px 0;cursor:pointer}
 .modchk input{cursor:pointer}
 .modchk.dis{color:#94a3b8;cursor:not-allowed}
 .modchk.dis input{cursor:not-allowed}
-.badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin-right:4px}
-.on{background:#dcfce7;color:#166534}
-.off{background:#f1f5f9;color:#94a3b8}
 .stav{font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px}
 .stav-aktivni{background:#dbeafe;color:#1d4ed8}
 .stav-demo{background:#fef9c3;color:#854d0e}
@@ -36,11 +45,18 @@ td.mods{white-space:normal}
 .ok{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:7px;padding:12px 14px;font-size:13px;color:#166534;font-weight:600;display:none;margin-bottom:12px}
 .muted{color:#6b7280;font-size:13px}
 h2.sect{font-size:15px;font-weight:800;color:#1a1a2e;margin-bottom:6px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #e5e7eb}
+th{font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px}
 .formrow{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .formrow input{height:40px;border:1px solid #a0aabb;border-radius:7px;padding:0 12px;font-family:'Inter',sans-serif;font-size:14px;background:#f8fafc;flex:1;min-width:180px}
 .formrow input:focus{border-color:#2563eb;background:#fff;outline:none}
 .btn{height:40px;padding:0 16px;background:#1a1a2e;color:#fff;border:none;border-radius:7px;font-family:'Inter',sans-serif;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
 .btn:hover{background:#2d2d4e}
+.btn-ghost{background:#fff;color:#1a1a2e;border:1px solid #a0aabb}
+.btn-ghost:hover{background:#f1f5f9}
+.btn-detail{height:32px;padding:0 12px;background:#fff;color:#1a1a2e;border:1px solid #a0aabb;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn-detail:hover{background:#f1f5f9}
 .btn-del{height:32px;padding:0 12px;background:#fff;color:#b91c1c;border:1px solid #fca5a5;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
 .btn-del:hover{background:#fef2f2}
 .btn-del:disabled{color:#cbd5e1;border-color:#e5e7eb;cursor:not-allowed}
@@ -51,62 +67,93 @@ h2.sect{font-size:15px;font-weight:800;color:#1a1a2e;margin-bottom:6px}
   <div class="bar">
     <div>
       <div class="logo">TAXIS · Superadmin</div>
-      <h1>Obalovny</h1>
+      <h1>Přehled</h1>
     </div>
     <button class="logout" onclick="doLogout()">Odhlásit se</button>
   </div>
 
+  <!-- Globální přehled -->
+  <div class="stats">
+    <div class="stat"><div class="stat-n" id="stObaloven">–</div><div class="stat-l">Obaloven</div></div>
+    <div class="stat"><div class="stat-n" id="stAktiv">–</div><div class="stat-l">Aktivních / demo</div></div>
+    <div class="stat"><div class="stat-n" id="stUziv">–</div><div class="stat-l">Uživatelů</div></div>
+  </div>
+
+  <!-- Obalovny -->
   <div class="card">
-    <div class="hint">Přehled obaloven (jen čtení). Vstup do dat konkrétní obalovny a editace přijdou v dalších krocích.</div>
+    <h2 class="sect">Obalovny</h2>
+    <div class="hint">Moduly = strop, co obalovna smí mít. „Detail" zobrazí obsazení a souhrnné metriky (živě z DB).</div>
     <div class="err" id="errBox"></div>
-    <table id="tbl" style="display:none">
-      <thead>
-        <tr>
-          <th>Název</th><th>Subdoména</th><th>Stav</th><th>Moduly</th>
-        </tr>
-      </thead>
-      <tbody id="tbody"></tbody>
-    </table>
+    <div id="obList"></div>
     <div class="muted" id="empty" style="display:none">Žádné obalovny.</div>
   </div>
 
-  <!-- Můj účet: změna hesla -->
+  <!-- Superadmin (sloučené: seznam + akce pod tlačítky) -->
   <div class="card" style="margin-top:18px">
-    <h2 class="sect">Můj účet</h2>
-    <div class="hint">Změna vlastního hesla superadmina (min. 8 znaků).</div>
-    <div class="err" id="pwErr"></div>
-    <div class="ok" id="pwOk">Heslo změněno.</div>
-    <div class="formrow">
-      <input type="password" id="newPw"  autocomplete="new-password" placeholder="Nové heslo">
-      <input type="password" id="newPw2" autocomplete="new-password" placeholder="Nové heslo znovu">
-      <button class="btn" onclick="changePw()">Změnit heslo</button>
-    </div>
-  </div>
-
-  <!-- Správa superadminů (předatelnost) -->
-  <div class="card" style="margin-top:18px">
-    <h2 class="sect">Superadmini</h2>
-    <div class="hint">Pro předání aplikace: založ účet novému majiteli a starý smaž. Posledního superadmina nelze smazat.</div>
+    <h2 class="sect">Superadmin</h2>
+    <div class="hint">Správci nad obalovnami. Pro předání: založ účet novému majiteli a starý smaž (posledního nelze smazat).</div>
     <div class="err" id="saErr"></div>
     <div class="ok" id="saOk"></div>
     <table id="saTbl" style="display:none">
       <thead><tr><th>Uživatel</th><th>Vytvořen</th><th></th></tr></thead>
       <tbody id="saBody"></tbody>
     </table>
-    <div class="formrow" style="margin-top:16px">
-      <input type="text" id="saUser" autocomplete="off" placeholder="Nový superadmin – jméno">
-      <input type="password" id="saPw" autocomplete="new-password" placeholder="Heslo (min. 8 znaků)">
-      <button class="btn" onclick="createSa()">Založit superadmina</button>
+
+    <div class="formrow" style="margin-top:14px">
+      <button class="btn btn-ghost" onclick="toggleForm('pwForm')">Změnit heslo</button>
+      <button class="btn btn-ghost" onclick="toggleForm('newForm')">Založit nového superadmina</button>
+    </div>
+
+    <!-- Formulář: změna hesla (skrytý) -->
+    <div id="pwForm" style="display:none;margin-top:14px">
+      <div class="err" id="pwErr"></div>
+      <div class="ok" id="pwOk">Heslo změněno.</div>
+      <div class="formrow">
+        <input type="password" id="newPw"  autocomplete="new-password" placeholder="Nové heslo (min. 8)">
+        <input type="password" id="newPw2" autocomplete="new-password" placeholder="Nové heslo znovu">
+        <button class="btn" onclick="changePw()">Uložit heslo</button>
+      </div>
+    </div>
+
+    <!-- Formulář: nový superadmin (skrytý) -->
+    <div id="newForm" style="display:none;margin-top:14px">
+      <div class="formrow">
+        <input type="text" id="saUser" autocomplete="off" placeholder="Jméno nového superadmina">
+        <input type="password" id="saPw" autocomplete="new-password" placeholder="Heslo (min. 8 znaků)">
+        <button class="btn" onclick="createSa()">Založit</button>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-function badge(on,label){return '<span class="badge '+(on?'on':'off')+'">'+label+'</span>';}
+function showErr(m){ const e=document.getElementById('errBox'); e.textContent=m; e.style.display='block'; }
+function show(id,m){ const e=document.getElementById(id); if(m!=null)e.textContent=m; e.style.display='block'; }
+function hide(id){ document.getElementById(id).style.display='none'; }
+function fmtDate(x){ if(!x) return '—'; try{ return new Date(x).toLocaleDateString('cs-CZ'); }catch(e){ return String(x); } }
+function toggleForm(id){ const e=document.getElementById(id); e.style.display = e.style.display==='none' ? 'block' : 'none'; }
 
+async function doLogout(){
+  try{ await fetch('/api/logout',{method:'POST'}); }catch(e){}
+  window.location.href='/login';
+}
+
+// ── Globální přehled ──
+async function loadPrehled(){
+  try{
+    const res=await fetch('/api/superadmin/prehled');
+    if(!res.ok) return;
+    const d=await res.json();
+    document.getElementById('stObaloven').textContent = d.obaloven;
+    document.getElementById('stAktiv').textContent    = d.aktivnich + ' / ' + d.demo;
+    document.getElementById('stUziv').textContent     = d.uzivatelu;
+  }catch(e){}
+}
+
+// ── Seznam obaloven (bloky s rozklikem) ──
 async function load(){
-  const err = document.getElementById('errBox');
+  hide('errBox');
   try{
     const res = await fetch('/api/obalovny');
     if(res.status===401){ window.location.href='/login'; return; }
@@ -114,40 +161,59 @@ async function load(){
     if(!res.ok){ showErr('Chyba načtení ('+res.status+').'); return; }
     const rows = await res.json();
     if(!Array.isArray(rows) || rows.length===0){ document.getElementById('empty').style.display='block'; return; }
-    const tb = document.getElementById('tbody');
-    tb.innerHTML = rows.map(o=>{
+    const chk = (id,key,label,checked,disabled)=>
+      '<label class="modchk'+(disabled?' dis':'')+'"><input type="checkbox" data-ob="'+id+'" data-mod="'+key+'"'
+      + (checked?' checked':'')+(disabled?' disabled':'')+' onchange="onMod(this)"> '+label+'</label>';
+    document.getElementById('obList').innerHTML = rows.map(o=>{
       const id = esc(o.id);
       const stav = esc(o.stav);
       const stavCls = stav==='demo' ? 'stav-demo' : 'stav-aktivni';
-      // Harmonogram = vždy zapnutý, needitovatelný. Ostatní = editovatelný STROP.
-      const chk = (key,label,checked,disabled)=>{
-        return '<label class="modchk'+(disabled?' dis':'')+'"><input type="checkbox" data-ob="'+id+'" data-mod="'+key+'"'
-             + (checked?' checked':'')+(disabled?' disabled':'')+' onchange="onMod(this)"> '+label+'</label>';
-      };
       const mods = '<label class="modchk dis"><input type="checkbox" checked disabled> Harmonogram</label>'
-                 + chk('mod_vazenky','Váženky',o.mod_vazenky,false)
-                 + chk('mod_objednavky','Objednávky',o.mod_objednavky,false)
-                 + chk('mod_hod_objednavky','Hodinové objednávky',o.mod_hod_objednavky,!o.mod_objednavky);
-      return '<tr data-row="'+id+'"><td><strong>'+esc(o.nazev)+'</strong><br><span class="muted">'+id+'</span></td>'
-           + '<td>'+esc(o.subdomena)+'</td>'
-           + '<td><span class="stav '+stavCls+'">'+stav+'</span></td>'
-           + '<td class="mods">'+mods+'</td></tr>';
+                 + chk(id,'mod_vazenky','Váženky',o.mod_vazenky,false)
+                 + chk(id,'mod_objednavky','Objednávky',o.mod_objednavky,false)
+                 + chk(id,'mod_hod_objednavky','Hodinové objednávky',o.mod_hod_objednavky,!o.mod_objednavky);
+      return '<div class="ob">'
+        + '<div class="ob-head"><div><div class="ob-title">'+esc(o.nazev)+' <span class="stav '+stavCls+'">'+stav+'</span></div>'
+        + '<div class="ob-sub">'+id+' · '+esc(o.subdomena)+'</div></div>'
+        + '<button class="btn-detail" id="btn-'+id+'" onclick="toggleDetail(\''+id+'\')">Detail</button></div>'
+        + '<div class="ob-mods">'+mods+'</div>'
+        + '<div class="ob-detail" id="detail-'+id+'" style="display:none"></div>'
+        + '</div>';
     }).join('');
-    document.getElementById('tbl').style.display='table';
   }catch(e){ showErr('Chyba připojení k serveru.'); }
 }
 
-async function doLogout(){
-  try{ await fetch('/api/logout',{method:'POST'}); }catch(e){}
-  window.location.href='/login';
+// ── Rozklik: obsazení + metriky (lazy) ──
+async function toggleDetail(id){
+  const panel = document.getElementById('detail-'+id);
+  const btn = document.getElementById('btn-'+id);
+  if(panel.style.display!=='none'){ panel.style.display='none'; btn.textContent='Detail'; return; }
+  panel.style.display='block'; btn.textContent='Skrýt'; panel.innerHTML='<span class="muted">Načítám…</span>';
+  try{
+    const [oRes,mRes] = await Promise.all([
+      fetch('/api/superadmin/obalovny/'+encodeURIComponent(id)+'/obsazeni'),
+      fetch('/api/superadmin/obalovny/'+encodeURIComponent(id)+'/metriky'),
+    ]);
+    const o = await oRes.json(), m = await mRes.json();
+    const names = a => (a&&a.length) ? a.map(esc).join(', ') : '—';
+    const hmgNames = (m2)=> (m2&&m2.length) ? m2.map(u=>esc(u.username)+(u.firma?' ('+esc(u.firma)+')':'')).join(', ') : '—';
+    panel.innerHTML =
+      '<div class="det-grid">'
+      + '<div class="det-col"><div class="det-h">Obsazení</div>'
+      +   '<div class="det-row"><strong>Admin:</strong> '+names(o.admins&&o.admins.names)+'</div>'
+      +   '<div class="det-row"><strong>Operátoři ('+(o.operatori?o.operatori.count:0)+'):</strong> '+names(o.operatori&&o.operatori.names)+'</div>'
+      +   '<div class="det-row"><strong>Sdílené přístupy ('+(o.hmg_share?o.hmg_share.count:0)+'):</strong> '+hmgNames(o.hmg_share&&o.hmg_share.users)+'</div>'
+      + '</div>'
+      + '<div class="det-col"><div class="det-h">Metriky</div>'
+      +   '<div class="det-row"><strong>Týdny v plánu:</strong> '+(m.tydny!=null?m.tydny:'—')+'</div>'
+      +   '<div class="det-row"><strong>Poslední aktivita:</strong> '+fmtDate(m.posledniAktivita)+'</div>'
+      +   '<div class="det-row"><strong>Poslední nahraná váženka:</strong> '+fmtDate(m.posledniVazenka)+'</div>'
+      + '</div>'
+      + '</div>';
+  }catch(e){ panel.innerHTML='<span class="muted">Chyba načtení detailu.</span>'; }
 }
-function showErr(m){ const e=document.getElementById('errBox'); e.textContent=m; e.style.display='block'; }
-function show(id,m){ const e=document.getElementById(id); if(m!=null)e.textContent=m; e.style.display='block'; }
-function hide(id){ document.getElementById(id).style.display='none'; }
 
-// ── STROP modulů obalovny (superadmin) ──
-// Pravidlo závislosti (Hodinové jen při Objednávkách) vynucuje i server (normalizeModuly);
-// po uložení překreslíme tabulku podle normalizovaného stavu.
+// ── STROP modulů obalovny ── (závislost vynucuje i server; po uložení překreslíme)
 async function onMod(el){
   hide('errBox');
   const ob = el.getAttribute('data-ob');
@@ -158,7 +224,7 @@ async function onMod(el){
     const res = await fetch('/api/obalovny/'+encodeURIComponent(ob)+'/moduly',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!res.ok){ const d=await res.json().catch(()=>({})); showErr(d.error||'Uložení modulů selhalo.'); }
   }catch(e){ showErr('Chyba připojení.'); }
-  await load(); // překreslit dle normalizovaného stavu (závislost vynucena serverem)
+  await load();
 }
 
 // ── Změna vlastního hesla ──
@@ -215,12 +281,13 @@ async function delSa(id,name){
     const d=await res.json();
     if(res.ok&&d.ok){
       show('saOk','Superadmin smazán.');
-      if(id===currentUserId){ window.location.href='/login'; return; } // smazal sám sebe
+      if(id===currentUserId){ window.location.href='/login'; return; }
       loadSa();
     } else show('saErr',d.error||'Nepodařilo se smazat.');
   }catch(e){ show('saErr','Chyba připojení.'); }
 }
 
+loadPrehled();
 load();
 loadSa();
 </script>

@@ -21,7 +21,7 @@ const { migrateObalovny, listObalovny, normalizeModuly, getObalovnaModuly, updat
 const { migrateObalovnaId } = require('./lib/obalovna-id');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.81';
+const APP_VERSION = '3.82';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -932,6 +932,91 @@ app.patch('/api/obalovny/:id/moduly', requireAuth, requireSuperadmin, async (req
 app.get('/api/obalovna/moduly', requireAuth, async (req, res) => {
   const moduly = await getObalovnaModuly(pool, getObalovnaId(req));
   res.json(moduly);
+});
+
+// ── Superadmin panel — dávka A (čistě čtecí přehledy) ───────────────────────────
+
+// Globální přehled: počet obaloven (z toho aktivních/demo) + počet uživatelů napříč
+// obalovnami (superadmin se do počtu NEzahrnuje).
+app.get('/api/superadmin/prehled', requireAuth, requireSuperadmin, async (req, res) => {
+  try {
+    const [ob, us] = await Promise.all([
+      pool.query(`SELECT COUNT(*)::int AS obaloven,
+                         COUNT(*) FILTER (WHERE stav='aktivni')::int AS aktivnich,
+                         COUNT(*) FILTER (WHERE stav='demo')::int    AS demo
+                  FROM obalovny`),
+      pool.query(`SELECT COUNT(*)::int AS uzivatelu FROM users WHERE role <> 'superadmin'`),
+    ]);
+    res.json({
+      obaloven:  ob.rows[0].obaloven,
+      aktivnich: ob.rows[0].aktivnich,
+      demo:      ob.rows[0].demo,
+      uzivatelu: us.rows[0].uzivatelu,
+    });
+  } catch (err) {
+    console.error('GET /api/superadmin/prehled error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+// Obsazení obalovny: uživatelé podle rolí (jména; u hmg_share i firma). Bez superadmina.
+app.get('/api/superadmin/obalovny/:id/obsazeni', requireAuth, requireSuperadmin, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT username, role, firma FROM users
+       WHERE obalovna_id=$1 AND role <> 'superadmin'
+       ORDER BY role, username`,
+      [req.params.id]
+    );
+    const admins    = { count: 0, names: [] };
+    const operatori = { count: 0, names: [] };
+    const hmg_share = { count: 0, users: [] };
+    for (const u of r.rows) {
+      if (u.role === 'admin')         { admins.count++;    admins.names.push(u.username); }
+      else if (u.role === 'operator') { operatori.count++; operatori.names.push(u.username); }
+      else if (u.role === 'hmg_share'){ hmg_share.count++; hmg_share.users.push({ username: u.username, firma: u.firma || null }); }
+    }
+    res.json({ obalovna_id: req.params.id, admins, operatori, hmg_share });
+  } catch (err) {
+    console.error('GET /api/superadmin/obalovny/:id/obsazeni error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+// Souhrnné metriky obalovny. POZOR: superadmin NEVIDÍ počet ani tuny váženek — vrací se
+// POUZE datum poslední váženky, poslední aktivita a počet týdnů. Žádný count/tonáž!
+app.get('/api/superadmin/obalovny/:id/metriky', requireAuth, requireSuperadmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const r = await pool.query(
+      `SELECT
+         (SELECT COUNT(*)::int      FROM week_data WHERE obalovna_id=$1) AS tydny,
+         (SELECT MAX(updated_at)    FROM week_data WHERE obalovna_id=$1) AS wd_last,
+         (SELECT MAX(uploaded_at)   FROM vazenky   WHERE obalovna_id=$1) AS vz_upload,
+         (SELECT MAX(datum)         FROM vazenky   WHERE obalovna_id=$1) AS vz_datum`,
+      [id]
+    );
+    const row = r.rows[0];
+    const toDate = (x) => {
+      if (!x) return null;
+      if (typeof x === 'string') return x.slice(0, 10);
+      try { return new Date(x).toISOString().slice(0, 10); } catch { return null; }
+    };
+    // Poslední aktivita = novější z (úprava harmonogramu, nahrání váženky) — jako datum.
+    const wd = row.wd_last ? new Date(row.wd_last).getTime() : null;
+    const vz = row.vz_upload ? new Date(row.vz_upload).getTime() : null;
+    let posledniAktivita = null;
+    if (wd != null || vz != null) posledniAktivita = toDate(new Date(Math.max(wd || 0, vz || 0)));
+    // ZÁMĚRNĚ se nevrací počet ani tonáž váženek.
+    res.json({
+      tydny: row.tydny,
+      posledniAktivita,
+      posledniVazenka: toDate(row.vz_datum),
+    });
+  } catch (err) {
+    console.error('GET /api/superadmin/obalovny/:id/metriky error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
 });
 
 // ── Předatelnost aplikace: správa superadminů (multi-obalovna, krok 5) ──────────
