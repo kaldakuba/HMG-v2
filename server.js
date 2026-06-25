@@ -21,7 +21,7 @@ const { migrateObalovny, listObalovny, normalizeModuly, getObalovnaModuly, updat
 const { migrateObalovnaId } = require('./lib/obalovna-id');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.82';
+const APP_VERSION = '3.83';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -984,18 +984,24 @@ app.get('/api/superadmin/obalovny/:id/obsazeni', requireAuth, requireSuperadmin,
 });
 
 // Souhrnné metriky obalovny. POZOR: superadmin NEVIDÍ počet ani tuny váženek — vrací se
-// POUZE datum poslední váženky, poslední aktivita a počet týdnů. Žádný count/tonáž!
+// POUZE datum poslední váženky, poslední aktivita, počet týdnů, počet NEVYŘÍZENÝCH objednávek
+// (jen když je systém funkční) a čas poslední úspěšné zálohy. Žádný count/tonáž váženek!
 app.get('/api/superadmin/obalovny/:id/metriky', requireAuth, requireSuperadmin, async (req, res) => {
   try {
     const id = req.params.id;
-    const r = await pool.query(
-      `SELECT
-         (SELECT COUNT(*)::int      FROM week_data WHERE obalovna_id=$1) AS tydny,
-         (SELECT MAX(updated_at)    FROM week_data WHERE obalovna_id=$1) AS wd_last,
-         (SELECT MAX(uploaded_at)   FROM vazenky   WHERE obalovna_id=$1) AS vz_upload,
-         (SELECT MAX(datum)         FROM vazenky   WHERE obalovna_id=$1) AS vz_datum`,
-      [id]
-    );
+    const [r, moduly, oeRes, lbRes] = await Promise.all([
+      pool.query(
+        `SELECT
+           (SELECT COUNT(*)::int      FROM week_data WHERE obalovna_id=$1) AS tydny,
+           (SELECT MAX(updated_at)    FROM week_data WHERE obalovna_id=$1) AS wd_last,
+           (SELECT MAX(uploaded_at)   FROM vazenky   WHERE obalovna_id=$1) AS vz_upload,
+           (SELECT MAX(datum)         FROM vazenky   WHERE obalovna_id=$1) AS vz_datum`,
+        [id]
+      ),
+      getObalovnaModuly(pool, id),
+      pool.query("SELECT value FROM settings WHERE key='orders_enabled'"),
+      pool.query("SELECT value FROM settings WHERE key='last_backup'"),  // ISO čas poslední ÚSPĚŠNÉ zálohy
+    ]);
     const row = r.rows[0];
     const toDate = (x) => {
       if (!x) return null;
@@ -1007,11 +1013,27 @@ app.get('/api/superadmin/obalovny/:id/metriky', requireAuth, requireSuperadmin, 
     const vz = row.vz_upload ? new Date(row.vz_upload).getTime() : null;
     let posledniAktivita = null;
     if (wd != null || vz != null) posledniAktivita = toDate(new Date(Math.max(wd || 0, vz || 0)));
+
+    // Nevyřízené objednávky JEN když je systém funkční (mod_objednavky=true AND orders_enabled=true).
+    const ordersEnabled = (oeRes.rows[0] ? oeRes.rows[0].value : 'true') === 'true';
+    const objednavkySystem = !!moduly.mod_objednavky && ordersEnabled;
+    let nevyrizeneObjednavky = null;
+    if (objednavkySystem) {
+      const p = await pool.query("SELECT COUNT(*)::int AS n FROM orders WHERE obalovna_id=$1 AND status='pending'", [id]);
+      nevyrizeneObjednavky = p.rows[0].n;
+    }
+
+    // Zdraví: čas poslední úspěšné zálohy (per-instalace/globální). Chybí → null.
+    const posledniZaloha = lbRes.rows[0] ? lbRes.rows[0].value : null;
+
     // ZÁMĚRNĚ se nevrací počet ani tonáž váženek.
     res.json({
       tydny: row.tydny,
       posledniAktivita,
       posledniVazenka: toDate(row.vz_datum),
+      objednavkySystem,
+      nevyrizeneObjednavky,
+      posledniZaloha,
     });
   } catch (err) {
     console.error('GET /api/superadmin/obalovny/:id/metriky error:', err);

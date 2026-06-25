@@ -132,6 +132,7 @@ function showErr(m){ const e=document.getElementById('errBox'); e.textContent=m;
 function show(id,m){ const e=document.getElementById(id); if(m!=null)e.textContent=m; e.style.display='block'; }
 function hide(id){ document.getElementById(id).style.display='none'; }
 function fmtDate(x){ if(!x) return '—'; try{ return new Date(x).toLocaleDateString('cs-CZ'); }catch(e){ return String(x); } }
+function fmtDateTime(x){ if(!x) return '—'; try{ return new Date(x).toLocaleString('cs-CZ'); }catch(e){ return String(x); } }
 function toggleForm(id){ const e=document.getElementById(id); e.style.display = e.style.display==='none' ? 'block' : 'none'; }
 
 async function doLogout(){
@@ -208,6 +209,10 @@ async function toggleDetail(id){
       +   '<div class="det-row"><strong>Týdny v plánu:</strong> '+(m.tydny!=null?m.tydny:'—')+'</div>'
       +   '<div class="det-row"><strong>Poslední aktivita:</strong> '+fmtDate(m.posledniAktivita)+'</div>'
       +   '<div class="det-row"><strong>Poslední nahraná váženka:</strong> '+fmtDate(m.posledniVazenka)+'</div>'
+      +   '<div class="det-row"><strong>Nevyřízené objednávky:</strong> '
+      +     (m.objednavkySystem ? (m.nevyrizeneObjednavky!=null?m.nevyrizeneObjednavky:'—') : '<span class="muted">— systém vypnut</span>')+'</div>'
+      +   '<div class="det-row"><strong>Poslední záloha:</strong> '
+      +     (m.posledniZaloha ? fmtDateTime(m.posledniZaloha) : '<span class="muted">zatím neznámo</span>')+'</div>'
       + '</div>'
       + '</div>';
   }catch(e){ panel.innerHTML='<span class="muted">Chyba načtení detailu.</span>'; }
