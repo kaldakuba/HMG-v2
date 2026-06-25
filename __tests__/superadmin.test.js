@@ -21,7 +21,7 @@ jest.mock('connect-pg-simple', () => () => {
   };
 });
 
-const { getObalovnaId, requireSuperadmin, isLastSuperadmin, normalizeModuly } = require('../server');
+const { getObalovnaId, requireSuperadmin, isLastSuperadmin, normalizeModuly, generateTempPassword } = require('../server');
 
 describe('Tier 1 — multi-obalovna: superadmin', () => {
   describe('getObalovnaId', () => {
@@ -96,6 +96,21 @@ describe('Tier 1 — multi-obalovna: superadmin', () => {
     test('Holubice (vazenky+objednavky=true, hod=false) → beze změny', () => {
       const m = normalizeModuly({ mod_vazenky: true, mod_objednavky: true, mod_hod_objednavky: false });
       expect(m).toEqual({ mod_harmonogram: true, mod_vazenky: true, mod_objednavky: true, mod_hod_objednavky: false });
+    });
+  });
+
+  describe('generateTempPassword (reset hesla admina)', () => {
+    test('má požadovanou délku (default 14, i vlastní)', () => {
+      expect(generateTempPassword()).toHaveLength(14);
+      expect(generateTempPassword(20)).toHaveLength(20);
+    });
+    test('jen bezpečné znaky (bez nejednoznačných 0/O/1/l/I)', () => {
+      const p = generateTempPassword(200);
+      expect(/^[A-HJ-NP-Za-km-z2-9]+$/.test(p)).toBe(true);
+      expect(/[0O1lI]/.test(p)).toBe(false);
+    });
+    test('dvě hesla se liší (náhodnost)', () => {
+      expect(generateTempPassword()).not.toBe(generateTempPassword());
     });
   });
 });

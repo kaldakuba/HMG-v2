@@ -21,7 +21,7 @@ const { migrateObalovny, listObalovny, normalizeModuly, getObalovnaModuly, updat
 const { migrateObalovnaId } = require('./lib/obalovna-id');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.83';
+const APP_VERSION = '3.84';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -378,6 +378,16 @@ function requireSuperadmin(req, res, next) {
 // zůstat bez správce). Čistá funkce kvůli testovatelnosti.
 function isLastSuperadmin(superadminCount) {
   return superadminCount <= 1;
+}
+
+// Náhodné dočasné heslo (kryptograficky, bez nejednoznačných znaků 0/O/1/l/I).
+// Použito při resetu hesla admina superadminem — vrací se JEN superadminovi, NIKDY se neloguje.
+function generateTempPassword(length = 14) {
+  const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  const bytes = crypto.randomBytes(length);
+  let out = '';
+  for (let i = 0; i < length; i++) out += charset[bytes[i] % charset.length];
+  return out;
 }
 
 // Operator + Admin mohou číst data
@@ -1037,6 +1047,45 @@ app.get('/api/superadmin/obalovny/:id/metriky', requireAuth, requireSuperadmin, 
     });
   } catch (err) {
     console.error('GET /api/superadmin/obalovny/:id/metriky error:', err);
+    res.status(500).json({ error: 'Chyba serveru' });
+  }
+});
+
+// Reset hesla ADMINA obalovny (dávka C). Superadmin vygeneruje náhodné DOČASNÉ heslo;
+// admin si ho při prvním přihlášení SÁM změní (mustChangePassword=true). Superadmin trvalé
+// heslo nezná. Bezpečnost: jen role 'admin' a jen ve zvolené obalovně (ne superadmin, ne cizí
+// obalovna, ne jiná role). Mění POUZE heslo + mustChangePassword (ne roli/jiná data).
+app.post('/api/superadmin/obalovny/:id/reset-admin-heslo', requireAuth, requireSuperadmin, async (req, res) => {
+  try {
+    const obalovnaId = req.params.id;
+    const username = (req.body && req.body.username || '').trim();
+    if (!username) return res.status(400).json({ error: 'Chybí username' });
+
+    // Cílový uživatel MUSÍ být admin TÉTO obalovny (jinak odmítnout).
+    const u = await pool.query(
+      "SELECT id, role, obalovna_id FROM users WHERE username=$1",
+      [username]
+    );
+    const target = u.rows[0];
+    if (!target || target.role !== 'admin' || target.obalovna_id !== obalovnaId) {
+      return res.status(404).json({ error: 'Admin se zadaným jménem v této obalovně neexistuje' });
+    }
+
+    // Náhodné dočasné heslo → bcrypt hash → mustChangePassword=true. Heslo se NIKAM neloguje.
+    const tempPassword = generateTempPassword(14);
+    const hash = await bcrypt.hash(tempPassword, 12);
+    await pool.query(
+      "UPDATE users SET password_hash=$1, must_change_password=true WHERE id=$2 AND role='admin' AND obalovna_id=$3",
+      [hash, target.id, obalovnaId]
+    );
+    // Zruš aktivní sessions, aby se admin musel přihlásit dočasným heslem.
+    await pool.query("DELETE FROM session WHERE sess->>'userId' = $1", [String(target.id)]);
+    console.log(`Superadmin ${req.session.username} resetoval heslo admina '${username}' (obalovna ${obalovnaId}).`);
+
+    // Dočasné heslo se vrací JEN v této odpovědi superadminovi (k jednorázovému předání).
+    res.json({ ok: true, username, tempPassword });
+  } catch (err) {
+    console.error('POST /api/superadmin/obalovny/:id/reset-admin-heslo error:', err);
     res.status(500).json({ error: 'Chyba serveru' });
   }
 });
@@ -3615,7 +3664,7 @@ if (require.main === module) {
     // Záloha + obnova (Tier 1 integrační)
     sendBackup, restoreFromSnapshot,
     // Multi-obalovna (Tier 1 unit) — aktivní obalovna + superadmin gate + pojistka + moduly
-    getObalovnaId, requireSuperadmin, isLastSuperadmin, normalizeModuly,
+    getObalovnaId, requireSuperadmin, isLastSuperadmin, normalizeModuly, generateTempPassword,
     // HTTP + DB přístup (Tier 2 supertest)
     app, pool, initDb,
   };

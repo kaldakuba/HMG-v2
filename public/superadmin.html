@@ -34,6 +34,14 @@ h1{font-size:22px;font-weight:800;letter-spacing:.5px;color:#1a1a2e;margin-top:2
 .det-col{min-width:200px}
 .det-h{font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
 .det-row{font-size:13px;color:#111;margin:3px 0}
+.adminrow{display:flex;align-items:center;gap:10px;font-size:13px;margin:4px 0;flex-wrap:wrap}
+.btn-mini{height:28px;padding:0 10px;background:#fff;color:#1a1a2e;border:1px solid #a0aabb;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer}
+.btn-mini:hover{background:#f1f5f9}
+.resetout{margin:6px 0}
+.pwbox{background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin:4px 0}
+.pwline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0}
+.pwline code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:700;background:#fff;border:1px solid #cbd5e1;border-radius:6px;padding:4px 10px;letter-spacing:1px}
+.err-inline{color:#991b1b;font-size:13px;font-weight:600}
 .modchk{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:#374151;margin:2px 10px 2px 0;cursor:pointer}
 .modchk input{cursor:pointer}
 .modchk.dis{color:#94a3b8;cursor:not-allowed}
@@ -198,11 +206,17 @@ async function toggleDetail(id){
     const o = await oRes.json(), m = await mRes.json();
     const names = a => (a&&a.length) ? a.map(esc).join(', ') : '—';
     const hmgNames = (m2)=> (m2&&m2.length) ? m2.map(u=>esc(u.username)+(u.firma?' ('+esc(u.firma)+')':'')).join(', ') : '—';
+    // Admin: u každého tlačítko pro vygenerování dočasného hesla (reset).
+    const adminList = (o.admins&&o.admins.names&&o.admins.names.length)
+      ? o.admins.names.map(n=>'<div class="adminrow"><span>'+esc(n)+'</span>'
+          + '<button class="btn-mini" onclick="resetAdmin(\''+id+'\',\''+esc(n).replace(/\'/g,"\\\\'")+'\')">Vygenerovat dočasné heslo</button></div>').join('')
+      : '<div class="muted">—</div>';
     panel.innerHTML =
       '<div class="det-grid">'
       + '<div class="det-col"><div class="det-h">Obsazení</div>'
-      +   '<div class="det-row"><strong>Admin:</strong> '+names(o.admins&&o.admins.names)+'</div>'
-      +   '<div class="det-row"><strong>Operátoři ('+(o.operatori?o.operatori.count:0)+'):</strong> '+names(o.operatori&&o.operatori.names)+'</div>'
+      +   '<div class="det-row"><strong>Admin:</strong></div>'+adminList
+      +   '<div class="resetout" id="resetOut-'+id+'"></div>'
+      +   '<div class="det-row" style="margin-top:8px"><strong>Operátoři ('+(o.operatori?o.operatori.count:0)+'):</strong> '+names(o.operatori&&o.operatori.names)+'</div>'
       +   '<div class="det-row"><strong>Sdílené přístupy ('+(o.hmg_share?o.hmg_share.count:0)+'):</strong> '+hmgNames(o.hmg_share&&o.hmg_share.users)+'</div>'
       + '</div>'
       + '<div class="det-col"><div class="det-h">Metriky</div>'
@@ -216,6 +230,31 @@ async function toggleDetail(id){
       + '</div>'
       + '</div>';
   }catch(e){ panel.innerHTML='<span class="muted">Chyba načtení detailu.</span>'; }
+}
+
+// ── Reset hesla admina obalovny (dávka C) ──
+async function resetAdmin(obId, username){
+  const out = document.getElementById('resetOut-'+obId);
+  if(!confirm('Vygenerovat NOVÉ dočasné heslo pro admina „'+username+'"?\nStávající heslo přestane platit; admin si nové heslo při přihlášení musí změnit.')) return;
+  if(out) out.innerHTML='<span class="muted">Generuji…</span>';
+  try{
+    const res=await fetch('/api/superadmin/obalovny/'+encodeURIComponent(obId)+'/reset-admin-heslo',
+      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:username})});
+    const d=await res.json();
+    if(res.ok&&d.ok){
+      out.innerHTML='<div class="pwbox"><div class="muted">Dočasné heslo pro <strong>'+esc(username)+'</strong> (jednorázově, předej adminovi):</div>'
+        + '<div class="pwline"><code id="pw-'+obId+'">'+esc(d.tempPassword)+'</code>'
+        + '<button class="btn-mini" onclick="copyPw(\''+obId+'\')">Kopírovat</button>'
+        + '<button class="btn-mini" onclick="resetAdmin(\''+obId+'\',\''+esc(username).replace(/\'/g,"\\\\'")+'\')">Vygenerovat znovu</button></div>'
+        + '<div class="muted">Admin si heslo při prvním přihlášení sám změní (vynucená změna).</div></div>';
+    } else { out.innerHTML='<span class="err-inline">'+esc(d.error||'Reset selhal.')+'</span>'; }
+  }catch(e){ out.innerHTML='<span class="err-inline">Chyba připojení.</span>'; }
+}
+function copyPw(obId){
+  const el=document.getElementById('pw-'+obId); if(!el) return;
+  const txt=el.textContent;
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(()=>{el.style.background='#dcfce7';},()=>{}); }
+  else { try{ const r=document.createRange(); r.selectNode(el); const s=getSelection(); s.removeAllRanges(); s.addRange(r); document.execCommand('copy'); s.removeAllRanges(); }catch(e){} }
 }
 
 // ── STROP modulů obalovny ── (závislost vynucuje i server; po uložení překreslíme)
