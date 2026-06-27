@@ -22,7 +22,7 @@ const { migrateObalovnaId, migrateSingleRowConfigUnique } = require('./lib/obalo
 const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.87';
+const APP_VERSION = '3.88';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -2154,11 +2154,14 @@ app.get('/api/export-excel', requireAuth, requireOperator, async (req, res) => {
 
 // ── Správa uživatelů ──
 app.get('/api/users', requireAuth, requireAdmin, async (req, res) => {
+  // SCOPING: admin vidí JEN uživatele své obalovny; superadmina NIKDY.
   const r = await pool.query(`
     SELECT u.id, u.username, u.role, u.firma, u.email, u.orders_allowed, u.created_at, u.last_seen,
       (SELECT COUNT(*) FROM session s WHERE s.sess->>'userId' = u.id::text AND s.expire > NOW()) as session_count
-    FROM users u ORDER BY u.created_at
-  `);
+    FROM users u
+    WHERE u.obalovna_id = $1 AND u.role <> 'superadmin'
+    ORDER BY u.created_at
+  `, [getObalovnaId(req)]);
   res.json(r.rows);
 });
 
@@ -2166,7 +2169,12 @@ app.get('/api/users', requireAuth, requireAdmin, async (req, res) => {
 app.put('/api/users/:id/orders-allowed', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id);
   const allowed = req.body.orders_allowed === true || req.body.orders_allowed === 'true';
-  await pool.query('UPDATE users SET orders_allowed=$1 WHERE id=$2', [allowed, id]);
+  // SCOPING: jen uživatel své obalovny, ne superadmin.
+  const r = await pool.query(
+    "UPDATE users SET orders_allowed=$1 WHERE id=$2 AND obalovna_id=$3 AND role <> 'superadmin'",
+    [allowed, id, getObalovnaId(req)]
+  );
+  if (r.rowCount === 0) return res.status(404).json({ error: 'Uživatel nenalezen' });
   res.json({ ok: true, orders_allowed: allowed });
 });
 
@@ -2200,12 +2208,12 @@ app.put('/api/users/:id/role', requireAuth, requireAdmin, async (req, res) => {
   const { role } = req.body;
   // 'superadmin' NENÍ v povolených hodnotách → nelze povýšit přes API (jen seed skript).
   if (!['admin','operator','hmg_share'].includes(role)) return res.status(400).json({ error: 'Neplatná role' });
-  // Roli superadmina nelze měnit přes admin API obalovny (superadmin stojí nad obalovnami).
-  const tRes = await pool.query('SELECT role FROM users WHERE id=$1', [id]);
-  if (tRes.rows[0] && tRes.rows[0].role === 'superadmin') {
-    return res.status(403).json({ error: 'Roli superadmina nelze měnit přes toto rozhraní' });
-  }
-  await pool.query('UPDATE users SET role=$1 WHERE id=$2', [role, id]);
+  // SCOPING: měnit lze JEN uživatele své obalovny a NIKDY superadmina (cizí id/superadmin → 404).
+  const r = await pool.query(
+    "UPDATE users SET role=$1 WHERE id=$2 AND obalovna_id=$3 AND role <> 'superadmin'",
+    [role, id, getObalovnaId(req)]
+  );
+  if (r.rowCount === 0) return res.status(404).json({ error: 'Uživatel nenalezen' });
   // Smazat sessions uživatele aby se znovu přihlásil s novou rolí
   await pool.query("DELETE FROM session WHERE sess->>'userId'=$1", [String(id)]);
   res.json({ ok: true });
@@ -2215,15 +2223,25 @@ app.put('/api/users/:id/password', requireAuth, requireAdmin, async (req, res) =
   const { password } = req.body;
   if (!password || password.length < 6) return res.status(400).json({ error: 'Heslo min. 6 znaků' });
   const hash = await bcrypt.hash(password, 12);
-  await pool.query('UPDATE users SET password_hash=$1 WHERE id=$2', [hash, req.params.id]);
+  // SCOPING: reset hesla jen pro uživatele své obalovny, ne superadmina.
+  const r = await pool.query(
+    "UPDATE users SET password_hash=$1 WHERE id=$2 AND obalovna_id=$3 AND role <> 'superadmin'",
+    [hash, parseInt(req.params.id), getObalovnaId(req)]
+  );
+  if (r.rowCount === 0) return res.status(404).json({ error: 'Uživatel nenalezen' });
   res.json({ ok: true });
 });
 
 app.delete('/api/users/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id);
   if (id === req.session.userId) return res.status(400).json({ error: 'Nemůžeš smazat sám sebe' });
+  // SCOPING: smazat lze JEN uživatele své obalovny, NIKDY superadmina (cizí id → 404).
+  const r = await pool.query(
+    "DELETE FROM users WHERE id=$1 AND obalovna_id=$2 AND role <> 'superadmin' RETURNING id",
+    [id, getObalovnaId(req)]
+  );
+  if (r.rowCount === 0) return res.status(404).json({ error: 'Uživatel nenalezen' });
   await pool.query("DELETE FROM session WHERE sess->>'userId' = $1", [String(id)]);
-  await pool.query('DELETE FROM users WHERE id=$1', [id]);
   res.json({ ok: true });
 });
 
@@ -2231,7 +2249,11 @@ app.put('/api/users/:id/firma', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id);
   const { firma } = req.body;
   const firmaVal = firma ? sanitizeStr(String(firma), 100) : null;
-  await pool.query('UPDATE users SET firma=$1 WHERE id=$2', [firmaVal, id]);
+  const r = await pool.query(
+    "UPDATE users SET firma=$1 WHERE id=$2 AND obalovna_id=$3 AND role <> 'superadmin'",
+    [firmaVal, id, getObalovnaId(req)]
+  );
+  if (r.rowCount === 0) return res.status(404).json({ error: 'Uživatel nenalezen' });
   res.json({ ok: true });
 });
 
@@ -2242,12 +2264,17 @@ app.put('/api/users/:id/email', requireAuth, requireAdmin, async (req, res) => {
   if (emailVal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
     return res.status(400).json({ error: 'Neplatný formát emailu' });
   }
-  await pool.query('UPDATE users SET email=$1 WHERE id=$2', [emailVal, id]);
+  const r = await pool.query(
+    "UPDATE users SET email=$1 WHERE id=$2 AND obalovna_id=$3 AND role <> 'superadmin'",
+    [emailVal, id, getObalovnaId(req)]
+  );
+  if (r.rowCount === 0) return res.status(404).json({ error: 'Uživatel nenalezen' });
   res.json({ ok: true });
 });
 
 // ── Správa sessions ──
 app.get('/api/sessions', requireAuth, requireAdmin, async (req, res) => {
+  // SCOPING: jen sessions uživatelů své obalovny; superadmina ani cizí obalovnu NEukazovat.
   const r = await pool.query(`
     SELECT s.sid,
       s.sess->>'userId' as user_id,
@@ -2257,21 +2284,32 @@ app.get('/api/sessions', requireAuth, requireAdmin, async (req, res) => {
       s.expire,
       (s.sid = $1) as is_current
     FROM session s
-    LEFT JOIN users u ON u.id::text = s.sess->>'userId'
-    WHERE s.expire > NOW()
+    JOIN users u ON u.id::text = s.sess->>'userId'
+    WHERE s.expire > NOW() AND u.obalovna_id = $2 AND u.role <> 'superadmin'
     ORDER BY u.username, s.expire DESC
-  `, [req.sessionID]);
+  `, [req.sessionID, getObalovnaId(req)]);
   res.json(r.rows);
 });
 
 app.delete('/api/sessions/:sid', requireAuth, requireAdmin, async (req, res) => {
   if (req.params.sid === req.sessionID) return res.status(400).json({ error: 'Nemůžeš odhlásit aktuální session' });
-  await pool.query('DELETE FROM session WHERE sid=$1', [req.params.sid]);
+  // SCOPING: odhlásit lze jen session uživatele své obalovny (ne superadmina/cizí).
+  const r = await pool.query(
+    `DELETE FROM session WHERE sid=$1 AND sess->>'userId' IN (
+       SELECT id::text FROM users WHERE obalovna_id=$2 AND role <> 'superadmin')`,
+    [req.params.sid, getObalovnaId(req)]
+  );
+  if (r.rowCount === 0) return res.status(404).json({ error: 'Session nenalezena' });
   res.json({ ok: true });
 });
 
 app.delete('/api/sessions/user/:id', requireAuth, requireAdmin, async (req, res) => {
-  await pool.query("DELETE FROM session WHERE sess->>'userId'=$1 AND sid!=$2", [String(req.params.id), req.sessionID]);
+  // SCOPING: odhlásit lze jen uživatele své obalovny (ne superadmina/cizí).
+  await pool.query(
+    `DELETE FROM session WHERE sess->>'userId'=$1 AND sid!=$2 AND sess->>'userId' IN (
+       SELECT id::text FROM users WHERE obalovna_id=$3 AND role <> 'superadmin')`,
+    [String(req.params.id), req.sessionID, getObalovnaId(req)]
+  );
   res.json({ ok: true });
 });
 
