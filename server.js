@@ -22,7 +22,7 @@ const { migrateObalovnaId } = require('./lib/obalovna-id');
 const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.85';
+const APP_VERSION = '3.86';
 
 const app = express();
 app.set('trust proxy', 1);

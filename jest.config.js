@@ -20,6 +20,7 @@ module.exports = {
         '<rootDir>/__tests__/obalovna-id.test.js',
         '<rootDir>/__tests__/superadmin.test.js',
         '<rootDir>/__tests__/audit.test.js',
+        '<rootDir>/__tests__/create-demo.test.js',
       ],
     },
 
