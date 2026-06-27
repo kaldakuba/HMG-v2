@@ -9,7 +9,7 @@
  *   - NEsahá na settings / inputs / session
  */
 
-const { migrateObalovnaId, TABLES, INDEX_TABLES } = require('../lib/obalovna-id');
+const { migrateObalovnaId, migrateSingleRowConfigUnique, TABLES, INDEX_TABLES, SINGLE_ROW_CONFIG } = require('../lib/obalovna-id');
 
 function makeMockPool() {
   const sqls = [];
@@ -69,5 +69,19 @@ describe('Tier 1 — lib/obalovna-id', () => {
     expect(/ALTER COLUMN/i.test(joined)).toBe(false);
     expect(/DELETE\s+FROM/i.test(joined)).toBe(false);
     expect(/TRUNCATE/i.test(joined)).toBe(false);
+  });
+
+  test('migrateSingleRowConfigUnique: UNIQUE INDEX IF NOT EXISTS na obalovna_id (companies/inputs/month_entries)', async () => {
+    expect(SINGLE_ROW_CONFIG).toEqual(['companies', 'inputs', 'month_entries']);
+    const { pool, sqls } = makeMockPool();
+    await migrateSingleRowConfigUnique(pool);
+    for (const t of SINGLE_ROW_CONFIG) {
+      const idx = sqls.find(s =>
+        new RegExp(`CREATE UNIQUE INDEX IF NOT EXISTS uq_${t}_obalovna_id ON ${t}\\(obalovna_id\\)`, 'i').test(s));
+      expect(idx).toBeDefined();
+    }
+    // čistě aditivní — žádný DROP/DELETE
+    const joined = sqls.join('\n');
+    expect(/DROP|DELETE|TRUNCATE|RENAME/i.test(joined)).toBe(false);
   });
 });

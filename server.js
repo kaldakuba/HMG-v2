@@ -18,11 +18,11 @@ const helmet = require('helmet');
 const { parseVazenky } = require('./lib/vazenky-parser');
 const { buildMonthWorkbook } = require('./lib/month-export');
 const { migrateObalovny, listObalovny, normalizeModuly, getObalovnaModuly, updateObalovnaModuly } = require('./lib/obalovny');
-const { migrateObalovnaId } = require('./lib/obalovna-id');
+const { migrateObalovnaId, migrateSingleRowConfigUnique } = require('./lib/obalovna-id');
 const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.86';
+const APP_VERSION = '3.87';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -305,6 +305,9 @@ async function initDb() {
 
   // ── Audit / log událostí (dávka D) — nová tabulka audit_log (aditivní) ──
   await migrateAudit(pool);
+
+  // ── Krok 3b: single-row config tabulky per-obalovna — UNIQUE(obalovna_id) ──
+  await migrateSingleRowConfigUnique(pool);
 }
 
 app.use(express.json({ limit: '10mb' }));
@@ -632,7 +635,7 @@ app.get('/api/month/export', requireAuth, async (req, res) => {
     const obalovnaId = getObalovnaId(req);
     const [wRes, cRes] = await Promise.all([
       pool.query('SELECT week_start,rows_json FROM week_data WHERE obalovna_id=$1 ORDER BY week_start', [obalovnaId]),
-      pool.query('SELECT data_json FROM companies WHERE id=1 AND obalovna_id=$1', [obalovnaId]),
+      pool.query('SELECT data_json FROM companies WHERE obalovna_id=$1', [obalovnaId]),
     ]);
     const weeks = wRes.rows.map(r => ({ start: r.week_start, rows: JSON.parse(r.rows_json) }));
     const companies = cRes.rows[0] ? JSON.parse(cRes.rows[0].data_json) : [];
@@ -652,36 +655,42 @@ app.get('/api/month/export', requireAuth, async (req, res) => {
 });
 
 app.get('/api/month-entries', requireAuth, async (req, res) => {
-  const r = await pool.query('SELECT data_json FROM month_entries WHERE id=1 AND obalovna_id=$1', [getObalovnaId(req)]);
+  const r = await pool.query('SELECT data_json FROM month_entries WHERE obalovna_id=$1', [getObalovnaId(req)]);
   res.json(r.rows[0] ? JSON.parse(r.rows[0].data_json) : {});
 });
 
 app.post('/api/month-entries', requireAuth, requireAdmin, async (req, res) => {
+  // Krok 3b: upsert podle obalovna_id (NE natvrdo id=1) — cizí obalovna nepřepíše Holubici.
+  // id je leftover surrogate PK → novému řádku přidělíme volné MAX+1; u existující obalovny
+  // se na konfliktu obalovna_id jen aktualizuje data.
   await pool.query(
-    `INSERT INTO month_entries (id,data_json,obalovna_id,updated_at) VALUES(1,$1,$2,NOW())
-     ON CONFLICT(id) DO UPDATE SET data_json=EXCLUDED.data_json, updated_at=NOW()`,
+    `INSERT INTO month_entries (id,data_json,obalovna_id,updated_at)
+     VALUES((SELECT COALESCE(MAX(id),0)+1 FROM month_entries),$1,$2,NOW())
+     ON CONFLICT(obalovna_id) DO UPDATE SET data_json=EXCLUDED.data_json, updated_at=NOW()`,
     [JSON.stringify(req.body), getObalovnaId(req)]
   );
   res.json({ ok: true });
 });
 
 app.get('/api/inputs', requireAuth, async (req, res) => {
-  const r = await pool.query('SELECT rows_json FROM inputs WHERE id=1 AND obalovna_id=$1', [getObalovnaId(req)]);
+  const r = await pool.query('SELECT rows_json FROM inputs WHERE obalovna_id=$1', [getObalovnaId(req)]);
   res.json(r.rows[0] ? JSON.parse(r.rows[0].rows_json) : null);
 });
 
 app.post('/api/inputs', requireAuth, requireAdmin, async (req, res) => {
   const { rows } = req.body;
+  // Krok 3b: upsert podle obalovna_id (NE natvrdo id=1).
   await pool.query(
-    `INSERT INTO inputs (id,rows_json,obalovna_id,updated_at) VALUES(1,$1,$2,NOW())
-     ON CONFLICT(id) DO UPDATE SET rows_json=EXCLUDED.rows_json, updated_at=NOW()`,
+    `INSERT INTO inputs (id,rows_json,obalovna_id,updated_at)
+     VALUES((SELECT COALESCE(MAX(id),0)+1 FROM inputs),$1,$2,NOW())
+     ON CONFLICT(obalovna_id) DO UPDATE SET rows_json=EXCLUDED.rows_json, updated_at=NOW()`,
     [JSON.stringify(rows), getObalovnaId(req)]
   );
   res.json({ ok: true });
 });
 
 app.get('/api/companies', requireAuth, async (req, res) => {
-  const r = await pool.query('SELECT data_json FROM companies WHERE id=1 AND obalovna_id=$1', [getObalovnaId(req)]);
+  const r = await pool.query('SELECT data_json FROM companies WHERE obalovna_id=$1', [getObalovnaId(req)]);
   res.json(r.rows[0] ? JSON.parse(r.rows[0].data_json) : null);
 });
 
@@ -692,9 +701,11 @@ app.post('/api/companies', requireAuth, requireAdmin, async (req, res) => {
     if (!c.name || typeof c.name !== 'string') return res.status(400).json({ error: 'každá firma musí mít name' });
     if (c.color && !/^#[0-9a-fA-F]{3,6}$/.test(c.color)) return res.status(400).json({ error: 'neplatný formát barvy' });
   }
+  // Krok 3b: upsert podle obalovna_id (NE natvrdo id=1).
   await pool.query(
-    `INSERT INTO companies (id,data_json,obalovna_id,updated_at) VALUES(1,$1,$2,NOW())
-     ON CONFLICT(id) DO UPDATE SET data_json=EXCLUDED.data_json, updated_at=NOW()`,
+    `INSERT INTO companies (id,data_json,obalovna_id,updated_at)
+     VALUES((SELECT COALESCE(MAX(id),0)+1 FROM companies),$1,$2,NOW())
+     ON CONFLICT(obalovna_id) DO UPDATE SET data_json=EXCLUDED.data_json, updated_at=NOW()`,
     [JSON.stringify(companies), getObalovnaId(req)]
   );
   res.json({ ok: true });
@@ -808,6 +819,7 @@ app.all('/api/admin/clear-inputs', requireAuth, requireAdmin, async (req, res) =
 app.post('/api/import-excel', requireAuth, requireAdmin, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Žádný soubor' });
   try {
+    const obalovnaId = getObalovnaId(req);   // krok 3b: zápisy patří aktivní obalovně
     const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: false, raw: true });
     const recSheet = wb.Sheets['seznam balenéreceptury'];
     if (!recSheet) return res.status(400).json({ error: 'Chybí záložka "seznam balenéreceptury"' });
@@ -890,8 +902,10 @@ app.post('/api/import-excel', requireAuth, requireAdmin, upload.single('file'), 
 
     if (receptury.length > 0) {
       await pool.query(
-        `INSERT INTO inputs (id,rows_json,updated_at) VALUES(1,$1,NOW()) ON CONFLICT(id) DO UPDATE SET rows_json=EXCLUDED.rows_json,updated_at=NOW()`,
-        [JSON.stringify(receptury)]
+        `INSERT INTO inputs (id,rows_json,obalovna_id,updated_at)
+         VALUES((SELECT COALESCE(MAX(id),0)+1 FROM inputs),$1,$2,NOW())
+         ON CONFLICT(obalovna_id) DO UPDATE SET rows_json=EXCLUDED.rows_json,updated_at=NOW()`,
+        [JSON.stringify(receptury), obalovnaId]
       );
     }
     // Přepis pouze od aktuálního týdne dál (pondělí aktuálního týdne)
@@ -903,14 +917,16 @@ app.post('/api/import-excel', requireAuth, requireAdmin, upload.single('file'), 
     for (const [ws, rows] of Object.entries(weekMap)) {
       if (ws < todayMonday) continue; // přeskoč minulé týdny
       await pool.query(
-        `INSERT INTO week_data (week_start,rows_json,updated_at) VALUES($1,$2,NOW()) ON CONFLICT(week_start) DO UPDATE SET rows_json=EXCLUDED.rows_json,updated_at=NOW()`,
-        [ws, JSON.stringify(rows)]
+        `INSERT INTO week_data (week_start,rows_json,obalovna_id,updated_at) VALUES($1,$2,$3,NOW()) ON CONFLICT(week_start) DO UPDATE SET rows_json=EXCLUDED.rows_json,updated_at=NOW()`,
+        [ws, JSON.stringify(rows), obalovnaId]
       );
     }
     if (Object.keys(hmgEntries).length > 0) {
       await pool.query(
-        `INSERT INTO month_entries (id,data_json,updated_at) VALUES(1,$1,NOW()) ON CONFLICT(id) DO UPDATE SET data_json=EXCLUDED.data_json,updated_at=NOW()`,
-        [JSON.stringify(hmgEntries)]
+        `INSERT INTO month_entries (id,data_json,obalovna_id,updated_at)
+         VALUES((SELECT COALESCE(MAX(id),0)+1 FROM month_entries),$1,$2,NOW())
+         ON CONFLICT(obalovna_id) DO UPDATE SET data_json=EXCLUDED.data_json,updated_at=NOW()`,
+        [JSON.stringify(hmgEntries), obalovnaId]
       );
     }
     res.json({ ok: true, receptury: receptury.length, tydnu: Object.keys(weekMap).length, dnu: Object.keys(hmgEntries).length });
@@ -2103,7 +2119,7 @@ app.get('/api/export-excel', requireAuth, requireOperator, async (req, res) => {
   const obalovnaId = getObalovnaId(req);
   const [weeks, inputs] = await Promise.all([
     pool.query('SELECT week_start,rows_json FROM week_data WHERE obalovna_id=$1 ORDER BY week_start', [obalovnaId]),
-    pool.query('SELECT rows_json FROM inputs WHERE id=1 AND obalovna_id=$1', [obalovnaId])
+    pool.query('SELECT rows_json FROM inputs WHERE obalovna_id=$1', [obalovnaId])
   ]);
   const wb = XLSX.utils.book_new();
   weeks.rows.forEach(w => {
@@ -3080,8 +3096,8 @@ app.get('/api/backup/last', requireAuth, requireAdmin, async (req, res) => {
 
 // ── Vážní data (váženky) — upload + výpis ───────────────────────────────────
 // Pomocná: načti firmy z TAXIS (companies)
-async function loadTaxisFirmy() {
-  const r = await pool.query('SELECT data_json FROM companies WHERE id=1');
+async function loadTaxisFirmy(obalovnaId) {
+  const r = await pool.query('SELECT data_json FROM companies WHERE obalovna_id=$1', [obalovnaId]);
   if (!r.rows[0]) return [];
   try { return (JSON.parse(r.rows[0].data_json) || []).map(c => c.name).filter(Boolean); }
   catch { return []; }
@@ -3093,7 +3109,7 @@ const vazenkyUpload = multer({ storage: multer.memoryStorage(), limits: { fileSi
 app.post('/api/vazenky/upload', requireAuth, requireAdmin, vazenkyUpload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Chybí soubor' });
   try {
-    const taxisFirmy = await loadTaxisFirmy();
+    const taxisFirmy = await loadTaxisFirmy(getObalovnaId(req));
     const { rows, summary } = parseVazenky(req.file.buffer, req.file.originalname || 'upload', taxisFirmy);
 
     // Idempotentní upsert: UNIQUE na cislo_vazenky → ON CONFLICT DO NOTHING
