@@ -22,7 +22,7 @@ const { migrateObalovnaId, migrateSingleRowConfigUnique, migrateObalovnaSettings
 const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.92';
+const APP_VERSION = '3.93';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -1552,8 +1552,10 @@ async function sendBackup(obalovnaId) {
   const smtpDb = await getSmtpSettings();
   const useDbSmtp = !!(smtpDb.smtp_host && smtpDb.smtp_user);
 
-  if (!process.env.BACKUP_EMAIL) {
-    const msg = 'Chybí konfigurace emailu (BACKUP_EMAIL)';
+  // Krok 5/6: příjemce = per-obalovna backup_email, FALLBACK na globální ENV BACKUP_EMAIL.
+  const recipient = (await getObalovnaSetting(obalovnaId, 'backup_email')) || process.env.BACKUP_EMAIL;
+  if (!recipient) {
+    const msg = 'Chybí příjemce zálohy (obalovna nemá backup_email ani není ENV BACKUP_EMAIL)';
     console.error(`${TAG} CHYBA konfigurace: ${msg}`);
     await setObalovnaSetting(obalovnaId, 'last_backup_error', `${new Date().toISOString()} | ${msg}`);
     throw new Error(msg);
@@ -1645,9 +1647,10 @@ async function sendBackup(obalovnaId) {
     console.log(`${TAG} SMTP transport FALLBACK na ENV gmail (DB smtp_* nenastaveno)`);
   }
 
+  console.log(`${TAG} Příjemce: ${recipient}${recipient === process.env.BACKUP_EMAIL ? ' (fallback ENV)' : ' (per-obalovna)'}`);
   const mailOptions = {
     from:    mailFrom,
-    to:      process.env.BACKUP_EMAIL,
+    to:      recipient,
     subject: `HMG záloha [${obalovnaId}] ${date} — ${counts.weeks} týdnů`,
     text: (
       `Automatická záloha dat harmonogramu výroby — obalovna: ${obalovnaId}.\n\n` +
@@ -2104,33 +2107,59 @@ async function listObalovnyForBackup() {
   return r.rows.map(x => x.id);
 }
 
-// Spustit zálohu každý den v 18:00 (UTC+2 = 16:00 UTC) + cleanup rejected objednávek
-// Interval: 24 h (každý den) — ne 18 h.
+// ── Pražský čas: vrať {date:'YYYY-MM-DD', hour:0–23} pro dané Date (DST-safe přes Intl) ──
+// Krok 5/6: backup_hour je LOKÁLNÍ pražská hodina; plánovač porovnává s aktuální pražskou hodinou,
+// takže DST (léto/zima) se řeší automaticky a 18:00 je vždy 18:00 lokálně.
+const BACKUP_DEFAULT_HOUR = 18;
+function pragueParts(d) {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Prague',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false,
+  });
+  const p = {};
+  fmt.formatToParts(d).forEach(x => { p[x.type] = x.value; });
+  let hour = parseInt(p.hour, 10);
+  if (hour === 24) hour = 0;   // některé prostředí vrací '24' o půlnoci
+  return { date: `${p.year}-${p.month}-${p.day}`, hour };
+}
+
+// Spustit zálohu pro každou obalovnu v JEJÍ backup_hour (lokální Praha, default 18:00).
+// Hodinový tick: každou celou hodinu zkontroluj, které obalovny mají právě teď čas zálohy.
 let _backupCatchupDone = false;
 function scheduleBackup() {
+  // Zarovnání na nejbližší celou hodinu, pak interval 1 h.
   const now = new Date();
-  const next = new Date();
-  next.setUTCHours(16, 0, 0, 0);
-  if (next <= now) next.setDate(next.getDate() + 1);
+  const next = new Date(now);
+  next.setMinutes(0, 0, 0);
+  next.setHours(next.getHours() + 1);
   const msUntil = next - now;
 
-  // Krok 4/6: smyčka přes obalovny — každá dostane SVOU zálohu (jen svá data).
-  // Příjemce zatím globální BACKUP_EMAIL (per-obalovna e-mail přijde v kroku 5).
-  const runScheduledBackups = async () => {
+  // Krok 4/6 + 5/6: smyčka přes obalovny; každá se zálohuje JEN ve své backup_hour.
+  const runDueBackups = async () => {
+    const nowParts = pragueParts(new Date());
     let ids = [];
     try { ids = await listObalovnyForBackup(); }
-    catch (e) { console.error('[ZÁLOHA] Plánovač: nelze načíst seznam obaloven:', e.message); }
+    catch (e) { console.error('[ZÁLOHA] Plánovač: nelze načíst seznam obaloven:', e.message); return; }
     for (const id of ids) {
-      try { await sendBackup(id); }
-      catch (err) { console.error(`[ZÁLOHA] Plánovaná záloha '${id}' selhala:`, err.message); }
+      try {
+        const map = await getObalovnaSettingsMap(id, ['backup_hour', 'last_backup']);
+        const hour = map.backup_hour != null ? parseInt(map.backup_hour, 10) : BACKUP_DEFAULT_HOUR;
+        if (hour !== nowParts.hour) continue;                     // není čas této obalovny
+        if (map.last_backup && pragueParts(new Date(map.last_backup)).date === nowParts.date) {
+          continue;                                               // pojistka: už dnes zálohováno
+        }
+        console.log(`[ZÁLOHA] ${id}: plánovaný čas ${hour}:00 (Praha) → spouštím zálohu.`);
+        await sendBackup(id);
+      } catch (err) {
+        console.error(`[ZÁLOHA] Plánovaná záloha '${id}' selhala:`, err.message);
+      }
     }
-    cleanupRejectedOrders();
+    // cleanupRejectedOrders má vlastní denní interval ve startServer — zde nevoláme (běží hodinově).
   };
 
   // ── CATCH-UP (krok 2/6): automatické odeslání po startu VYPNUTO ──────────────
-  // Při startu jen ZALOGUJEME varování per obalovna a NIC neodesíláme. Pravidelný
-  // plánovaný běh (setTimeout/setInterval níže) zůstává funkční.
-  // Ruční zálohu lze spustit přes Nastavení → Zálohy → tlačítko "Spustit zálohu teď".
+  // Při startu jen ZALOGUJEME varování per obalovna a NIC neodesíláme. Hodinový tick
+  // níže zůstává funkční. Ruční zálohu lze spustit přes Nastavení → Zálohy.
   (async () => {
     if (_backupCatchupDone) return;
     _backupCatchupDone = true;
@@ -2152,10 +2181,10 @@ function scheduleBackup() {
   })();
 
   setTimeout(() => {
-    runScheduledBackups();
-    setInterval(runScheduledBackups, 24 * 60 * 60 * 1000);
+    runDueBackups();
+    setInterval(runDueBackups, 60 * 60 * 1000);
   }, msUntil);
-  console.log(`Záloha naplánována za ${Math.round(msUntil / 60000)} minut (každý den v 18:00, interval 24 h, per obalovna)`);
+  console.log(`Plánovač zálohy: hodinový tick, první za ${Math.round(msUntil / 60000)} min (každá obalovna ve své backup_hour, default ${BACKUP_DEFAULT_HOUR}:00 Praha).`);
 }
 
 // ── Hlídání staré zálohy při startu (best-effort e-mail adminovi) ────────────
@@ -3267,6 +3296,46 @@ app.get('/api/backup/last', requireAuth, requireAdmin, async (req, res) => {
     last_error:   map.last_backup_error   || null,
     age_hours:    ageH,
   });
+});
+
+// ── Konfigurace zálohy per obalovna (krok 5/6) — příjemce + hodina, JEN admin ──
+app.get('/api/backup/config', requireAuth, requireAdmin, async (req, res) => {
+  const obalovnaId = getObalovnaId(req);
+  if (!obalovnaId) return res.status(403).json({ error: 'Superadmin nemá konfiguraci zálohy obalovny' });
+  const map = await getObalovnaSettingsMap(obalovnaId, ['backup_email', 'backup_hour']);
+  res.json({
+    backup_email:   map.backup_email || null,
+    backup_hour:    map.backup_hour != null ? parseInt(map.backup_hour, 10) : null,
+    fallback_email: process.env.BACKUP_EMAIL || null,   // placeholder/výchozí příjemce
+    default_hour:   BACKUP_DEFAULT_HOUR,
+  });
+});
+
+app.post('/api/backup/config', requireAuth, requireAdmin, async (req, res) => {
+  const obalovnaId = getObalovnaId(req);
+  if (!obalovnaId) return res.status(403).json({ error: 'Superadmin nemá konfiguraci zálohy obalovny' });
+  const { backup_email, backup_hour } = req.body || {};
+
+  // E-mail: prázdné = smazat (návrat k fallbacku ENV); jinak validovat formát.
+  if (backup_email !== undefined) {
+    const email = String(backup_email || '').trim();
+    if (email === '') {
+      await delObalovnaSetting(obalovnaId, 'backup_email');
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 200) {
+      return res.status(400).json({ error: 'Neplatný formát e-mailu' });
+    } else {
+      await setObalovnaSetting(obalovnaId, 'backup_email', email);
+    }
+  }
+
+  // Hodina: celé číslo 0–23.
+  if (backup_hour !== undefined && String(backup_hour).trim() !== '') {
+    const h = parseInt(backup_hour, 10);
+    if (isNaN(h) || h < 0 || h > 23) return res.status(400).json({ error: 'Hodina musí být celé číslo 0–23' });
+    await setObalovnaSetting(obalovnaId, 'backup_hour', String(h));
+  }
+
+  res.json({ ok: true });
 });
 
 

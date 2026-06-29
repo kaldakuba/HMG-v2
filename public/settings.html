@@ -305,6 +305,18 @@ input:checked + .toggle-sl::before{transform:translateX(20px)}
             </div>
           </div>
           <div id="backupError" style="display:none;padding:10px 12px;border-radius:8px;background:#fef2f2;border:0.5px solid #fecaca;color:#991b1b;font-size:12px;margin-bottom:10px"></div>
+
+          <!-- Nastavení zálohy per obalovna (krok 5/6) -->
+          <div style="padding:14px;background:#f9fafb;border-radius:8px;border:0.5px solid #e5e7eb;margin-bottom:14px">
+            <div style="font-size:13px;font-weight:600;color:#111;margin-bottom:10px">Nastavení zálohy</div>
+            <label for="backupEmail" style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">E-mail pro zálohu</label>
+            <input id="backupEmail" type="email" placeholder="výchozí" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;margin-bottom:10px">
+            <label for="backupHour" style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">Čas zálohy (hodina, místní čas)</label>
+            <select id="backupHour" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;margin-bottom:10px"></select>
+            <button class="btn-soft" onclick="saveBackupConfig()" id="backupCfgBtn"><i class="ti ti-device-floppy" style="font-size:13px" aria-hidden="true"></i> Uložit</button>
+            <div id="backupCfgMsg" style="margin-top:8px"></div>
+          </div>
+
           <button class="btn-soft green" onclick="runBackup()" id="backupBtn"><i class="ti ti-player-play" style="font-size:13px" aria-hidden="true"></i> Spustit zálohu teď</button>
           <div id="backupMsg" style="margin-top:10px"></div>
         </div>
@@ -425,7 +437,7 @@ function showSection(name) {
   document.getElementById('nav-' + name).classList.add('active');
   if (name === 'sessions') loadSessions();
   if (name === 'share') loadShareTokens();
-  if (name === 'backup') loadBackupInfo();
+  if (name === 'backup') { loadBackupInfo(); loadBackupConfig(); }
   if (name === 'orders') loadOrdersAdmin();
   if (name === 'smtp') loadSmtpSettings();
   if (name === 'system') loadSystemSettings();
@@ -811,6 +823,35 @@ async function runBackup() {
   if(r.ok){msg.innerHTML='<span class="msg-ok">✓ Záloha odeslána na email</span>';loadBackupInfo();}
   else msg.innerHTML=`<span class="msg-err">✗ ${r.error||'Chyba'}</span>`;
   btn.disabled=false;btn.innerHTML='<i class="ti ti-player-play" style="font-size:13px"></i> Spustit zálohu teď';
+}
+
+// ── Konfigurace zálohy per obalovna (krok 5/6) ──
+async function loadBackupConfig() {
+  const emailEl = document.getElementById('backupEmail');
+  const hourEl  = document.getElementById('backupHour');
+  if (!emailEl || !hourEl) return;
+  if (!hourEl.options.length) {
+    for (let h=0; h<24; h++) {
+      const o=document.createElement('option');
+      o.value=h; o.textContent=String(h).padStart(2,'0')+':00';
+      hourEl.appendChild(o);
+    }
+  }
+  const r = await api('GET','/api/backup/config');
+  if (!r) return;
+  emailEl.value = r.backup_email || '';
+  emailEl.placeholder = r.fallback_email ? `${r.fallback_email} (výchozí)` : 'např. zalohy@firma.cz';
+  hourEl.value = (r.backup_hour != null ? r.backup_hour : (r.default_hour != null ? r.default_hour : 18));
+}
+async function saveBackupConfig() {
+  const btn=document.getElementById('backupCfgBtn');const msg=document.getElementById('backupCfgMsg');
+  const backup_email=document.getElementById('backupEmail').value.trim();
+  const backup_hour=document.getElementById('backupHour').value;
+  btn.disabled=true;msg.innerHTML='';
+  const r=await api('POST','/api/backup/config',{backup_email,backup_hour});
+  if(r&&r.ok){msg.innerHTML='<span class="msg-ok">✓ Uloženo</span>';loadBackupInfo();}
+  else msg.innerHTML=`<span class="msg-err">✗ ${(r&&r.error)||'Chyba uložení'}</span>`;
+  btn.disabled=false;
 }
 
 async function doLogout() { await fetch('/api/logout',{method:'POST'}).catch(()=>{}); window.location.href='/login'; }
