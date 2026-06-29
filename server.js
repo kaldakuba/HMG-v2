@@ -18,11 +18,11 @@ const helmet = require('helmet');
 const { parseVazenky } = require('./lib/vazenky-parser');
 const { buildMonthWorkbook } = require('./lib/month-export');
 const { migrateObalovny, listObalovny, normalizeModuly, getObalovnaModuly, updateObalovnaModuly } = require('./lib/obalovny');
-const { migrateObalovnaId, migrateSingleRowConfigUnique, migrateObalovnaSettings } = require('./lib/obalovna-id');
+const { migrateObalovnaId, migrateSingleRowConfigUnique, migrateObalovnaSettings, migrateWeekDataCompositePk } = require('./lib/obalovna-id');
 const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.93';
+const APP_VERSION = '3.94';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -313,6 +313,10 @@ async function initDb() {
   // Běží PO seedech settings (orders_enabled/vazenky_share_enabled výše) i PO migrateObalovny
   // (Holubice existuje pro FK). Aditivní/idempotentní — nemění `settings`.
   await migrateObalovnaSettings(pool);
+
+  // ── week_data: složený PK (week_start, obalovna_id) — oprava globálního PK ──
+  // Běží PO migrateObalovnaId (obalovna_id NOT NULL). Idempotentní, aditivní (data se nemění).
+  await migrateWeekDataCompositePk(pool);
 }
 
 app.use(express.json({ limit: '10mb' }));
@@ -616,7 +620,7 @@ app.post('/api/week/:start', requireAuth, requireAdmin, async (req, res) => {
   }));
   await pool.query(
     `INSERT INTO week_data (week_start,rows_json,obalovna_id,updated_at) VALUES($1,$2,$3,NOW())
-     ON CONFLICT(week_start) DO UPDATE SET rows_json=EXCLUDED.rows_json, updated_at=NOW()`,
+     ON CONFLICT(week_start,obalovna_id) DO UPDATE SET rows_json=EXCLUDED.rows_json, updated_at=NOW()`,
     [req.params.start, JSON.stringify(safeRows), getObalovnaId(req)]
   );
   res.json({ ok: true });
@@ -801,9 +805,10 @@ app.all('/api/admin/clear-weeks', requireAuth, requireAdmin, async (req, res) =>
     if (!result.rows[0]) return res.json({ ok: false, error: 'Uživatel nenalezen.' });
     const valid = await bcrypt.compare(password, result.rows[0].password_hash);
     if (!valid) return res.json({ ok: false, error: 'Nesprávné heslo.' });
-    await pool.query('DELETE FROM week_data');
-    await pool.query('DELETE FROM month_entries');
-    console.log('Admin smazal data týdnů');
+    const obalovnaId = getObalovnaId(req);   // scope: maž JEN týdny vlastní obalovny
+    await pool.query('DELETE FROM week_data WHERE obalovna_id=$1', [obalovnaId]);
+    await pool.query('DELETE FROM month_entries WHERE obalovna_id=$1', [obalovnaId]);
+    console.log(`Admin smazal data týdnů (obalovna ${obalovnaId})`);
     res.json({ ok: true });
   } catch(err) {
     console.error('clear-weeks error:', err);
@@ -930,7 +935,7 @@ app.post('/api/import-excel', requireAuth, requireAdmin, upload.single('file'), 
     for (const [ws, rows] of Object.entries(weekMap)) {
       if (ws < todayMonday) continue; // přeskoč minulé týdny
       await pool.query(
-        `INSERT INTO week_data (week_start,rows_json,obalovna_id,updated_at) VALUES($1,$2,$3,NOW()) ON CONFLICT(week_start) DO UPDATE SET rows_json=EXCLUDED.rows_json,updated_at=NOW()`,
+        `INSERT INTO week_data (week_start,rows_json,obalovna_id,updated_at) VALUES($1,$2,$3,NOW()) ON CONFLICT(week_start,obalovna_id) DO UPDATE SET rows_json=EXCLUDED.rows_json,updated_at=NOW()`,
         [ws, JSON.stringify(rows), obalovnaId]
       );
     }
@@ -2770,6 +2775,7 @@ app.post('/api/orders', requireAuth, requireOrdersEnabled, async (req, res) => {
 app.patch('/api/orders/:groupId/approve', requireAuth, requireAdmin, requireOrdersEnabled, async (req, res) => {
   try {
     const { groupId } = req.params;
+    const obalovnaId = getObalovnaId(req);   // week_data scope (multi-obalovna)
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId)) {
       return res.status(400).json({ error: 'Neplatné ID skupiny' });
     }
@@ -2810,7 +2816,7 @@ app.patch('/api/orders/:groupId/approve', requireAuth, requireAdmin, requireOrde
         const di = daysFromMonday;
 
         // Tuny z harmonogramu
-        const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1', [weekStart]);
+        const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1 AND obalovna_id=$2', [weekStart, obalovnaId]);
         let weekTuny = 0;
         if (wRes.rows[0]) {
           const weekRows = JSON.parse(wRes.rows[0].rows_json);
@@ -2878,7 +2884,7 @@ app.patch('/api/orders/:groupId/approve', requireAuth, requireAdmin, requireOrde
         byWeek[weekStart].push({ ...item, datum, di });
       }
       for (const [weekStart, weekItems] of Object.entries(byWeek)) {
-        const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1', [weekStart]);
+        const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1 AND obalovna_id=$2', [weekStart, obalovnaId]);
         const rows = wRes.rows[0] ? JSON.parse(wRes.rows[0].rows_json) : [];
         for (const item of weekItems) {
           const newRow = {
@@ -2896,9 +2902,9 @@ app.patch('/api/orders/:groupId/approve', requireAuth, requireAdmin, requireOrde
           rows.push(newRow);
         }
         await pool.query(
-          `INSERT INTO week_data (week_start, rows_json, updated_at) VALUES($1, $2, NOW())
-           ON CONFLICT(week_start) DO UPDATE SET rows_json=EXCLUDED.rows_json, updated_at=NOW()`,
-          [weekStart, JSON.stringify(rows)]
+          `INSERT INTO week_data (week_start, rows_json, obalovna_id, updated_at) VALUES($1, $2, $3, NOW())
+           ON CONFLICT(week_start,obalovna_id) DO UPDATE SET rows_json=EXCLUDED.rows_json, updated_at=NOW()`,
+          [weekStart, JSON.stringify(rows), obalovnaId]
         );
       }
       console.log(`Objednávka ${groupId} propsána do ${Object.keys(byWeek).length} týdnů v harmonogramu`);
@@ -3017,7 +3023,7 @@ app.patch('/api/orders/:groupId/day/:datum/preapprove', requireAuth, requireAdmi
       monday.setUTCDate(d.getUTCDate() - daysFromMonday);
       const weekStart = monday.toISOString().slice(0, 10);
       const di = daysFromMonday;
-      const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1', [weekStart]);
+      const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1 AND obalovna_id=$2', [weekStart, getObalovnaId(req)]);
       let weekTuny = 0;
       if (wRes.rows[0]) {
         const rows = JSON.parse(wRes.rows[0].rows_json);
@@ -3092,6 +3098,7 @@ app.patch('/api/orders/:groupId/day/:datum/reset', requireAuth, requireAdmin, re
 app.patch('/api/orders/:groupId/finalize', requireAuth, requireAdmin, requireOrdersEnabled, async (req, res) => {
   try {
     const { groupId } = req.params;
+    const obalovnaId = getObalovnaId(req);   // week_data scope (multi-obalovna)
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(groupId))
       return res.status(400).json({ error: 'Neplatné ID skupiny' });
 
@@ -3138,7 +3145,7 @@ app.patch('/api/orders/:groupId/finalize', requireAuth, requireAdmin, requireOrd
           byWeek[weekStart].push({ ...item, datum, di: daysFromMonday });
         }
         for (const [weekStart, weekItems] of Object.entries(byWeek)) {
-          const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1', [weekStart]);
+          const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1 AND obalovna_id=$2', [weekStart, obalovnaId]);
           const rows = wRes.rows[0] ? JSON.parse(wRes.rows[0].rows_json) : [];
           for (const item of weekItems) {
             const newRow = {
@@ -3151,9 +3158,9 @@ app.patch('/api/orders/:groupId/finalize', requireAuth, requireAdmin, requireOrd
             rows.push(newRow);
           }
           await pool.query(
-            `INSERT INTO week_data(week_start,rows_json,updated_at) VALUES($1,$2,NOW())
-             ON CONFLICT(week_start) DO UPDATE SET rows_json=EXCLUDED.rows_json,updated_at=NOW()`,
-            [weekStart, JSON.stringify(rows)]
+            `INSERT INTO week_data(week_start,rows_json,obalovna_id,updated_at) VALUES($1,$2,$3,NOW())
+             ON CONFLICT(week_start,obalovna_id) DO UPDATE SET rows_json=EXCLUDED.rows_json,updated_at=NOW()`,
+            [weekStart, JSON.stringify(rows), obalovnaId]
           );
         }
         console.log(`Objednávka ${groupId} finalizována: ${approvedRows.rows.length} řádků do harmonogramu`);
