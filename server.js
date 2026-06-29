@@ -22,7 +22,7 @@ const { migrateObalovnaId, migrateSingleRowConfigUnique, migrateObalovnaSettings
 const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.91';
+const APP_VERSION = '3.92';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -1074,7 +1074,7 @@ app.get('/api/superadmin/obalovny/:id/metriky', requireAuth, requireSuperadmin, 
       ),
       getObalovnaModuly(pool, id),
       pool.query("SELECT value FROM obalovna_settings WHERE obalovna_id=$1 AND key='orders_enabled'", [id]),  // per-obalovna
-      pool.query("SELECT value FROM settings WHERE key='last_backup'"),  // ISO čas poslední ÚSPĚŠNÉ zálohy (globální)
+      pool.query("SELECT value FROM obalovna_settings WHERE obalovna_id=$1 AND key='last_backup'", [id]),  // per-obalovna stav zálohy
     ]);
     const row = r.rows[0];
     const toDate = (x) => {
@@ -1455,6 +1455,16 @@ async function getObalovnaSetting(obalovnaId, key) {
   );
   return r.rows[0] ? r.rows[0].value : null;
 }
+async function getObalovnaSettingsMap(obalovnaId, keys) {
+  const out = {};
+  if (!obalovnaId) return out;
+  const r = await pool.query(
+    'SELECT key,value FROM obalovna_settings WHERE obalovna_id=$1 AND key = ANY($2::text[])',
+    [obalovnaId, keys]
+  );
+  r.rows.forEach(row => { out[row.key] = row.value; });
+  return out;
+}
 async function setObalovnaSetting(obalovnaId, key, value) {
   if (!obalovnaId) throw new Error('setObalovnaSetting: chybí obalovna_id');
   await pool.query(
@@ -1468,91 +1478,117 @@ async function delObalovnaSetting(obalovnaId, key) {
   await pool.query('DELETE FROM obalovna_settings WHERE obalovna_id=$1 AND key=$2', [obalovnaId, key]);
 }
 
-async function sendBackup() {
-  const TAG = `[ZÁLOHA v${APP_VERSION}]`;
+// ── Read-only sběr dat JEDNÉ obalovny pro zálohu (krok 4/6) ─────────────────────
+// Žádný zápis, žádné odeslání → testovatelné v paměti. Snímek = JEN data dané obalovny:
+// week_data/vazenky/orders/inputs/companies/month_entries scoped přes obalovna_id, její
+// uživatelé BEZ superadmina, a config z obalovna_settings BEZ smtp_* a BEZ last_backup*.
+async function collectObalovnaSnapshot(obalovnaId) {
+  if (!obalovnaId) throw new Error('collectObalovnaSnapshot: chybí obalovna_id');
+  const [weeks, vazenky, inputs, companies, monthRes, ordersRes, usersRes, cfgRes] = await Promise.all([
+    pool.query('SELECT week_start,rows_json FROM week_data WHERE obalovna_id=$1 ORDER BY week_start', [obalovnaId]),
+    pool.query(
+      'SELECT id,cislo_vazenky,datum,cas,smes,itt,tuny,spz,ridic,stavba,nazev_partnera,ico,firma_taxis,uploaded_at,uploaded_by ' +
+      'FROM vazenky WHERE obalovna_id=$1 ORDER BY id', [obalovnaId]),
+    pool.query('SELECT rows_json FROM inputs WHERE obalovna_id=$1', [obalovnaId]),
+    pool.query('SELECT data_json FROM companies WHERE obalovna_id=$1', [obalovnaId]),
+    pool.query('SELECT data_json FROM month_entries WHERE obalovna_id=$1', [obalovnaId]),
+    pool.query(
+      'SELECT id,order_group_id,user_id,firma,datum,smes,itt,tuny,komentar,' +
+      'status,created_at,resolved_at,reject_reason,lokalita,lat,lng,resolved_by ' +
+      'FROM orders WHERE obalovna_id=$1 ORDER BY created_at', [obalovnaId]),
+    pool.query(
+      "SELECT id,username,password_hash,role,email,firma,must_change_password,created_at,last_seen " +
+      "FROM users WHERE obalovna_id=$1 AND role<>'superadmin' ORDER BY id", [obalovnaId]),
+    pool.query('SELECT key,value FROM obalovna_settings WHERE obalovna_id=$1', [obalovnaId]),
+  ]);
+
+  // Config do snímku: per-obalovna konfigurace BEZ provozního stavu (last_backup*) a BEZ smtp_*.
+  const settingsObj = {};
+  cfgRes.rows.forEach(r => {
+    if (r.key.startsWith('smtp_')) return;          // pojistka — smtp_* do snímku NIKDY
+    if (r.key.startsWith('last_backup')) return;    // provozní stav, ne konfigurace
+    settingsObj[r.key] = r.value;
+  });
+
+  const excel = {
+    weeks:     weeks.rows.map(r => ({ start: r.week_start, rows: JSON.parse(r.rows_json) })),
+    inputs:    inputs.rows[0] ? JSON.parse(inputs.rows[0].rows_json) : [],
+    companies: companies.rows[0] ? JSON.parse(companies.rows[0].data_json) : [],
+    orders:    ordersRes.rows,
+    users:     usersRes.rows,
+  };
+
+  const snapshot = {
+    version: 4,
+    obalovna_id: obalovnaId,
+    created: new Date().toISOString(),
+    week_data:     weeks.rows.map(r => ({ week_start: r.week_start, rows_json: r.rows_json })),
+    inputs:        excel.inputs,
+    companies:     excel.companies,
+    settings:      settingsObj,
+    month_entries: monthRes.rows[0] ? JSON.parse(monthRes.rows[0].data_json) : {},
+    users:         usersRes.rows,
+    orders:        ordersRes.rows,
+    vazenky:       vazenky.rows,
+  };
+
+  const counts = {
+    weeks: weeks.rows.length, vazenky: vazenky.rows.length, orders: ordersRes.rows.length,
+    users: usersRes.rows.length, companies: excel.companies.length, inputs: excel.inputs.length,
+  };
+  return { snapshot, excel, counts };
+}
+
+async function sendBackup(obalovnaId) {
+  if (!obalovnaId) throw new Error('sendBackup: chybí obalovna_id');
+  const TAG = `[ZÁLOHA v${APP_VERSION} ${obalovnaId}]`;
   console.log(`${TAG} ===== START =====`);
 
-  // ── Záznam POKUSU (před čímkoliv jiným) ────────────────────────────────────
-  // Oddělíme "spuštěno" od "uspělo" — even kdyby DB queries selhaly níže,
-  // last_backup_attempt drží informaci, že se pokus stal.
+  // ── Záznam POKUSU (per-obalovna) ──────────────────────────────────────────────
   const attemptIso = new Date().toISOString();
-  await setSetting('last_backup_attempt', attemptIso);
+  await setObalovnaSetting(obalovnaId, 'last_backup_attempt', attemptIso);
 
-  // ── SMTP konfigurace: PRIMÁRNĚ z DB (stejná cesta jako notifikace), ENV jako fallback ──
-  // Cíl kroku 1/6: záloha už nejede přes service:'gmail' (smtp.gmail.com:465, Railway blokuje),
-  // ale přes DB smtp_* (typicky smtp.seznam.cz:587 STARTTLS), které notifikacím prokazatelně fungují.
+  // ── SMTP konfigurace: PRIMÁRNĚ z DB (krok 1/6), ENV gmail jako fallback ────────
   const smtpDb = await getSmtpSettings();
   const useDbSmtp = !!(smtpDb.smtp_host && smtpDb.smtp_user);
 
   if (!process.env.BACKUP_EMAIL) {
     const msg = 'Chybí konfigurace emailu (BACKUP_EMAIL)';
     console.error(`${TAG} CHYBA konfigurace: ${msg}`);
-    await setSetting('last_backup_error', `${new Date().toISOString()} | ${msg}`);
+    await setObalovnaSetting(obalovnaId, 'last_backup_error', `${new Date().toISOString()} | ${msg}`);
     throw new Error(msg);
   }
   if (!useDbSmtp && (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD)) {
     const msg = 'Chybí SMTP konfigurace (DB smtp_host/smtp_user ani ENV GMAIL_USER/GMAIL_APP_PASSWORD)';
     console.error(`${TAG} CHYBA konfigurace: ${msg}`);
-    await setSetting('last_backup_error', `${new Date().toISOString()} | ${msg}`);
+    await setObalovnaSetting(obalovnaId, 'last_backup_error', `${new Date().toISOString()} | ${msg}`);
     throw new Error(msg);
   }
 
-  // ── Načteme VŠECHNA data najednou ────────────────────────────────────────────
-  let weeks, inputs, companies, settings, ordersRes, usersRes, monthRes;
+  // ── Sběr dat JEN této obalovny (read-only) ────────────────────────────────────
+  let snapshot, excel, counts;
   try {
-    [weeks, inputs, companies, settings, ordersRes, usersRes, monthRes] = await Promise.all([
-      pool.query('SELECT week_start,rows_json FROM week_data ORDER BY week_start'),
-      pool.query('SELECT rows_json FROM inputs WHERE id=1'),
-      pool.query('SELECT data_json FROM companies WHERE id=1'),
-      pool.query('SELECT key,value FROM settings'),
-      pool.query(
-        'SELECT id,order_group_id,user_id,firma,datum,smes,itt,tuny,komentar,' +
-        'status,created_at,resolved_at,reject_reason,lokalita,lat,lng,resolved_by FROM orders ORDER BY created_at'
-      ),
-      pool.query(
-        'SELECT id,username,password_hash,role,email,firma,must_change_password,created_at,last_seen FROM users ORDER BY id'
-      ),
-      pool.query('SELECT data_json FROM month_entries WHERE id=1'),
-    ]);
+    ({ snapshot, excel, counts } = await collectObalovnaSnapshot(obalovnaId));
   } catch (dbErr) {
     console.error(`${TAG} CHYBA DB dotazů — záloha se neprovede:`, dbErr.message);
-    await setSetting('last_backup_error', `${new Date().toISOString()} | DB: ${dbErr.message}`);
+    await setObalovnaSetting(obalovnaId, 'last_backup_error', `${new Date().toISOString()} | DB: ${dbErr.message}`);
     throw dbErr;
   }
 
   console.log(
-    `${TAG} DB načteno: weeks=${weeks.rows.length}, receptury=${inputs.rows[0] ? 'ANO' : 'prázdné'}, ` +
-    `companies=${companies.rows[0] ? 'ANO' : 'prázdné'}, orders=${ordersRes.rows.length}, ` +
-    `users=${usersRes.rows.length}, month_entries=${monthRes.rows[0] ? 'ANO' : 'prázdné'}`
+    `${TAG} DB načteno: weeks=${counts.weeks}, vazenky=${counts.vazenky}, receptury=${counts.inputs}, ` +
+    `companies=${counts.companies}, orders=${counts.orders}, users=${counts.users}`
   );
-
-  const settingsObj = {};
-  settings.rows.forEach(r => { settingsObj[r.key] = r.value; });
 
   const date = new Date().toISOString().slice(0, 10);
 
-  // ── A) JSON snímek pro plnou obnovu ──────────────────────────────────────────
-  const settingsForSnapshot = Object.assign({}, settingsObj);
-  if ('smtp_password' in settingsForSnapshot) settingsForSnapshot.smtp_password = '';
-
-  const snapshot = {
-    version: 3,
-    created: new Date().toISOString(),
-    week_data:     weeks.rows.map(r => ({ week_start: r.week_start, rows_json: r.rows_json })),
-    inputs:        inputs.rows[0] ? JSON.parse(inputs.rows[0].rows_json) : [],
-    companies:     companies.rows[0] ? JSON.parse(companies.rows[0].data_json) : [],
-    settings:      settingsForSnapshot,
-    month_entries: monthRes.rows[0] ? JSON.parse(monthRes.rows[0].data_json) : {},
-    users:         usersRes.rows,
-    orders:        ordersRes.rows,
-  };
-
+  // ── A) JSON snímek pro plnou obnovu (per-obalovna) ────────────────────────────
   const snapshotJson     = JSON.stringify(snapshot, null, 2);
-  const snapshotFilename = `hmg-snapshot-${date}.json`;
+  const snapshotFilename = `hmg-snapshot-${obalovnaId}-${date}.json`;
 
   console.log(
     `${TAG} JSON snímek sestaven: klíče=[${Object.keys(snapshot).join(', ')}], ` +
-    `users=${usersRes.rows.length}, orders=${ordersRes.rows.length}, smtp_password redakován=true`
+    `users=${counts.users}, orders=${counts.orders}, vazenky=${counts.vazenky}, smtp/last_backup VYLOUČENY`
   );
 
   // Best-effort uložení na disk — selhání NEVYHODÍ zálohu
@@ -1566,24 +1602,18 @@ async function sendBackup() {
   }
 
   // ── B) Excel se stávajícími listy + Objednávky + Uživatelé ───────────────────
-  const backup = {
-    weeks:     weeks.rows.map(r => ({ start: r.week_start, rows: JSON.parse(r.rows_json) })),
-    inputs:    inputs.rows[0] ? JSON.parse(inputs.rows[0].rows_json) : [],
-    companies: companies.rows[0] ? JSON.parse(companies.rows[0].data_json) : [],
-  };
-
   let xlsxBuffer, sheetNames;
   try {
     ({ buffer: xlsxBuffer, sheetNames } = await buildStyledExcel(
-      backup.weeks, backup.inputs, backup.companies, ordersRes.rows, usersRes.rows
+      excel.weeks, excel.inputs, excel.companies, excel.orders, excel.users
     ));
   } catch (xlsxErr) {
     console.error(`${TAG} CHYBA sestavení Excelu:`, xlsxErr.message);
-    await setSetting('last_backup_error', `${new Date().toISOString()} | Excel: ${xlsxErr.message}`);
+    await setObalovnaSetting(obalovnaId, 'last_backup_error', `${new Date().toISOString()} | Excel: ${xlsxErr.message}`);
     throw xlsxErr;
   }
 
-  const xlsxFilename = `hmg_zaloha_${date}.xlsx`;
+  const xlsxFilename = `hmg_zaloha_${obalovnaId}_${date}.xlsx`;
   console.log(`${TAG} Excel sestaven: listy=[${sheetNames.join(', ')}], JSON přiložen=true`);
 
   // ── Transport: stejná cesta jako notifikace (DB smtp_*), ENV gmail jen jako fallback ──
@@ -1618,19 +1648,20 @@ async function sendBackup() {
   const mailOptions = {
     from:    mailFrom,
     to:      process.env.BACKUP_EMAIL,
-    subject: `HMG záloha ${date} — ${backup.weeks.length} týdnů`,
+    subject: `HMG záloha [${obalovnaId}] ${date} — ${counts.weeks} týdnů`,
     text: (
-      `Automatická záloha dat harmonogramu výroby.\n\n` +
-      `Obsah:\n` +
-      `- Týdnů: ${backup.weeks.length}\n` +
-      `- Receptur: ${backup.inputs.length}\n` +
-      `- Objednávek: ${ordersRes.rows.length}\n` +
-      `- Uživatelů: ${usersRes.rows.length}\n` +
+      `Automatická záloha dat harmonogramu výroby — obalovna: ${obalovnaId}.\n\n` +
+      `Obsah (JEN data této obalovny):\n` +
+      `- Týdnů: ${counts.weeks}\n` +
+      `- Receptur: ${counts.inputs}\n` +
+      `- Objednávek: ${counts.orders}\n` +
+      `- Váženek: ${counts.vazenky}\n` +
+      `- Uživatelů: ${counts.users}\n` +
       `- Datum: ${date}\n` +
       `- Excel listy: ${sheetNames.join(', ')}\n\n` +
       `Přílohy:\n` +
       `1. ${xlsxFilename} — čitelný Excel (týdny, receptury, objednávky, uživatelé)\n` +
-      `2. ${snapshotFilename} — JSON snímek všech tabulek pro plnou obnovu DB`
+      `2. ${snapshotFilename} — JSON snímek tabulek obalovny pro obnovu`
     ),
     attachments: [
       {
@@ -1668,15 +1699,15 @@ async function sendBackup() {
   }
   if (mailErr) {
     console.error(`${TAG} CHYBA odeslání e-mailu po 3 pokusech:`, mailErr.message);
-    await setSetting('last_backup_error', `${new Date().toISOString()} | SMTP (3× selhal): ${mailErr.message}`);
+    await setObalovnaSetting(obalovnaId, 'last_backup_error', `${new Date().toISOString()} | SMTP (3× selhal): ${mailErr.message}`);
     throw mailErr;
   }
 
   console.log(`${TAG} ===== DOKONČENO: ${xlsxFilename} + ${snapshotFilename} =====`);
 
-  // ── ÚSPĚCH: zapsat last_backup a vyčistit error ────────────────────────────
-  await setSetting('last_backup', new Date().toISOString());
-  await delSetting('last_backup_error');
+  // ── ÚSPĚCH: zapsat last_backup a vyčistit error (per-obalovna) ──────────────
+  await setObalovnaSetting(obalovnaId, 'last_backup', new Date().toISOString());
+  await delObalovnaSetting(obalovnaId, 'last_backup_error');
 }
 
 // Smaž zamítnuté objednávky starší 30 dní (auto-cleanup)
@@ -2058,6 +2089,21 @@ async function sendOrderFinalizedEmail(groupId) {
   }
 }
 
+// ── Které obalovny zálohovat (krok 4/6) ────────────────────────────────────────
+// stav='aktivni' VŽDY (i prázdná — je to reálná obalovna); stav='demo' JEN když má data
+// (week_data/vazenky/orders) → prázdná dema se přeskočí (žádné zbytečné prázdné e-maily).
+async function listObalovnyForBackup() {
+  const r = await pool.query(`
+    SELECT o.id FROM obalovny o
+    WHERE o.stav='aktivni'
+       OR EXISTS (SELECT 1 FROM week_data WHERE obalovna_id=o.id)
+       OR EXISTS (SELECT 1 FROM vazenky   WHERE obalovna_id=o.id)
+       OR EXISTS (SELECT 1 FROM orders    WHERE obalovna_id=o.id)
+    ORDER BY o.id
+  `);
+  return r.rows.map(x => x.id);
+}
+
 // Spustit zálohu každý den v 18:00 (UTC+2 = 16:00 UTC) + cleanup rejected objednávek
 // Interval: 24 h (každý den) — ne 18 h.
 let _backupCatchupDone = false;
@@ -2067,40 +2113,49 @@ function scheduleBackup() {
   next.setUTCHours(16, 0, 0, 0);
   if (next <= now) next.setDate(next.getDate() + 1);
   const msUntil = next - now;
-  const runScheduled = () => {
-    sendBackup().catch(err => console.error('Chyba plánované zálohy:', err.message));
+
+  // Krok 4/6: smyčka přes obalovny — každá dostane SVOU zálohu (jen svá data).
+  // Příjemce zatím globální BACKUP_EMAIL (per-obalovna e-mail přijde v kroku 5).
+  const runScheduledBackups = async () => {
+    let ids = [];
+    try { ids = await listObalovnyForBackup(); }
+    catch (e) { console.error('[ZÁLOHA] Plánovač: nelze načíst seznam obaloven:', e.message); }
+    for (const id of ids) {
+      try { await sendBackup(id); }
+      catch (err) { console.error(`[ZÁLOHA] Plánovaná záloha '${id}' selhala:`, err.message); }
+    }
     cleanupRejectedOrders();
   };
 
   // ── CATCH-UP (krok 2/6): automatické odeslání po startu VYPNUTO ──────────────
-  // Dřív se při last_backup starším než ~24 h OKAMŽITĚ spustila ostrá sendBackup()
-  // → každý restart/deploy generoval reálnou zálohu + e-mail mimo plán a bránil
-  // bezpečnému restartu. Nově při startu jen ZALOGUJEME varování a NIC neodesíláme.
-  // Pravidelný plánovaný běh (setTimeout/setInterval níže) zůstává beze změny.
+  // Při startu jen ZALOGUJEME varování per obalovna a NIC neodesíláme. Pravidelný
+  // plánovaný běh (setTimeout/setInterval níže) zůstává funkční.
   // Ruční zálohu lze spustit přes Nastavení → Zálohy → tlačítko "Spustit zálohu teď".
   (async () => {
     if (_backupCatchupDone) return;
     _backupCatchupDone = true;
     try {
-      const r = await pool.query("SELECT value FROM settings WHERE key='last_backup'");
-      const lastIso = r.rows[0] ? r.rows[0].value : null;
-      const ageH = lastIso ? (Date.now() - Date.parse(lastIso)) / 3600000 : Infinity;
-      if (!lastIso || ageH > 24) {
-        const reason = lastIso ? `${ageH.toFixed(1)} h` : 'chybí';
-        console.warn(`[ZÁLOHA] last_backup zastaralý (${reason}) — automatický catch-up je vypnutý, spusť ručně přes Nastavení → Zálohy.`);
-      } else {
-        console.log(`[ZÁLOHA] Catch-up nepotřeba: last_backup před ${ageH.toFixed(1)} h.`);
+      const ids = await listObalovnyForBackup();
+      for (const id of ids) {
+        const lastIso = await getObalovnaSetting(id, 'last_backup');
+        const ageH = lastIso ? (Date.now() - Date.parse(lastIso)) / 3600000 : Infinity;
+        if (!lastIso || ageH > 24) {
+          const reason = lastIso ? `${ageH.toFixed(1)} h` : 'chybí';
+          console.warn(`[ZÁLOHA] ${id}: last_backup zastaralý (${reason}) — automatický catch-up je vypnutý, spusť ručně přes Nastavení → Zálohy.`);
+        } else {
+          console.log(`[ZÁLOHA] ${id}: catch-up nepotřeba (last_backup před ${ageH.toFixed(1)} h).`);
+        }
       }
     } catch (e) {
-      console.error('[ZÁLOHA] Catch-up: chyba čtení last_backup:', e.message);
+      console.error('[ZÁLOHA] Catch-up: chyba:', e.message);
     }
   })();
 
   setTimeout(() => {
-    runScheduled();
-    setInterval(runScheduled, 24 * 60 * 60 * 1000);
+    runScheduledBackups();
+    setInterval(runScheduledBackups, 24 * 60 * 60 * 1000);
   }, msUntil);
-  console.log(`Záloha naplánována za ${Math.round(msUntil / 60000)} minut (každý den v 18:00, interval 24 h)`);
+  console.log(`Záloha naplánována za ${Math.round(msUntil / 60000)} minut (každý den v 18:00, interval 24 h, per obalovna)`);
 }
 
 // ── Hlídání staré zálohy při startu (best-effort e-mail adminovi) ────────────
@@ -2108,51 +2163,55 @@ function scheduleBackup() {
 // co e-mail nezvládne (rozbité SMTP).
 async function checkBackupAge() {
   try {
-    const r = await pool.query("SELECT key,value FROM settings WHERE key IN ('last_backup','last_backup_error')");
-    const map = {};
-    r.rows.forEach(row => { map[row.key] = row.value; });
-    const lastIso = map.last_backup || null;
-    if (!lastIso) {
-      console.warn('[ZÁLOHA] WARNING: settings.last_backup chybí — žádná úspěšná záloha nezaznamenána.');
-      return;
-    }
-    const ageH = (Date.now() - Date.parse(lastIso)) / 3600000;
-    if (ageH > 36) {
-      console.warn(`[ZÁLOHA] WARNING: poslední úspěšná záloha proběhla před ${ageH.toFixed(1)} h (${lastIso}). Zkontroluj SMTP a logy.`);
-      if (map.last_backup_error) {
-        console.warn(`[ZÁLOHA] Poslední zaznamenaná chyba: ${map.last_backup_error}`);
+    const ids = await listObalovnyForBackup();
+    const smtpSettings = await getSmtpSettings();
+    for (const id of ids) {
+      const map = await getObalovnaSettingsMap(id, ['last_backup', 'last_backup_error']);
+      const lastIso = map.last_backup || null;
+      if (!lastIso) {
+        console.warn(`[ZÁLOHA] ${id}: WARNING last_backup chybí — žádná úspěšná záloha nezaznamenána.`);
+        continue;
       }
-      // Best-effort e-mail adminovi přes SMTP (může selhat, proto i UI banner)
-      try {
-        const smtpSettings = await getSmtpSettings();
-        if (smtpSettings.smtp_admin_emails) {
-          const ageDays = (ageH / 24).toFixed(1);
-          await sendNotificationEmail(
-            smtpSettings.smtp_admin_emails,
-            `[HMG] Záloha zastaralá: ${ageDays} dní`,
-            `<p>Poslední úspěšná záloha: <strong>${lastIso}</strong></p>` +
-            `<p>Stáří: <strong>${ageH.toFixed(1)} h</strong> (${ageDays} dní)</p>` +
-            (map.last_backup_error ? `<p>Poslední chyba: <code>${String(map.last_backup_error).replace(/</g,'&lt;')}</code></p>` : '') +
-            `<p>Zkontroluj logy a SMTP/Gmail konfiguraci.</p>`,
-            smtpSettings
-          );
-          console.log('[ZÁLOHA] Varovný e-mail odeslán adminovi.');
+      const ageH = (Date.now() - Date.parse(lastIso)) / 3600000;
+      if (ageH > 36) {
+        const ageDays = (ageH / 24).toFixed(1);
+        console.warn(`[ZÁLOHA] ${id}: WARNING poslední úspěšná záloha před ${ageH.toFixed(1)} h (${lastIso}). Zkontroluj SMTP a logy.`);
+        if (map.last_backup_error) {
+          console.warn(`[ZÁLOHA] ${id}: poslední zaznamenaná chyba: ${map.last_backup_error}`);
         }
-      } catch (e) {
-        console.error('[ZÁLOHA] Nepodařilo se odeslat varovný e-mail:', e.message);
+        // Best-effort e-mail adminovi přes SMTP (může selhat, proto i UI banner)
+        try {
+          if (smtpSettings.smtp_admin_emails) {
+            await sendNotificationEmail(
+              smtpSettings.smtp_admin_emails,
+              `[HMG] Záloha zastaralá (${id}): ${ageDays} dní`,
+              `<p>Obalovna: <strong>${id}</strong></p>` +
+              `<p>Poslední úspěšná záloha: <strong>${lastIso}</strong></p>` +
+              `<p>Stáří: <strong>${ageH.toFixed(1)} h</strong> (${ageDays} dní)</p>` +
+              (map.last_backup_error ? `<p>Poslední chyba: <code>${String(map.last_backup_error).replace(/</g,'&lt;')}</code></p>` : '') +
+              `<p>Zkontroluj logy a SMTP/Gmail konfiguraci.</p>`,
+              smtpSettings
+            );
+            console.log(`[ZÁLOHA] ${id}: varovný e-mail odeslán adminovi.`);
+          }
+        } catch (e) {
+          console.error(`[ZÁLOHA] ${id}: nepodařilo se odeslat varovný e-mail:`, e.message);
+        }
+      } else {
+        console.log(`[ZÁLOHA] ${id}: OK (poslední záloha před ${ageH.toFixed(1)} h).`);
       }
-    } else {
-      console.log(`[ZÁLOHA] OK: poslední záloha před ${ageH.toFixed(1)} h (${lastIso}).`);
     }
   } catch (e) {
     console.error('[ZÁLOHA] checkBackupAge selhalo:', e.message);
   }
 }
 
-// Manuální spuštění zálohy (jen pro admina)
+// Manuální spuštění zálohy (jen pro admina) — zálohuje JEN obalovnu volajícího
 app.post('/api/backup/run', requireAuth, requireAdmin, async (req, res) => {
   try {
-    await sendBackup();
+    const obalovnaId = getObalovnaId(req);
+    if (!obalovnaId) return res.status(403).json({ ok: false, error: 'Superadmin nemá vlastní obalovnu k záloze' });
+    await sendBackup(obalovnaId);
     res.json({ ok: true });
   } catch (err) {
     console.error('Manuální záloha selhala:', err.message);
@@ -3198,11 +3257,8 @@ app.post('/api/smtp-settings/test', requireAuth, requireAdmin, async (req, res) 
 
 // ── Záloha - poslední datum + atributy stavu ──
 app.get('/api/backup/last', requireAuth, requireAdmin, async (req, res) => {
-  const r = await pool.query(
-    "SELECT key,value FROM settings WHERE key IN ('last_backup','last_backup_attempt','last_backup_error')"
-  );
-  const map = {};
-  r.rows.forEach(row => { map[row.key] = row.value; });
+  // per-obalovna stav zálohy (krok 4/6)
+  const map = await getObalovnaSettingsMap(getObalovnaId(req), ['last_backup', 'last_backup_attempt', 'last_backup_error']);
   const last = map.last_backup || null;
   const ageH = last ? (Date.now() - Date.parse(last)) / 3600000 : null;
   res.json({
@@ -3841,7 +3897,7 @@ if (require.main === module) {
     // Čisté utility funkce (Tier 1)
     isIsoDate, isIntOrEmpty, sanitizeStr, validateRows, fv, fmtDateCz, escHtml,
     // Záloha + obnova (Tier 1 integrační)
-    sendBackup, restoreFromSnapshot,
+    sendBackup, collectObalovnaSnapshot, listObalovnyForBackup, restoreFromSnapshot,
     // Multi-obalovna (Tier 1 unit) — aktivní obalovna + superadmin gate + pojistka + moduly
     getObalovnaId, requireSuperadmin, isLastSuperadmin, normalizeModuly, generateTempPassword,
     // HTTP + DB přístup (Tier 2 supertest)

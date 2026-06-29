@@ -45,12 +45,26 @@ const MOCK_SETTINGS = [
   { key:'last_backup', value:'2026-06-01T00:00:00.000Z' },
 ];
 const MOCK_MONTH_JSON = JSON.stringify({ '2026-06-03': [{ smes:'AC 11 S', tuny:120 }] });
+// Per-obalovna config (krok 4): smtp_* a last_backup* MUSÍ být ze snímku VYLOUČENY.
+const MOCK_OBALOVNA_SETTINGS = [
+  { key:'orders_enabled', value:'true' },
+  { key:'hmg_plant_rate', value:'140' },
+  { key:'smtp_password',  value:'NEMA_BYT_VE_SNIMKU' }, // pojistka: VYLOUČIT
+  { key:'last_backup',    value:'2026-06-01T00:00:00.000Z' }, // provozní stav: VYLOUČIT
+];
+const MOCK_VAZENKY = [
+  { id:1, cislo_vazenky:'V-1', datum:'2026-06-03', cas:'08:00', smes:'AC 11 S', itt:'ITT-XY',
+    tuny:'24.5', spz:'1AB', ridic:'Novak', stavba:'Praha', nazev_partnera:'Colas', ico:'123',
+    firma_taxis:'Colas', uploaded_at:new Date('2026-06-03'), uploaded_by:2 },
+];
 
 // ── pg mock s reálnými daty ────────────────────────────────────────────────────
 jest.mock('pg', () => ({
   Pool: jest.fn(() => ({
     query: jest.fn(async (sql) => {
+      if (/FROM obalovna_settings/i.test(sql) && !/INSERT/i.test(sql)) return { rows: MOCK_OBALOVNA_SETTINGS, rowCount: MOCK_OBALOVNA_SETTINGS.length };
       if (/FROM week_data/i.test(sql))       return { rows: MOCK_WEEKS,    rowCount: MOCK_WEEKS.length };
+      if (/FROM vazenky/i.test(sql))         return { rows: MOCK_VAZENKY,  rowCount: MOCK_VAZENKY.length };
       if (/FROM inputs/i.test(sql))          return { rows: [{ rows_json: MOCK_INPUTS_JSON }], rowCount: 1 };
       if (/FROM companies/i.test(sql))       return { rows: [{ data_json: MOCK_COMPANIES_JSON }], rowCount: 1 };
       if (/FROM settings/i.test(sql) && !/INSERT/i.test(sql)) return { rows: MOCK_SETTINGS, rowCount: MOCK_SETTINGS.length };
@@ -107,7 +121,7 @@ describe('sendBackup — integrační test skutečné funkce', () => {
   beforeEach(() => { capturedMails.length = 0; });
 
   test('odešle e-mail se DVĚMA přílohami (Excel + JSON)', async () => {
-    await sendBackup();
+    await sendBackup('holubice');
 
     expect(capturedMails).toHaveLength(1);
     const mail = capturedMails[0];
@@ -130,7 +144,7 @@ describe('sendBackup — integrační test skutečné funkce', () => {
   });
 
   test('Excel obsahuje listy: týden, Receptury, Objednávky, Uživatelé', async () => {
-    await sendBackup();
+    await sendBackup('holubice');
 
     const mail    = capturedMails[0];
     const xlsxBuf = mail.attachments[0].content;
@@ -147,25 +161,32 @@ describe('sendBackup — integrační test skutečné funkce', () => {
     console.log('  Týdenní list ✓');
   });
 
-  test('JSON snímek obsahuje klíče orders a users (smtp_password prázdné)', async () => {
-    await sendBackup();
+  test('JSON snímek per-obalovna: orders/users/vazenky, BEZ smtp_* a last_backup*', async () => {
+    await sendBackup('holubice');
 
     const mail     = capturedMails[0];
     const jsonBuf  = mail.attachments[1].content;
     const snapshot = JSON.parse(jsonBuf.toString('utf8'));
 
     console.log('\n  JSON top-level klíče:', Object.keys(snapshot).join(', '));
-    console.log('  snapshot.orders.length:', snapshot.orders.length);
-    console.log('  snapshot.users.length:', snapshot.users.length);
-    console.log('  smtp_password:', JSON.stringify(snapshot.settings.smtp_password));
+    console.log('  snapshot.version:', snapshot.version, ' obalovna_id:', snapshot.obalovna_id);
+    console.log('  orders:', snapshot.orders.length, ' users:', snapshot.users.length, ' vazenky:', snapshot.vazenky.length);
+    console.log('  settings klíče:', Object.keys(snapshot.settings).join(', '));
 
     expect(snapshot).toHaveProperty('orders');
     expect(snapshot).toHaveProperty('users');
     expect(snapshot).toHaveProperty('week_data');
     expect(snapshot).toHaveProperty('settings');
+    expect(snapshot).toHaveProperty('vazenky');
+    expect(snapshot.version).toBe(4);
+    expect(snapshot.obalovna_id).toBe('holubice');
     expect(snapshot.orders.length).toBeGreaterThan(0);
     expect(snapshot.users.length).toBeGreaterThan(0);
-    expect(snapshot.settings.smtp_password).toBe('');
-    console.log('  orders ✓, users ✓, smtp_password redakován ✓');
+    expect(snapshot.vazenky.length).toBeGreaterThan(0);
+    // Config z obalovna_settings, ale smtp_* a last_backup* VYLOUČENY:
+    expect(snapshot.settings.orders_enabled).toBe('true');
+    expect(snapshot.settings).not.toHaveProperty('smtp_password');
+    expect(snapshot.settings).not.toHaveProperty('last_backup');
+    console.log('  version=4 ✓, obalovna_id=holubice ✓, vazenky ✓, smtp/last_backup VYLOUČENY ✓');
   });
 });
