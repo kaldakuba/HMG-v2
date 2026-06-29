@@ -22,7 +22,7 @@ const { migrateObalovnaId, migrateSingleRowConfigUnique } = require('./lib/obalo
 const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.88';
+const APP_VERSION = '3.90';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -1435,8 +1435,20 @@ async function sendBackup() {
   const attemptIso = new Date().toISOString();
   await setSetting('last_backup_attempt', attemptIso);
 
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD || !process.env.BACKUP_EMAIL) {
-    const msg = 'Chybí konfigurace emailu (GMAIL_USER, GMAIL_APP_PASSWORD, BACKUP_EMAIL)';
+  // ── SMTP konfigurace: PRIMÁRNĚ z DB (stejná cesta jako notifikace), ENV jako fallback ──
+  // Cíl kroku 1/6: záloha už nejede přes service:'gmail' (smtp.gmail.com:465, Railway blokuje),
+  // ale přes DB smtp_* (typicky smtp.seznam.cz:587 STARTTLS), které notifikacím prokazatelně fungují.
+  const smtpDb = await getSmtpSettings();
+  const useDbSmtp = !!(smtpDb.smtp_host && smtpDb.smtp_user);
+
+  if (!process.env.BACKUP_EMAIL) {
+    const msg = 'Chybí konfigurace emailu (BACKUP_EMAIL)';
+    console.error(`${TAG} CHYBA konfigurace: ${msg}`);
+    await setSetting('last_backup_error', `${new Date().toISOString()} | ${msg}`);
+    throw new Error(msg);
+  }
+  if (!useDbSmtp && (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD)) {
+    const msg = 'Chybí SMTP konfigurace (DB smtp_host/smtp_user ani ENV GMAIL_USER/GMAIL_APP_PASSWORD)';
     console.error(`${TAG} CHYBA konfigurace: ${msg}`);
     await setSetting('last_backup_error', `${new Date().toISOString()} | ${msg}`);
     throw new Error(msg);
@@ -1531,20 +1543,37 @@ async function sendBackup() {
   const xlsxFilename = `hmg_zaloha_${date}.xlsx`;
   console.log(`${TAG} Excel sestaven: listy=[${sheetNames.join(', ')}], JSON přiložen=true`);
 
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_APP_PASSWORD,
-    },
-    // Timeouty proti zaseknutí na přechodných problémech SMTP/sítě.
-    connectionTimeout: 20000,
-    greetingTimeout:   20000,
-    socketTimeout:     30000,
-  });
+  // ── Transport: stejná cesta jako notifikace (DB smtp_*), ENV gmail jen jako fallback ──
+  // Timeouty zachovány beze změny (proti zaseknutí na přechodných problémech SMTP/sítě).
+  const TIMEOUTS = { connectionTimeout: 20000, greetingTimeout: 20000, socketTimeout: 30000 };
+  let transporter, mailFrom;
+  if (useDbSmtp) {
+    const smtpPort = parseInt(smtpDb.smtp_port) || 587;
+    transporter = nodemailer.createTransport({
+      host:   smtpDb.smtp_host,
+      port:   smtpPort,
+      secure: smtpPort === 465,        // 465 = implicit TLS, jinak STARTTLS (587)
+      auth:   { user: smtpDb.smtp_user, pass: smtpDb.smtp_password || '' },
+      tls:    { rejectUnauthorized: false },
+      ...TIMEOUTS,
+    });
+    mailFrom = smtpDb.smtp_from || smtpDb.smtp_user;
+    console.log(`${TAG} SMTP transport z DB: host=${smtpDb.smtp_host}, port=${smtpPort}, secure=${smtpPort === 465}`);
+  } else {
+    transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
+      },
+      ...TIMEOUTS,
+    });
+    mailFrom = `"HMG Záloha" <${process.env.GMAIL_USER}>`;
+    console.log(`${TAG} SMTP transport FALLBACK na ENV gmail (DB smtp_* nenastaveno)`);
+  }
 
   const mailOptions = {
-    from:    `"HMG Záloha" <${process.env.GMAIL_USER}>`,
+    from:    mailFrom,
     to:      process.env.BACKUP_EMAIL,
     subject: `HMG záloha ${date} — ${backup.weeks.length} týdnů`,
     text: (
@@ -2000,8 +2029,12 @@ function scheduleBackup() {
     cleanupRejectedOrders();
   };
 
-  // ── CATCH-UP: deploy/restart resetuje setTimeout, proto kontrola při startu ──
-  // Pokud last_backup chybí nebo je > 24 h zpět, spusť zálohu okamžitě (JEDNOU).
+  // ── CATCH-UP (krok 2/6): automatické odeslání po startu VYPNUTO ──────────────
+  // Dřív se při last_backup starším než ~24 h OKAMŽITĚ spustila ostrá sendBackup()
+  // → každý restart/deploy generoval reálnou zálohu + e-mail mimo plán a bránil
+  // bezpečnému restartu. Nově při startu jen ZALOGUJEME varování a NIC neodesíláme.
+  // Pravidelný plánovaný běh (setTimeout/setInterval níže) zůstává beze změny.
+  // Ruční zálohu lze spustit přes Nastavení → Zálohy → tlačítko "Spustit zálohu teď".
   (async () => {
     if (_backupCatchupDone) return;
     _backupCatchupDone = true;
@@ -2010,9 +2043,8 @@ function scheduleBackup() {
       const lastIso = r.rows[0] ? r.rows[0].value : null;
       const ageH = lastIso ? (Date.now() - Date.parse(lastIso)) / 3600000 : Infinity;
       if (!lastIso || ageH > 24) {
-        const reason = lastIso ? `${ageH.toFixed(1)} h zpět` : 'chybí';
-        console.log(`[ZÁLOHA] CATCH-UP: last_backup ${reason} → spouštím okamžitě.`);
-        runScheduled();
+        const reason = lastIso ? `${ageH.toFixed(1)} h` : 'chybí';
+        console.warn(`[ZÁLOHA] last_backup zastaralý (${reason}) — automatický catch-up je vypnutý, spusť ručně přes Nastavení → Zálohy.`);
       } else {
         console.log(`[ZÁLOHA] Catch-up nepotřeba: last_backup před ${ageH.toFixed(1)} h.`);
       }
