@@ -22,7 +22,7 @@ const { migrateObalovnaId, migrateSingleRowConfigUnique, migrateObalovnaSettings
 const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.95';
+const APP_VERSION = '4.0';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -67,6 +67,27 @@ const loginLimiter = rateLimit({
     res.status(429).json({ error: 'Příliš mnoho pokusů. Zkuste to za 5 minut.' });
   }
 });
+
+// ── Rate-limity na zápisové / upload / backup endpointy (P1 #3) ──────────────────
+// Čtecí GET endpointy ZÁMĚRNĚ NElimitujeme (volají se často). 429 se vrací přímo
+// z handleru limiteru. Trust proxy (app.set('trust proxy',1)) zajistí limit per reálnou IP.
+const TOO_MANY = { error: 'Příliš mnoho požadavků, zkuste za chvíli.' };
+const tooManyHandler = (req, res) => res.status(429).json(TOO_MANY);
+
+// a) Upload (multer): 10 / 15 min per IP
+const uploadLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, handler: tooManyHandler });
+// b) Zápisové mutace: 60 / 1 min per IP
+const writeLimiter  = rateLimit({ windowMs: 60 * 1000,      max: 60, handler: tooManyHandler });
+// c) Backup: 5 / 1 h per IP
+const backupLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 5,  handler: tooManyHandler });
+
+// Aplikuje limiter JEN na mutující metody (GET/HEAD/OPTIONS = čtení → bez limitu).
+function mutatingOnly(limiter) {
+  return (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+    return limiter(req, res, next);
+  };
+}
 const PORT = process.env.PORT || 3000;
 
 // ── Fix: node-postgres vrací DATE sloupce jako plain string (ne JS Date s timezone posunem) ──
@@ -347,6 +368,11 @@ app.use(express.static(path.join(__dirname, 'public'), {
   index: false,  // Nezobrazovat index.html automaticky
   extensions: [] // Nezkoušet přidat přípony
 }));
+
+// ── Rate-limit zápisových mutací (POST/PUT/PATCH/DELETE) na vybrané prefixy ──
+// Čtecí GET (např. /api/weeks, /api/companies, /api/inputs, /api/week/:start) NElimitováno
+// (mutatingOnly přeskočí GET; navíc /api/weeks není prefix /api/week/). Mountováno PŘED routami.
+app.use(['/api/week', '/api/orders', '/api/users', '/api/companies', '/api/inputs'], mutatingOnly(writeLimiter));
 
 // ── Auth middleware ──
 function requireAuth(req, res, next) {
@@ -812,7 +838,7 @@ app.all('/api/admin/clear-weeks', requireAuth, requireAdmin, async (req, res) =>
     res.json({ ok: true });
   } catch(err) {
     console.error('clear-weeks error:', err);
-    res.json({ ok: false, error: 'Chyba serveru: ' + err.message });
+    res.status(500).json({ ok: false, error: 'Interní chyba serveru' });
   }
 });
 
@@ -830,11 +856,11 @@ app.all('/api/admin/clear-inputs', requireAuth, requireAdmin, async (req, res) =
     res.json({ ok: true });
   } catch(err) {
     console.error('clear-inputs error:', err);
-    res.json({ ok: false, error: 'Chyba serveru: ' + err.message });
+    res.status(500).json({ ok: false, error: 'Interní chyba serveru' });
   }
 });
 
-app.post('/api/import-excel', requireAuth, requireAdmin, upload.single('file'), async (req, res) => {
+app.post('/api/import-excel', requireAuth, requireAdmin, uploadLimiter, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Žádný soubor' });
   try {
     const obalovnaId = getObalovnaId(req);   // krok 3b: zápisy patří aktivní obalovně
@@ -950,7 +976,7 @@ app.post('/api/import-excel', requireAuth, requireAdmin, upload.single('file'), 
     res.json({ ok: true, receptury: receptury.length, tydnu: Object.keys(weekMap).length, dnu: Object.keys(hmgEntries).length });
   } catch (err) {
     console.error('Import error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Interní chyba serveru' });
   }
 });
 
@@ -2241,15 +2267,15 @@ async function checkBackupAge() {
 }
 
 // Manuální spuštění zálohy (jen pro admina) — zálohuje JEN obalovnu volajícího
-app.post('/api/backup/run', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/backup/run', requireAuth, requireAdmin, backupLimiter, async (req, res) => {
   try {
     const obalovnaId = getObalovnaId(req);
     if (!obalovnaId) return res.status(403).json({ ok: false, error: 'Superadmin nemá vlastní obalovnu k záloze' });
     await sendBackup(obalovnaId);
     res.json({ ok: true });
   } catch (err) {
-    console.error('Manuální záloha selhala:', err.message);
-    res.status(500).json({ ok: false, error: err.message });
+    console.error('Manuální záloha selhala:', err);
+    res.status(500).json({ ok: false, error: 'Interní chyba serveru' });
   }
 });
 
@@ -2268,13 +2294,13 @@ app.post('/api/restore', requireAuth, requireAdmin, async (req, res) => {
     // Parsuj JSON snímek
     let snapshot;
     try { snapshot = JSON.parse(snapshotJson); }
-    catch (e) { return res.status(400).json({ ok: false, error: 'Neplatný JSON soubor: ' + e.message }); }
+    catch (e) { console.error('[OBNOVA] Neplatný JSON snímek:', e); return res.status(400).json({ ok: false, error: 'Neplatný JSON soubor' }); }
     // Proveď obnovu
     const result = await restoreFromSnapshot(snapshot);
     res.json({ ok: true, ...result });
   } catch (err) {
-    console.error('[OBNOVA] Selhání endpointu:', err.message);
-    res.status(500).json({ ok: false, error: err.message });
+    console.error('[OBNOVA] Selhání endpointu:', err);
+    res.status(500).json({ ok: false, error: 'Interní chyba serveru' });
   }
 });
 
@@ -2765,7 +2791,7 @@ app.post('/api/orders', requireAuth, requireOrdersEnabled, async (req, res) => {
     }
   } catch (err) {
     console.error('POST /api/orders error:', err);
-    res.status(500).json({ error: 'Chyba serveru: ' + err.message });
+    res.status(500).json({ error: 'Interní chyba serveru' });
   }
 });
 
@@ -3287,7 +3313,7 @@ app.post('/api/smtp-settings/test', requireAuth, requireAdmin, async (req, res) 
     res.json({ ok: true, message: `Testovací email odeslán na: ${adminEmails}` });
   } catch(err) {
     console.error('POST /api/smtp-settings/test error:', err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: 'Interní chyba serveru' });
   }
 });
 
@@ -3358,7 +3384,7 @@ async function loadTaxisFirmy(obalovnaId) {
 // Upload: jen admin. Multer memoryStorage, max 10 MB.
 const vazenkyUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-app.post('/api/vazenky/upload', requireAuth, requireAdmin, vazenkyUpload.single('file'), async (req, res) => {
+app.post('/api/vazenky/upload', requireAuth, requireAdmin, uploadLimiter, vazenkyUpload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Chybí soubor' });
   try {
     const taxisFirmy = await loadTaxisFirmy(getObalovnaId(req));
@@ -3381,7 +3407,7 @@ app.post('/api/vazenky/upload', requireAuth, requireAdmin, vazenkyUpload.single(
     res.json({ ok: true, summary, inserted, duplicates });
   } catch (err) {
     console.error('POST /api/vazenky/upload error:', err);
-    res.status(500).json({ error: 'Chyba zpracování souboru: ' + err.message });
+    res.status(500).json({ error: 'Interní chyba serveru' });
   }
 });
 
