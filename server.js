@@ -18,11 +18,11 @@ const helmet = require('helmet');
 const { parseVazenky } = require('./lib/vazenky-parser');
 const { buildMonthWorkbook } = require('./lib/month-export');
 const { migrateObalovny, listObalovny, normalizeModuly, getObalovnaModuly, updateObalovnaModuly } = require('./lib/obalovny');
-const { migrateObalovnaId, migrateSingleRowConfigUnique } = require('./lib/obalovna-id');
+const { migrateObalovnaId, migrateSingleRowConfigUnique, migrateObalovnaSettings } = require('./lib/obalovna-id');
 const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '3.90';
+const APP_VERSION = '3.91';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -308,6 +308,11 @@ async function initDb() {
 
   // ── Krok 3b: single-row config tabulky per-obalovna — UNIQUE(obalovna_id) ──
   await migrateSingleRowConfigUnique(pool);
+
+  // ── Krok 3/6: settings per-obalovna — nová tabulka obalovna_settings (+seed Holubice) ──
+  // Běží PO seedech settings (orders_enabled/vazenky_share_enabled výše) i PO migrateObalovny
+  // (Holubice existuje pro FK). Aditivní/idempotentní — nemění `settings`.
+  await migrateObalovnaSettings(pool);
 }
 
 app.use(express.json({ limit: '10mb' }));
@@ -425,8 +430,8 @@ async function requireOrdersEnabled(req, res, next) {
     // nepovolil, objednávky jsou vypnuté bez ohledu na settings.orders_enabled.
     const moduly = await getObalovnaModuly(pool, getObalovnaId(req));
     if (!moduly.mod_objednavky) return res.status(403).json({ error: 'Objednávkový modul není pro tuto obalovnu povolen' });
-    const r = await pool.query("SELECT value FROM settings WHERE key='orders_enabled'");
-    const enabled = r.rows.length === 0 || r.rows[0].value !== 'false';
+    const oe = await getObalovnaSetting(getObalovnaId(req), 'orders_enabled');  // per-obalovna
+    const enabled = oe === null || oe !== 'false';   // chybí řádek = výchozí zapnuto (jako dřív)
     if (!enabled) return res.status(403).json({ error: 'Objednávkový systém je vypnut' });
     // Per-user: hmg_share musí mít navíc orders_allowed=true (admin/operátor neomezeni tímto příznakem).
     // Globální vypnutí má přednost (řeší se výše). Hodnota se bere z DB, nikdy z klienta.
@@ -712,23 +717,34 @@ app.post('/api/companies', requireAuth, requireAdmin, async (req, res) => {
 });
 
 app.get('/api/settings', requireAuth, async (req, res) => {
-  const r = await pool.query('SELECT key,value FROM settings');
+  const obalovnaId = getObalovnaId(req);
   const obj = {};
-  // Citlivé klíče (SMTP konfigurace vč. hesla) se nikdy nevracejí v obecném /api/settings.
-  // Slouží jen pro admina přes /api/smtp-settings, která má requireAdmin a heslo maskuje.
-  const SENSITIVE_PREFIXES = ['smtp_'];
-  r.rows.forEach(row => {
-    if (SENSITIVE_PREFIXES.some(p => row.key.startsWith(p))) return;
+  // 1) Globální nesenzitivní klíče ze `settings` (např. last_backup*). Vyloučíme:
+  //    smtp_* (citlivé), share_* (tokeny — vlastní endpoint) a CONFIG_KEYS (per-obalovna níže).
+  const g = await pool.query('SELECT key,value FROM settings');
+  g.rows.forEach(row => {
+    if (row.key.startsWith('smtp_') || row.key.startsWith('share_')) return;
+    if (CONFIG_KEYS.includes(row.key)) return;
     obj[row.key] = row.value;
   });
+  // 2) Per-obalovna konfigurace aktivní obalovny z `obalovna_settings`.
+  if (obalovnaId) {
+    const o = await pool.query(
+      'SELECT key,value FROM obalovna_settings WHERE obalovna_id=$1 AND key = ANY($2::text[])',
+      [obalovnaId, CONFIG_KEYS]
+    );
+    o.rows.forEach(row => { obj[row.key] = row.value; });
+  }
   res.json(obj);
 });
 
 app.post('/api/settings', requireAuth, requireAdmin, async (req, res) => {
+  const obalovnaId = getObalovnaId(req);
+  if (!obalovnaId) return res.status(403).json({ error: 'Superadmin nemá konfiguraci obalovny' });
   const allowed = ['hmg_max_daily', 'hmg_min_daily', 'hmg_plant_rate', 'hmg_gas_capacity', 'orders_enabled', 'vazenky_share_enabled'];
   // KASKÁDA krok 6: zapnout (true) přepínač lze JEN když je odpovídající modul obalovny
   // povolen shora (superadmin strop). Vypnout (false) jde vždy. Holubice má oba moduly true.
-  const moduly = await getObalovnaModuly(pool, getObalovnaId(req));
+  const moduly = await getObalovnaModuly(pool, obalovnaId);
   for (const [k, v] of Object.entries(req.body)) {
     if (!allowed.includes(k)) continue;
     if (['hmg_max_daily', 'hmg_min_daily', 'hmg_plant_rate', 'hmg_gas_capacity'].includes(k)) {
@@ -744,10 +760,7 @@ app.post('/api/settings', requireAuth, requireAdmin, async (req, res) => {
         return res.status(403).json({ error: 'Modul Váženky není pro tuto obalovnu povolen' });
       }
     }
-    await pool.query(
-      `INSERT INTO settings (key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,
-      [k, String(v)]
-    );
+    await setObalovnaSetting(obalovnaId, k, v);   // per-obalovna zápis
   }
   res.json({ ok: true });
 });
@@ -1060,8 +1073,8 @@ app.get('/api/superadmin/obalovny/:id/metriky', requireAuth, requireSuperadmin, 
         [id]
       ),
       getObalovnaModuly(pool, id),
-      pool.query("SELECT value FROM settings WHERE key='orders_enabled'"),
-      pool.query("SELECT value FROM settings WHERE key='last_backup'"),  // ISO čas poslední ÚSPĚŠNÉ zálohy
+      pool.query("SELECT value FROM obalovna_settings WHERE obalovna_id=$1 AND key='orders_enabled'", [id]),  // per-obalovna
+      pool.query("SELECT value FROM settings WHERE key='last_backup'"),  // ISO čas poslední ÚSPĚŠNÉ zálohy (globální)
     ]);
     const row = r.rows[0];
     const toDate = (x) => {
@@ -1423,6 +1436,36 @@ async function setSetting(key, value) {
 async function delSetting(key) {
   try { await pool.query("DELETE FROM settings WHERE key=$1", [key]); }
   catch (e) { console.error(`[ZÁLOHA] Nelze smazat settings.${key}:`, e.message); }
+}
+
+// ── Per-obalovna settings (krok 3/6) ───────────────────────────────────────────
+// Konfigurace per obalovna žije v `obalovna_settings` (PK obalovna_id,key).
+// Globální zůstávají: smtp_* (getSmtpSettings) a last_backup* (setSetting/delSetting výše).
+// CONFIG_KEYS = per-obalovna konfigurační klíče vystavované přes /api/settings.
+const CONFIG_KEYS = [
+  'hmg_plant_rate', 'hmg_gas_capacity', 'hmg_max_daily', 'hmg_min_daily',
+  'orders_enabled', 'vazenky_share_enabled',
+];
+
+async function getObalovnaSetting(obalovnaId, key) {
+  if (!obalovnaId) return null;   // superadmin nemá vlastní obalovnu
+  const r = await pool.query(
+    'SELECT value FROM obalovna_settings WHERE obalovna_id=$1 AND key=$2',
+    [obalovnaId, key]
+  );
+  return r.rows[0] ? r.rows[0].value : null;
+}
+async function setObalovnaSetting(obalovnaId, key, value) {
+  if (!obalovnaId) throw new Error('setObalovnaSetting: chybí obalovna_id');
+  await pool.query(
+    `INSERT INTO obalovna_settings (obalovna_id,key,value) VALUES ($1,$2,$3)
+     ON CONFLICT (obalovna_id,key) DO UPDATE SET value=EXCLUDED.value`,
+    [obalovnaId, key, String(value)]
+  );
+}
+async function delObalovnaSetting(obalovnaId, key) {
+  if (!obalovnaId) return;
+  await pool.query('DELETE FROM obalovna_settings WHERE obalovna_id=$1 AND key=$2', [obalovnaId, key]);
 }
 
 async function sendBackup() {
@@ -2345,32 +2388,37 @@ app.delete('/api/sessions/user/:id', requireAuth, requireAdmin, async (req, res)
   res.json({ ok: true });
 });
 
-// ── Sdílení měsíčního přehledu ──
+// ── Sdílení měsíčního přehledu (share tokeny PER-OBALOVNA) ──
 app.get('/api/share-tokens', requireAuth, requireAdmin, async (req, res) => {
-  const r = await pool.query("SELECT key, value FROM settings WHERE key LIKE 'share_%'");
+  const r = await pool.query(
+    "SELECT key, value FROM obalovna_settings WHERE obalovna_id=$1 AND key LIKE 'share_%'",
+    [getObalovnaId(req)]
+  );
   res.json(r.rows.map(r => ({ token: r.key.replace('share_',''), expires: r.value })));
 });
 
 app.post('/api/share-tokens', requireAuth, requireAdmin, async (req, res) => {
+  const obalovnaId = getObalovnaId(req);
+  if (!obalovnaId) return res.status(403).json({ error: 'Superadmin nemá sdílení obalovny' });
   const days = parseInt(req.body.days) || 30;
   const token = crypto.randomBytes(32).toString('hex');
   const expires = new Date();
   expires.setDate(expires.getDate() + days);
-  await pool.query(
-    'INSERT INTO settings (key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value',
-    [`share_${token}`, expires.toISOString()]
-  );
+  await setObalovnaSetting(obalovnaId, `share_${token}`, expires.toISOString());
   res.json({ ok: true, token, expires: expires.toISOString() });
 });
 
 app.delete('/api/share-tokens/:token', requireAuth, requireAdmin, async (req, res) => {
-  await pool.query('DELETE FROM settings WHERE key=$1', [`share_${req.params.token}`]);
+  await delObalovnaSetting(getObalovnaId(req), `share_${req.params.token}`);
   res.json({ ok: true });
 });
 
-// Veřejný přístup přes share token
+// Veřejný přístup přes share token (bez session → hledáme token NAPŘÍČ obalovnami;
+// token je 32B náhodný a globálně unikátní, takže key sám určuje obalovnu).
 app.get('/share/:token', async (req, res) => {
-  const r = await pool.query('SELECT value FROM settings WHERE key=$1', [`share_${req.params.token}`]);
+  const r = await pool.query(
+    'SELECT value FROM obalovna_settings WHERE key=$1', [`share_${req.params.token}`]
+  );
   if (!r.rows[0] || new Date(r.rows[0].value) < new Date()) {
     return res.status(410).send('<h2>Odkaz vypršel nebo neexistuje.</h2>');
   }
@@ -2458,9 +2506,10 @@ app.get('/api/day-capacity', requireAuth, async (req, res) => {
       [date, obalovnaId]
     );
 
-    // Denní limity
+    // Denní limity (per-obalovna)
     const sRes = await pool.query(
-      "SELECT key,value FROM settings WHERE key IN ('hmg_max_daily','hmg_min_daily')"
+      "SELECT key,value FROM obalovna_settings WHERE obalovna_id=$1 AND key IN ('hmg_max_daily','hmg_min_daily')",
+      [obalovnaId]
     );
     const limits = {};
     sRes.rows.forEach(r => { limits[r.key] = parseInt(r.value); });
@@ -2526,17 +2575,18 @@ app.post('/api/orders', requireAuth, requireOrdersEnabled, async (req, res) => {
       }
     }
 
-    // Načti denní limity
+    // Kapacitní kontrola per den (server-side bezpečnost)
+    const obalovnaId = getObalovnaId(req);   // multi-obalovna: scope kapacity i zápisu
+
+    // Načti denní limity (per-obalovna)
     const sRes = await pool.query(
-      "SELECT key,value FROM settings WHERE key IN ('hmg_max_daily','hmg_min_daily')"
+      "SELECT key,value FROM obalovna_settings WHERE obalovna_id=$1 AND key IN ('hmg_max_daily','hmg_min_daily')",
+      [obalovnaId]
     );
     const limits = {};
     sRes.rows.forEach(r => { limits[r.key] = parseInt(r.value); });
     const maxDaily = limits.hmg_max_daily || null;
     const minDaily = limits.hmg_min_daily || null;
-
-    // Kapacitní kontrola per den (server-side bezpečnost)
-    const obalovnaId = getObalovnaId(req);   // multi-obalovna: scope kapacity i zápisu
     const datumSet = [...new Set(items.map(i => i.datum))];
     const warnings = [];
     const errors   = [];
@@ -2648,8 +2698,8 @@ app.patch('/api/orders/:groupId/approve', requireAuth, requireAdmin, requireOrde
       return res.status(404).json({ error: 'Skupina nenalezena nebo již vyřešena' });
     }
 
-    // Denní maximum
-    const sRes = await pool.query("SELECT value FROM settings WHERE key='hmg_max_daily'");
+    // Denní maximum (per-obalovna)
+    const sRes = await pool.query("SELECT value FROM obalovna_settings WHERE obalovna_id=$1 AND key='hmg_max_daily'", [getObalovnaId(req)]);
     const maxDaily = sRes.rows[0] ? parseInt(sRes.rows[0].value) : null;
 
     // Kapacitní kontrola per datum
@@ -2869,7 +2919,7 @@ app.patch('/api/orders/:groupId/day/:datum/preapprove', requireAuth, requireAdmi
     if (groupDayTuny === 0)
       return res.status(404).json({ error: 'Žádné pending/pre_rejected řádky pro tento den a skupinu' });
 
-    const sRes = await pool.query("SELECT value FROM settings WHERE key='hmg_max_daily'");
+    const sRes = await pool.query("SELECT value FROM obalovna_settings WHERE obalovna_id=$1 AND key='hmg_max_daily'", [getObalovnaId(req)]);
     const maxDaily = sRes.rows[0] ? parseInt(sRes.rows[0].value) : null;
     let exceedsMax = false, total = 0;
     if (maxDaily) {
@@ -3233,7 +3283,7 @@ async function buildVazenkyQuery(req) {
   if (role === 'hmg_share') {
     // Přepínač viditelnosti "Odebrané stavby" pro odběratele (admin/operátor NEJSOU omezeni).
     // KASKÁDA krok 6: zapnuté JEN když je modul obalovny (mod_vazenky) povolen shora.
-    const shRes = await pool.query("SELECT value FROM settings WHERE key='vazenky_share_enabled'");
+    const shRes = await pool.query("SELECT value FROM obalovna_settings WHERE obalovna_id=$1 AND key='vazenky_share_enabled'", [obalovnaId]);
     const moduly = await getObalovnaModuly(pool, obalovnaId);
     const shareEnabled = (shRes.rows[0] ? shRes.rows[0].value : 'false') === 'true' && moduly.mod_vazenky;
     if (!shareEnabled) return { role, firma, stavba, od, doD, firma_filter: '', forbidden: true };
@@ -3546,8 +3596,8 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
   try {
     const [confirmedData, oeRes, vsRes, uaRes] = await Promise.all([
       loadConfirmedForDashboard(req),
-      pool.query("SELECT value FROM settings WHERE key='orders_enabled'"),
-      pool.query("SELECT value FROM settings WHERE key='vazenky_share_enabled'"),
+      pool.query("SELECT value FROM obalovna_settings WHERE obalovna_id=$1 AND key='orders_enabled'", [getObalovnaId(req)]),       // per-obalovna
+      pool.query("SELECT value FROM obalovna_settings WHERE obalovna_id=$1 AND key='vazenky_share_enabled'", [getObalovnaId(req)]), // per-obalovna
       pool.query('SELECT orders_allowed FROM users WHERE id=$1', [req.session.userId]),
     ]);
     const { role, firma, confirmedList, confirmedTons, confirmedCount } = confirmedData;
