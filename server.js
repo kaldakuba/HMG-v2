@@ -22,7 +22,7 @@ const { migrateObalovnaId, migrateSingleRowConfigUnique, migrateObalovnaSettings
 const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '4.0';
+const APP_VERSION = '4.1';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -3313,7 +3313,20 @@ app.post('/api/smtp-settings/test', requireAuth, requireAdmin, async (req, res) 
     res.json({ ok: true, message: `Testovací email odeslán na: ${adminEmails}` });
   } catch(err) {
     console.error('POST /api/smtp-settings/test error:', err);
-    res.status(500).json({ ok: false, error: 'Interní chyba serveru' });
+    // Mapování na BEZPEČNÝ čitelný text — nikdy err.message/err.stack/cesty/hesla.
+    const code = String(err && err.code || '');
+    const msg  = String(err && err.message || '').toLowerCase();
+    let safe;
+    if (code === 'ETIMEDOUT' || code === 'ESOCKETTIMEDOUT' || msg.includes('timeout')) {
+      safe = 'Časový limit spojení';
+    } else if (code === 'EAUTH' || msg.includes('auth') || msg.includes('credentials') || msg.includes('username') || msg.includes('password')) {
+      safe = 'Chybná autentizace';
+    } else if (code === 'ECONNREFUSED' || code === 'ECONNRESET' || code === 'ENOTFOUND' || msg.includes('connect')) {
+      safe = 'Nelze se připojit k SMTP serveru';
+    } else {
+      safe = 'Odeslání selhalo';
+    }
+    res.status(500).json({ ok: false, error: safe });
   }
 });
 
