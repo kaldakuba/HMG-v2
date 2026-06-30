@@ -27,6 +27,7 @@ window.OA = (() => {
   let _pendingGroups = [];
   let _onAfterAction = null; // callback → page-specific re-render
   let _navigateFn   = null; // async (datum: string) => void — page poskytne
+  let _docDelegationDone = false; // P2 #5: document-level delegace navěšena jen jednou
 
   // ── Pomocné ──
   function esc(v) {
@@ -186,6 +187,12 @@ window.OA = (() => {
     ].join(';');
     document.body.appendChild(_dropEl);
 
+    // P2 #5: delegovaný click na stabilní _dropEl (řádky se překreslují přes innerHTML)
+    _dropEl.addEventListener('click', (e) => {
+      const row = e.target.closest('.oa-drop-row[data-gid]');
+      if (row) _dropRowClick(row.dataset.gid);
+    });
+
     // Zavři klikem mimo banner i dropdown
     document.addEventListener('click', (e) => {
       if (!_dropOpen) return;
@@ -258,10 +265,7 @@ window.OA = (() => {
 
       return '<div class="oa-drop-row" data-gid="'+gidSafe+'" style="'+
         'padding:8px 14px;border-bottom:1px solid #f3f4f6;cursor:pointer;'+
-        'font-size:13px;color:#374151;display:flex;align-items:center;gap:6px;" '+
-        'onmouseenter="this.style.background=\'#f0f9ff\'" '+
-        'onmouseleave="this.style.background=\'\'" '+
-        'onclick="OA._dropRowClick(\''+gidSafe+'\')">'+
+        'font-size:13px;color:#374151;display:flex;align-items:center;gap:6px;">'+
         '<span style="color:#94a3b8;font-size:11px;min-width:18px;font-weight:700;flex-shrink:0">'+pct+'.</span>'+
         '<span style="font-weight:700;color:#1a1a2e;flex-shrink:0">'+firma+'</span>'+
         '<span style="color:#cbd5e1;flex-shrink:0">/</span>'+
@@ -393,6 +397,22 @@ window.OA = (() => {
     _popupEl.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.52);z-index:10000;align-items:flex-start;justify-content:center;padding:40px 16px 16px;overflow-y:auto';
     _popupEl.innerHTML = '<div id="oa-popup-inner" style="background:#fff;border-radius:12px;max-width:760px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,.28);font-family:Inter,sans-serif;overflow:hidden"></div>';
     _popupEl.addEventListener('click', e => { if (e.target===_popupEl) closeDayPopup(); });
+    // P2 #5: delegovaný click na stabilní _popupEl (obsah se překresluje přes innerHTML).
+    // closest('[data-action]') → switch dle akce. Disabled tlačítka click negenerují.
+    _popupEl.addEventListener('click', (e) => {
+      const el = e.target.closest('[data-action]');
+      if (!el || !_popupEl.contains(el)) return;
+      switch (el.dataset.action) {
+        case 'switch-day':     _switchDay(el.dataset.d); break;
+        case 'preapprove':     _doPreapprove(); break;
+        case 'reset-day':      _doResetDay(); break;
+        case 'show-reject':    _showRejectReason(el.dataset.mode); break;
+        case 'finalize':       _doFinalize(); break;
+        case 'close':          closeDayPopup(); break;
+        case 'reason-confirm': _confirmReject(); break;
+        case 'reason-cancel': { const w=document.getElementById('oa-reason-wrap'); if(w) w.style.display='none'; break; }
+      }
+    });
     document.body.appendChild(_popupEl);
   }
 
@@ -543,14 +563,12 @@ window.OA = (() => {
         bg = '#f3f4f6'; col = '#374151';  brd = 'none';                   fw = '400';
       }
       const dSafe = esc(d);
-      const curSafe = esc(datum);
-      return '<span style="display:inline-block;margin:2px 3px 2px 0;padding:3px 10px;border-radius:4px;font-size:12px;'+
+      const activeCls = isCur ? ' active' : '';
+      return '<span class="oa-day-badge'+activeCls+'" data-action="switch-day" data-d="'+dSafe+'" '+
+        'style="display:inline-block;margin:2px 3px 2px 0;padding:3px 10px;border-radius:4px;font-size:12px;'+
         'background:'+bg+';color:'+col+';font-weight:'+fw+';cursor:pointer;user-select:none;'+
         (brd !== 'none' ? 'border:'+brd+';' : '')+
         'transition:opacity .12s;" '+
-        'onclick="OA._switchDay(\''+dSafe+'\')" '+
-        'onmouseenter="if(\''+dSafe+'\'!==\''+curSafe+'\')this.style.opacity=\'0.65\'" '+
-        'onmouseleave="this.style.opacity=\'1\'" '+
         'title="Přepnout na '+fmtDatumShort(d)+' ('+statusTextShort(ds||'')+')">'+
         fmtDatumShort(d)+' '+statusTextShort(ds||'')+'</span>';
     }).join('');
@@ -569,23 +587,23 @@ window.OA = (() => {
     let dayBtns = '';
     if (dayStatus==='pending') {
       dayBtns =
-        '<button onclick="OA._doPreapprove()" style="'+_btnStyle('#16a34a')+'">✓ Předběžně schválit den</button>'+
-        '<button onclick="OA._showRejectReason(\'day\')" style="'+_btnStyle('#dc2626')+'">✗ Předběžně zamítnout den</button>';
+        '<button data-action="preapprove" style="'+_btnStyle('#16a34a')+'">✓ Předběžně schválit den</button>'+
+        '<button data-action="show-reject" data-mode="day" style="'+_btnStyle('#dc2626')+'">✗ Předběžně zamítnout den</button>';
     } else if (dayStatus==='pre_approved') {
       dayBtns =
-        '<button onclick="OA._doResetDay()" style="'+_btnStyle('#64748b')+'">↺ Vrátit na čekající</button>'+
-        '<button onclick="OA._showRejectReason(\'day\')" style="'+_btnStyle('#dc2626')+'">✗ Zamítnout den</button>';
+        '<button data-action="reset-day" style="'+_btnStyle('#64748b')+'">↺ Vrátit na čekající</button>'+
+        '<button data-action="show-reject" data-mode="day" style="'+_btnStyle('#dc2626')+'">✗ Zamítnout den</button>';
     } else if (dayStatus==='pre_rejected') {
       dayBtns =
-        '<button onclick="OA._doPreapprove()" style="'+_btnStyle('#16a34a')+'">✓ Předběžně schválit den</button>'+
-        '<button onclick="OA._doResetDay()" style="'+_btnStyle('#64748b')+'">↺ Vrátit na čekající</button>';
+        '<button data-action="preapprove" style="'+_btnStyle('#16a34a')+'">✓ Předběžně schválit den</button>'+
+        '<button data-action="reset-day" style="'+_btnStyle('#64748b')+'">↺ Vrátit na čekající</button>';
     }
 
     const dis = allDecided ? '' : 'disabled ';
     const disStyle = allDecided ? '' : 'opacity:.45;cursor:not-allowed;';
     const finalBtns =
-      '<button '+dis+'onclick="OA._doFinalize()" style="'+_btnStyle('#1d4ed8')+disStyle+'">✓ Finálně potvrdit objednávku</button>'+
-      '<button '+dis+'onclick="OA._showRejectReason(\'all\')" style="'+_btnStyle('#991b1b')+disStyle+'">✗ Zamítnout celou objednávku</button>';
+      '<button '+dis+'data-action="finalize" style="'+_btnStyle('#1d4ed8')+disStyle+'">✓ Finálně potvrdit objednávku</button>'+
+      '<button '+dis+'data-action="show-reject" data-mode="all" style="'+_btnStyle('#991b1b')+disStyle+'">✗ Zamítnout celou objednávku</button>';
 
     const gps = (g.lat!=null&&g.lng!=null)
       ? parseFloat(g.lat).toFixed(4)+', '+parseFloat(g.lng).toFixed(4) : '—';
@@ -666,7 +684,7 @@ window.OA = (() => {
       '<div style="background:#1a1a2e;color:#fff;padding:13px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px">'+
         '<div><div style="font-size:15px;font-weight:700">'+esc(g.firma)+' — '+fmtDatum(datum)+'</div>'+
         '<div style="font-size:12px;color:#94a3b8;margin-top:2px">'+esc(g.username||'?')+' · '+esc(g.lokalita||'—')+' · GPS: '+esc(gps)+'</div></div>'+
-        '<button onclick="OA.closeDayPopup()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:20px;line-height:1;padding:2px 6px;font-family:Inter,sans-serif">✕</button>'+
+        '<button data-action="close" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:20px;line-height:1;padding:2px 6px;font-family:Inter,sans-serif">✕</button>'+
       '</div>'+
 
       // Tělo
@@ -709,8 +727,8 @@ window.OA = (() => {
           '<div id="oa-reason-title" style="font-size:12px;font-weight:700;color:#dc2626;margin-bottom:5px">Důvod zamítnutí *</div>'+
           '<textarea id="oa-reason-ta" rows="2" style="width:100%;border:1px solid #fca5a5;border-radius:6px;padding:5px 8px;font-size:13px;font-family:Inter,sans-serif;resize:vertical;outline:none"></textarea>'+
           '<div style="display:flex;gap:6px;margin-top:7px;align-items:center">'+
-            '<button onclick="OA._confirmReject()" style="'+_btnStyle('#dc2626')+'">Potvrdit</button>'+
-            '<button onclick="document.getElementById(\'oa-reason-wrap\').style.display=\'none\'" style="'+_btnStyle('#6b7280')+'">Zrušit</button>'+
+            '<button data-action="reason-confirm" style="'+_btnStyle('#dc2626')+'">Potvrdit</button>'+
+            '<button data-action="reason-cancel" style="'+_btnStyle('#6b7280')+'">Zrušit</button>'+
             '<span id="oa-reason-msg" style="font-size:13px;color:#dc2626"></span>'+
           '</div>'+
         '</div>'+
@@ -823,10 +841,7 @@ window.OA = (() => {
     const gidSafe = esc(g.order_group_id);
 
     let tr = '<tr class="oa-order-row" style="border-left:4px solid '+gc.dot+';background:'+gc.bg+';cursor:pointer" '+
-      'data-gid="'+gidSafe+'" '+
-      'onmouseenter="OA.showHover(event,\''+gidSafe+'\',\''+esc(defaultDatum)+'\')" '+
-      'onmouseleave="OA.hideHover()" '+
-      'onclick="OA.openDayPopup(\''+gidSafe+'\',\''+esc(defaultDatum)+'\')">';
+      'data-gid="'+gidSafe+'" data-oa-action="open-day" data-oa-hover="1" data-datum="'+esc(defaultDatum)+'">';
 
     // č. (cislo col) — barevný indikátor
     tr += '<td style="background:'+gc.bg+';color:'+gc.dot+';font-size:14px;font-weight:900;text-align:center">●</td>';
@@ -852,9 +867,7 @@ window.OA = (() => {
       const st = statusMap[d];
       if (tuny) {
         tr += '<td style="'+dayCellStyle(st)+';cursor:pointer" '+
-          'onclick="event.stopPropagation();OA.openDayPopup(\''+gidSafe+'\',\''+esc(d)+'\')" '+
-          'onmouseenter="event.stopPropagation();OA.showHover(event,\''+gidSafe+'\',\''+esc(d)+'\')" '+
-          'onmouseleave="OA.hideHover()">'+tuny+'</td>';
+          'data-gid="'+gidSafe+'" data-oa-action="open-day" data-oa-hover="1" data-datum="'+esc(d)+'">'+tuny+'</td>';
       } else {
         tr += '<td style="background:'+gc.bg+'"></td>';
       }
@@ -883,10 +896,7 @@ window.OA = (() => {
     const gidSafe = esc(g.order_group_id);
 
     let tr = '<tr class="oa-order-row" style="cursor:pointer" '+
-      'data-gid="'+gidSafe+'" '+
-      'onmouseenter="OA.showHover(event,\''+gidSafe+'\',\''+esc(defaultDatum)+'\')" '+
-      'onmouseleave="OA.hideHover()" '+
-      'onclick="OA.openDayPopup(\''+gidSafe+'\',\''+esc(defaultDatum)+'\')">';
+      'data-gid="'+gidSafe+'" data-oa-action="open-day" data-oa-hover="1" data-datum="'+esc(defaultDatum)+'">';
 
     // lokalita (col-lok)
     tr += '<td style="text-align:left;padding-left:6px;background:'+gc.bg+';font-size:11px;font-weight:600;color:#374151;border-left:3px solid '+gc.dot+'">'+
@@ -914,9 +924,7 @@ window.OA = (() => {
       const datum = iso(d);
       if (tuny) {
         tr += '<td style="'+dayCellStyle(st)+';cursor:pointer" '+
-          'onclick="event.stopPropagation();OA.openDayPopup(\''+gidSafe+'\',\''+esc(datum)+'\')" '+
-          'onmouseenter="event.stopPropagation();OA.showHover(event,\''+gidSafe+'\',\''+esc(datum)+'\')" '+
-          'onmouseleave="OA.hideHover()">'+tuny+'</td>';
+          'data-gid="'+gidSafe+'" data-oa-action="open-day" data-oa-hover="1" data-datum="'+esc(datum)+'">'+tuny+'</td>';
       } else {
         tr += '<td style="background:'+gc.bg+'"></td>';
       }
@@ -925,6 +933,41 @@ window.OA = (() => {
     tr += '</tr>';
     return tr;
   }
+
+  // ── P2 #5: CSS místo kosmetických inline hoverů (dropdown pozadí, badge opacity) ──
+  function _injectOAStyles() {
+    if (document.getElementById('oa-styles')) return;
+    const st = document.createElement('style');
+    st.id = 'oa-styles';
+    st.textContent =
+      '.oa-drop-row:hover{background:#f0f9ff}' +
+      '.oa-day-badge:not(.active):hover{opacity:.65}';
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  // ── P2 #5: document-level delegace pro řádky/buňky objednávek v CIZÍCH tabulkách ──
+  // (index.html / month.html / month-view.html — host stránky NEMĚNÍME). Řádky/buňky se
+  // překreslují s tabulkou; document je vždy stabilní. closest() řeší prioritu buňka>řádek
+  // (klik na buňku → buňka se svým dnem; mimo → řádek). Hover přes mouseover/mouseout (bublají).
+  function _initDocDelegation() {
+    if (_docDelegationDone) return;
+    _docDelegationDone = true;
+    document.addEventListener('click', (e) => {
+      const t = e.target.closest('[data-oa-action="open-day"]');
+      if (t) openDayPopup(t.dataset.gid, t.dataset.datum);
+    });
+    document.addEventListener('mouseover', (e) => {
+      const t = e.target.closest('[data-oa-hover]');
+      if (t) showHover(e, t.dataset.gid, t.dataset.datum);
+    });
+    document.addEventListener('mouseout', (e) => {
+      const t = e.target.closest('[data-oa-hover]');
+      if (t) hideHover();
+    });
+  }
+
+  _injectOAStyles();
+  _initDocDelegation();
 
   // ── Veřejné API ──
   return {
