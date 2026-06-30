@@ -39,20 +39,7 @@ h1{font-size:22px;font-weight:800;letter-spacing:1px;color:#1a1a2e;margin-bottom
     Odkaz lze použít pouze jednou a je vázán na vaše zařízení.
   </div>
 </div>
-<script>
-const p = new URLSearchParams(location.search);
-const err = p.get('err');
-const box = document.getElementById('errBox');
-if(err === 'used') {
-  box.style.display = 'block';
-  box.className = 'err';
-  box.textContent = 'Tento přístupový odkaz byl již použit. Požádejte správce o nový odkaz.';
-} else if(err === 'invalid') {
-  box.style.display = 'block';
-  box.className = 'err';
-  box.textContent = 'Přístupový odkaz je neplatný nebo vypršel.';
-}
-</script>
+<script src="/js/month-login.js"></script>
 
 
 </body>

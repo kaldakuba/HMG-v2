@@ -22,7 +22,7 @@ const { migrateObalovnaId, migrateSingleRowConfigUnique, migrateObalovnaSettings
 const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '4.6';
+const APP_VERSION = '4.7';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -56,6 +56,30 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
   crossOriginResourcePolicy: false,
   // hsts, noSniff, referrerPolicy, frameguard zůstávají na helmet defaults
+}));
+
+// ── P2 #5: DIAGNOSTICKÁ Report-Only CSP (NEBLOKUJE) ─────────────────────────────
+// Přísná politika BEZ 'unsafe-inline' pro skripty — jen HLÁSÍ porušení (do konzole
+// jako "[Report Only] Refused to execute inline…"), NIC nezakazuje. Ostrá CSP výše
+// (s 'unsafe-inline') zůstává jediná vynucovaná → nic se nerozbije. Slouží k mapování
+// zbývajících inline skriptů/on* handlerů před ostrým zrušením 'unsafe-inline'.
+// Zrcadlí ostrou CSP, JEN script-src je bez 'unsafe-inline' a script-src-attr 'none'.
+app.use(helmet.contentSecurityPolicy({
+  useDefaults: true,
+  reportOnly: true,
+  directives: {
+    defaultSrc:     ["'self'"],
+    scriptSrc:      ["'self'", "https://unpkg.com"],   // BEZ 'unsafe-inline' (diagnostika)
+    scriptSrcAttr:  ["'none'"],                        // zachytí inline on* handlery
+    styleSrc:       ["'self'", "'unsafe-inline'", "https://unpkg.com", "https://fonts.googleapis.com"],
+    imgSrc:         ["'self'", "data:", "blob:", "https://*.tile.openstreetmap.org", "https://unpkg.com"],
+    connectSrc:     ["'self'", "https://api.mapy.cz", "https://nominatim.openstreetmap.org"],
+    fontSrc:        ["'self'", "data:", "https://fonts.gstatic.com"],
+    frameSrc:       ["'self'", "https://www.openstreetmap.org"],
+    objectSrc:      ["'none'"],
+    baseUri:        ["'self'"],
+    frameAncestors: ["'none'"],
+  },
 }));
 
 // ── Rate limiting na login (5 pokusů / 5 minut) ──
