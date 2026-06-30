@@ -23,7 +23,7 @@ const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 const { normalizeRowsByRecipe, buildRecipeMap } = require('./lib/recipe-normalize');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '4.86';
+const APP_VERSION = '4.87';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -998,6 +998,13 @@ app.post('/api/import-excel', requireAuth, requireAdmin, uploadLimiter, upload.s
         [JSON.stringify(receptury), obalovnaId]
       );
     }
+    // SVATÉ PRAVIDLO: cislo/itt importovaných řádků srovnat s recepturou TÉTO obalovny dle názvu smes.
+    // recipeMap z receptur té obalovny (právě uložené výše, jinak stávající) — multi-tenant scoped.
+    // Normalizace má POSLEDNÍ slovo nad importním dopočtem (ittToCislo) — přepíše cislo/itt dle smes.
+    const inpRes = await pool.query('SELECT rows_json FROM inputs WHERE obalovna_id=$1', [obalovnaId]);
+    const recipeRows = inpRes.rows[0] ? JSON.parse(inpRes.rows[0].rows_json) : [];
+    const { map: recipeMap } = buildRecipeMap(recipeRows);
+    let importOsirele = 0;
     // Přepis pouze od aktuálního týdne dál (pondělí aktuálního týdne)
     const todayMonday = (() => {
       const d = new Date(); const day = d.getDay() || 7;
@@ -1006,11 +1013,16 @@ app.post('/api/import-excel', requireAuth, requireAdmin, uploadLimiter, upload.s
     })();
     for (const [ws, rows] of Object.entries(weekMap)) {
       if (ws < todayMonday) continue; // přeskoč minulé týdny
+      const { rows: normRows, osirele } = normalizeRowsByRecipe(rows, recipeMap);
+      // _osirela je jen zobrazovací příznak — do DB ho neukládáme (zachová bajtový tvar řádku).
+      for (const r of normRows) { if ('_osirela' in r) delete r._osirela; }
+      importOsirele += osirele.length;
       await pool.query(
         `INSERT INTO week_data (week_start,rows_json,obalovna_id,updated_at) VALUES($1,$2,$3,NOW()) ON CONFLICT(week_start,obalovna_id) DO UPDATE SET rows_json=EXCLUDED.rows_json,updated_at=NOW()`,
-        [ws, JSON.stringify(rows), obalovnaId]
+        [ws, JSON.stringify(normRows), obalovnaId]
       );
     }
+    if (importOsirele) console.error(`import-excel (${obalovnaId}): ${importOsirele} osiřelých řádků (smes mimo receptury) — cislo/itt ponechány`);
     if (Object.keys(hmgEntries).length > 0) {
       await pool.query(
         `INSERT INTO month_entries (id,data_json,obalovna_id,updated_at)
