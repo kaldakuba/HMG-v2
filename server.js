@@ -23,7 +23,7 @@ const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 const { normalizeRowsByRecipe, buildRecipeMap } = require('./lib/recipe-normalize');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '4.88';
+const APP_VERSION = '4.89';
 
 const app = express();
 app.set('trust proxy', 1);
