@@ -120,7 +120,14 @@ function renderHead(){
   thead.innerHTML=`<tr><th class="cap-label" colspan="2">Denní kapacita plynu:</th><th class="cap-value">${cap} m3</th><th></th><th class="sum-label" colspan="2">Součet t/den:</th>${dayKeys.map(k=>{const _v=_ds(k);const _oM=_v>maxDaily;const _uM=_v>0&&minDaily>0&&_v<minDaily;return`<th class="sum-head" style="${_oM?'background:#fee2e2!important;color:#991b1b!important;':_uM?'background:#fef9c3!important;color:#92400e!important;':''}">  ${fmtNum(_v)}</th>`;}).join('')}<th class="sum-head">${fmtNum(total)}</th><th class="sel-col"></th></tr><tr style='height:38px'><th>č.</th><th>lokalita</th><th>objednávka</th><th>Směs a průkazná zk. typu</th><th>ITT</th><th>četa</th>${dates.map((d,i)=>{const hol=isHolidayIso(d);const we=i>=5;const cls=hol?'holiday-day':(we?'gray-day':'blue-day');const col=hol?'#15803d':(we?'#9a9a9a':'#555');return `<th class="${cls}" style="color:${col}">${fmtShort(d)}${hol?`<div style="font-size:9px;font-weight:600;color:#15803d;line-height:1">svátek</div>`:''}</th>`;}).join('')}<th>souhrn</th><th class='sel-col'>✓</th></tr>`;
 }
 
-function selectOptions(values,current){return `<option value=""></option>${values.map(v=>`<option value="${esc(v)}" ${String(v)===String(current||'')?'selected':''}>${esc(v)}</option>`).join('')}`}
+function selectOptions(values,current){
+  // Pojistka: pokud aktuální (uložená/osiřelá) hodnota není v seznamu receptur, přidej ji jako
+  // vybranou option, aby se VŽDY zobrazila (osiřelé pak obarví třída .oa-orphan na <select>).
+  const cur=String(current||'');
+  const known=cur===''||values.some(v=>String(v)===cur);
+  const extra=known?'':`<option value="${esc(cur)}" selected>${esc(cur)}</option>`;
+  return `<option value=""></option>${extra}${values.map(v=>`<option value="${esc(v)}" ${String(v)===cur?'selected':''}>${esc(v)}</option>`).join('')}`;
+}
 
 function buildWeekOrderRowsHtml(){
   // Reset per-day order sums (also clears them when non-admin)
@@ -155,10 +162,15 @@ function render(){
   const orderHtml=buildWeekOrderRowsHtml(); // updates _weekOrderDaySums for renderHead
   renderHead();
   const rows=_rows;const nums=uniq(_mixes.map(x=>x.cislo));const smesi=uniq(_mixes.map(x=>x.smes));const itts=uniq(_mixes.map(x=>x.zt||x.itt));
+  // B2 (svaté pravidlo): cislo/itt zobrazit ŽIVĚ z receptury dle názvu smes (recipeMap z _mixes,
+  // tj. /api/inputs této obalovny). Osiřelá smes → uložená hodnota + třída .oa-orphan (červeně).
+  const _recipeMap=(typeof buildRecipeMap==='function')?buildRecipeMap(_mixes).map:{};
   let html='';
   rows.forEach((r,i)=>{
     const color=companyColor(r.ceta);
-    html+=`<tr class="${r.checked?'row-checked':''}" style="${color?'background:'+color:''}"><td style="background:#f8fafc;font-weight:800;font-size:13px"><select class="select-cell" style="font-weight:800" data-act="mix" data-key="cislo" data-i="${i}">${selectOptions(nums,r.cislo)}</select></td><td style="position:relative"><input class="editable" style="padding-right:20px" value="${esc(r.lokalita||'')}" data-act="cell" data-key="lokalita" data-i="${i}"><button class="gps-btn${r.lat?' has-gps':''}" type="button" data-act="gps" data-i="${i}" title="${r.lat?'GPS: '+Number(r.lat).toFixed(4)+', '+Number(r.lng).toFixed(4):'Nastavit GPS'}">📍</button></td><td><input class="editable" value="${esc(r.objednavka||'')}" data-act="cell" data-key="objednavka" data-i="${i}"></td><td><select class="select-cell" data-act="mix" data-key="smes" data-i="${i}">${selectOptions(smesi,r.smes)}</select></td><td><select class="select-cell" data-act="mix" data-key="itt" data-i="${i}">${selectOptions(itts,r.itt)}</select></td><td><select class="select-cell" data-act="cell" data-key="ceta" data-i="${i}"><option value=""></option>${_companies.map(c=>`<option value="${esc(c.name)}" ${c.name===(r.ceta||'')?'selected':''}>${esc(c.name)}</option>`).join('')}</select></td>`;
+    const _res=(typeof resolveCisloItt==='function')?resolveCisloItt(r.smes,r.cislo,r.itt,_recipeMap):{cislo:r.cislo,itt:r.itt,osirela:false};
+    const _oc=_res.osirela?' oa-orphan':'';
+    html+=`<tr class="${r.checked?'row-checked':''}" style="${color?'background:'+color:''}"><td style="background:#f8fafc;font-weight:800;font-size:13px"><select class="select-cell${_oc}" style="font-weight:800" data-act="mix" data-key="cislo" data-i="${i}">${selectOptions(nums,_res.cislo)}</select></td><td style="position:relative"><input class="editable" style="padding-right:20px" value="${esc(r.lokalita||'')}" data-act="cell" data-key="lokalita" data-i="${i}"><button class="gps-btn${r.lat?' has-gps':''}" type="button" data-act="gps" data-i="${i}" title="${r.lat?'GPS: '+Number(r.lat).toFixed(4)+', '+Number(r.lng).toFixed(4):'Nastavit GPS'}">📍</button></td><td><input class="editable" value="${esc(r.objednavka||'')}" data-act="cell" data-key="objednavka" data-i="${i}"></td><td><select class="select-cell${_oc}" data-act="mix" data-key="smes" data-i="${i}">${selectOptions(smesi,r.smes)}</select></td><td><select class="select-cell${_oc}" data-act="mix" data-key="itt" data-i="${i}">${selectOptions(itts,_res.itt)}</select></td><td><select class="select-cell" data-act="cell" data-key="ceta" data-i="${i}"><option value=""></option>${_companies.map(c=>`<option value="${esc(c.name)}" ${c.name===(r.ceta||'')?'selected':''}>${esc(c.name)}</option>`).join('')}</select></td>`;
     dayKeys.forEach((k,di)=>{const dv=r[k]?fmtNum(n(r[k])||0)||"":"";const _d=isoDateFromStart(_weekStart,di);const _cls=isHolidayIso(_d)?'holiday-day':(di>=5?'gray-day':'blue-day');html+=`<td class="${_cls}"><input class="day-input" inputmode="numeric" value="${esc(dv)}" data-act="day" data-key="${k}" data-i="${i}"></td>`;});
     html+=`<td class="row-total">${fmtNum(rowSum(r))}</td><td class="sel-col" style="background:#f8fafc"><input type="checkbox" ${r.checked?'checked':''} data-act="check" data-i="${i}"></td></tr>`;
   });

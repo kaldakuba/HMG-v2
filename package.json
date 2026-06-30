@@ -1,6 +1,6 @@
 {
   "name": "harmonogram-vyroby",
-  "version": "4.89.0",
+  "version": "4.90.0",
   "description": "Harmonogram výroby - webová aplikace",
   "main": "server.js",
   "author": "Jakub Kalousek",

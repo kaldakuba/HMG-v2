@@ -95,6 +95,8 @@ input[type=checkbox]:checked::after{content:"";position:absolute;left:4px;top:1p
 /* Logout tlačítko — kosmetický hover (přesunuto z inline onmouseenter/leave kvůli CSP) */
 .logout-btn{background:transparent}
 .logout-btn:hover{background:#fff1f2}
+/* Osiřelá směs (B2): smes/cislo/itt mimo aktuální receptury → zobraz uloženou hodnotu červeně. */
+.oa-orphan{color:#dc2626!important;font-weight:700}
 /* GPS tlačítko v buňce lokalita */
 .gps-btn{position:absolute;right:2px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:12px;padding:1px 2px;border-radius:3px;opacity:.35;line-height:1;z-index:1;transition:opacity .15s}
 .gps-btn:hover{opacity:1;background:#f3f4f6}
@@ -215,5 +217,6 @@ body.mobile-ro .hours-row td{height:18px;font-size:9px}
   <button id="logoutBtn" class="logout-btn" style="display:inline-flex;align-items:center;gap:6px;border:1px solid #fca5a5;border-radius:6px;color:#dc2626;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;padding:6px 14px;line-height:1;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Odhlásit se</button>
 </div>
 
+<script src="/js/recipe-normalize.js"></script>
 <script src="/js/index-page.js"></script>
 </body></html>
