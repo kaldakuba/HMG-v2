@@ -22,6 +22,7 @@ module.exports = {
         '<rootDir>/__tests__/audit.test.js',
         '<rootDir>/__tests__/create-demo.test.js',
         '<rootDir>/__tests__/id-validation.test.js',
+        '<rootDir>/__tests__/authz-export-obalovna.test.js',
       ],
     },
 

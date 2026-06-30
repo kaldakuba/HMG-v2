@@ -109,7 +109,7 @@ tr.row-hover td,td.col-hover{background:#fefce8!important}
 </header>
 <main class="wrap"><section class="card">
   <div class="month-toolbar">
-    <button class="btn export" onclick="exportMonth()">Export dat</button>
+    <button class="btn export" id="exportMonthBtn" onclick="exportMonth()">Export dat</button>
     <div class="right">
       <button id="btnNewOrder" onclick="openOrderPopup()" style="display:none">+ Nová objednávka</button>
       <button id="btnPrev" class="btn gray" onclick="shiftMonth(-1)">‹ Předchozí</button>
@@ -207,6 +207,11 @@ async function checkAccess() {
       _meUsername = me.username || '';
       _meFirma = me.firma || '';
       _meOrdersAllowed = !!me.orders_allowed;
+      // Operátor nemá Export dat (měsíční harmonogram); admin a hmg_share beze změny.
+      if (me.role === 'operator') {
+        const exportBtn = document.getElementById('exportMonthBtn');
+        if (exportBtn) exportBtn.style.display = 'none';
+      }
       const emailEl = document.getElementById('viewerEmail');
       if (emailEl && me.username) emailEl.textContent = me.username;
       const ha = document.getElementById('hdrAvatar');

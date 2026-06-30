@@ -22,7 +22,7 @@ const { migrateObalovnaId, migrateSingleRowConfigUnique, migrateObalovnaSettings
 const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '4.2';
+const APP_VERSION = '4.3';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -663,6 +663,8 @@ app.get('/api/weeks', requireAuth, async (req, res) => {
 // Export měsíčního harmonogramu: .xlsx, 12 listů (Leden…Prosinec) pro daný rok (default = aktuální).
 // Přístup jako month-view (requireAuth) — vidí admin/operátor/hmg_share, všechny firmy.
 app.get('/api/month/export', requireAuth, async (req, res) => {
+  // Operátor nemá export harmonogramu (admin a hmg_share beze změny).
+  if (req.session.role === 'operator') return res.status(403).json({ error: 'Nemáte oprávnění' });
   try {
     let year = parseInt(req.query.year, 10);
     if (isNaN(year) || year < 2000 || year > 2100) year = new Date().getFullYear();
@@ -796,6 +798,8 @@ app.post('/api/settings', requireAuth, requireAdmin, async (req, res) => {
 });
 
 app.get('/api/export', requireAuth, requireOperator, async (req, res) => {
+  // Operátor nemá export harmonogramu (jen admin).
+  if (req.session.role === 'operator') return res.status(403).json({ error: 'Nemáte oprávnění' });
   const r = await pool.query(
     'SELECT week_start,rows_json FROM week_data WHERE obalovna_id=$1 ORDER BY week_start', [getObalovnaId(req)]);
   res.json({
@@ -1067,6 +1071,8 @@ app.get('/api/superadmin/prehled', requireAuth, requireSuperadmin, async (req, r
 // Obsazení obalovny: uživatelé podle rolí (jména; u hmg_share i firma). Bez superadmina.
 app.get('/api/superadmin/obalovny/:id/obsazeni', requireAuth, requireSuperadmin, async (req, res) => {
   try {
+    const exists = await pool.query('SELECT 1 FROM obalovny WHERE id=$1', [req.params.id]);
+    if (exists.rowCount === 0) return res.status(404).json({ error: 'Obalovna nenalezena' });
     const r = await pool.query(
       `SELECT username, role, firma FROM users
        WHERE obalovna_id=$1 AND role <> 'superadmin'
@@ -1094,6 +1100,8 @@ app.get('/api/superadmin/obalovny/:id/obsazeni', requireAuth, requireSuperadmin,
 app.get('/api/superadmin/obalovny/:id/metriky', requireAuth, requireSuperadmin, async (req, res) => {
   try {
     const id = req.params.id;
+    const exists = await pool.query('SELECT 1 FROM obalovny WHERE id=$1', [id]);
+    if (exists.rowCount === 0) return res.status(404).json({ error: 'Obalovna nenalezena' });
     const [r, moduly, oeRes, lbRes] = await Promise.all([
       pool.query(
         `SELECT
@@ -2310,6 +2318,8 @@ app.get('/settings', requireAuth, requireAdmin, (req, res) => {
 
 
 app.get('/api/export-excel', requireAuth, requireOperator, async (req, res) => {
+  // Operátor nemá export harmonogramu (jen admin).
+  if (req.session.role === 'operator') return res.status(403).json({ error: 'Nemáte oprávnění' });
   const obalovnaId = getObalovnaId(req);
   const [weeks, inputs] = await Promise.all([
     pool.query('SELECT week_start,rows_json FROM week_data WHERE obalovna_id=$1 ORDER BY week_start', [obalovnaId]),
