@@ -22,7 +22,7 @@ const { migrateObalovnaId, migrateSingleRowConfigUnique, migrateObalovnaSettings
 const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '4.4';
+const APP_VERSION = '4.5';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -2861,6 +2861,56 @@ app.post('/api/orders', requireAuth, requireOrdersEnabled, async (req, res) => {
   }
 });
 
+// ── Sdílená write-propagace objednávky do week_data (P2 #4, DRY) ───────────────
+// JEN mechanika zápisu (read-merge-upsert per týden). BEZ try/catch a BEZ logování —
+// chování (best-effort vs fatal) i log řídí VOLAJÍCÍ. Zdroj `items` (které řádky) určuje
+// volající (approve = celá skupina, finalize = jen nově schválené). `obalovnaId` povinné
+// (cross-tenant pojistka). `dbExec` = executor s .query (pool nebo client) — funkce o
+// kontextu NErozhoduje; volající předá to, co dnes používá (oba dnes pool).
+// items: [{ datum, smes, itt, tuny, lokalita, lat, lng, firma }]. Vrací počet dotčených týdnů.
+async function propagateOrderToWeekData(items, obalovnaId, dbExec) {
+  if (!obalovnaId) throw new Error('propagateOrderToWeekData: chybí obalovna_id');
+  const db = dbExec || pool;
+  const byWeek = {};
+  for (const item of items) {
+    const datum = item.datum instanceof Date
+      ? item.datum.toISOString().slice(0, 10)
+      : String(item.datum).slice(0, 10);
+    const d = new Date(datum + 'T00:00:00Z');
+    const daysFromMonday = (d.getUTCDay() + 6) % 7;
+    const monday = new Date(d);
+    monday.setUTCDate(d.getUTCDate() - daysFromMonday);
+    const weekStart = monday.toISOString().slice(0, 10);
+    if (!byWeek[weekStart]) byWeek[weekStart] = [];
+    byWeek[weekStart].push({ ...item, datum, di: daysFromMonday });
+  }
+  for (const [weekStart, weekItems] of Object.entries(byWeek)) {
+    const wRes = await db.query('SELECT rows_json FROM week_data WHERE week_start=$1 AND obalovna_id=$2', [weekStart, obalovnaId]);
+    const rows = wRes.rows[0] ? JSON.parse(wRes.rows[0].rows_json) : [];
+    for (const item of weekItems) {
+      const newRow = {
+        checked: false, cislo: '',
+        lokalita: item.lokalita || '',
+        objednavka: item.firma || '',
+        smes: item.smes || '',
+        itt: item.itt || '',
+        ceta: item.firma || '',
+        lat: item.lat != null ? parseFloat(item.lat) : null,
+        lng: item.lng != null ? parseFloat(item.lng) : null,
+        d0: 0, d1: 0, d2: 0, d3: 0, d4: 0, d5: 0, d6: 0
+      };
+      newRow[`d${item.di}`] = parseInt(item.tuny) || 0;
+      rows.push(newRow);
+    }
+    await db.query(
+      `INSERT INTO week_data (week_start, rows_json, obalovna_id, updated_at) VALUES($1, $2, $3, NOW())
+       ON CONFLICT(week_start,obalovna_id) DO UPDATE SET rows_json=EXCLUDED.rows_json, updated_at=NOW()`,
+      [weekStart, JSON.stringify(rows), obalovnaId]
+    );
+  }
+  return Object.keys(byWeek).length;
+}
+
 // PATCH /api/orders/:groupId/approve — admin schválí skupinu
 // Bez body (nebo {confirm:false}): jen zkontroluje kapacitu, nic neschvaluje
 // S body {confirm:true}: skutečně schválí (vždy, i pokud překračuje max)
@@ -2953,53 +3003,16 @@ app.patch('/api/orders/:groupId/approve', requireAuth, requireAdmin, requireOrde
     if (r.rowCount === 0) return res.status(404).json({ error: 'Skupina nenalezena nebo již vyřešena' });
     console.log(`Objednávka ${groupId} schválena adminem ${req.session.username} (exceedsMax:${exceedsMax})`);
 
-    // Propagace schválené objednávky do week_data harmonogramu
+    // Propagace schválené objednávky do week_data harmonogramu.
+    // BEST-EFFORT: chyba propagace NEshodí approve (request vrátí 200), jen se zaloguje.
     try {
       const itemsRes = await pool.query(
         `SELECT datum, smes, itt, tuny, lokalita, lat, lng, firma
          FROM orders WHERE order_group_id=$1`,
         [groupId]
       );
-      const byWeek = {};
-      for (const item of itemsRes.rows) {
-        const datum = item.datum instanceof Date
-          ? item.datum.toISOString().slice(0, 10)
-          : String(item.datum).slice(0, 10);
-        const d = new Date(datum + 'T00:00:00Z');
-        const dow = d.getUTCDay();
-        const daysFromMonday = (dow + 6) % 7;
-        const monday = new Date(d);
-        monday.setUTCDate(d.getUTCDate() - daysFromMonday);
-        const weekStart = monday.toISOString().slice(0, 10);
-        const di = daysFromMonday;
-        if (!byWeek[weekStart]) byWeek[weekStart] = [];
-        byWeek[weekStart].push({ ...item, datum, di });
-      }
-      for (const [weekStart, weekItems] of Object.entries(byWeek)) {
-        const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1 AND obalovna_id=$2', [weekStart, obalovnaId]);
-        const rows = wRes.rows[0] ? JSON.parse(wRes.rows[0].rows_json) : [];
-        for (const item of weekItems) {
-          const newRow = {
-            checked: false, cislo: '',
-            lokalita: item.lokalita || '',
-            objednavka: item.firma || '',
-            smes: item.smes || '',
-            itt: item.itt || '',
-            ceta: item.firma || '',
-            lat: item.lat != null ? parseFloat(item.lat) : null,
-            lng: item.lng != null ? parseFloat(item.lng) : null,
-            d0: 0, d1: 0, d2: 0, d3: 0, d4: 0, d5: 0, d6: 0
-          };
-          newRow[`d${item.di}`] = parseInt(item.tuny) || 0;
-          rows.push(newRow);
-        }
-        await pool.query(
-          `INSERT INTO week_data (week_start, rows_json, obalovna_id, updated_at) VALUES($1, $2, $3, NOW())
-           ON CONFLICT(week_start,obalovna_id) DO UPDATE SET rows_json=EXCLUDED.rows_json, updated_at=NOW()`,
-          [weekStart, JSON.stringify(rows), obalovnaId]
-        );
-      }
-      console.log(`Objednávka ${groupId} propsána do ${Object.keys(byWeek).length} týdnů v harmonogramu`);
+      const n = await propagateOrderToWeekData(itemsRes.rows, obalovnaId, pool);
+      console.log(`Objednávka ${groupId} propsána do ${n} týdnů v harmonogramu`);
     } catch (propErr) {
       console.error(`Chyba při propsání objednávky ${groupId} do harmonogramu:`, propErr.message);
     }
@@ -3223,38 +3236,10 @@ app.patch('/api/orders/:groupId/finalize', requireAuth, requireAdmin, requireOrd
       );
       await client.query('COMMIT');
 
-      // Propsat schválené do week_data
+      // Propsat schválené do week_data — přes POOL až PO COMMITu (transakce je uzavřená).
+      // FATAL: chyba propagace propadne do vnějšího catch → 500 (ROLLBACK je no-op po commitu).
       if (approvedRows.rows.length > 0) {
-        const byWeek = {};
-        for (const item of approvedRows.rows) {
-          const datum = item.datum instanceof Date ? item.datum.toISOString().slice(0,10) : String(item.datum).slice(0,10);
-          const d = new Date(datum + 'T00:00:00Z');
-          const daysFromMonday = (d.getUTCDay() + 6) % 7;
-          const monday = new Date(d);
-          monday.setUTCDate(d.getUTCDate() - daysFromMonday);
-          const weekStart = monday.toISOString().slice(0,10);
-          if (!byWeek[weekStart]) byWeek[weekStart] = [];
-          byWeek[weekStart].push({ ...item, datum, di: daysFromMonday });
-        }
-        for (const [weekStart, weekItems] of Object.entries(byWeek)) {
-          const wRes = await pool.query('SELECT rows_json FROM week_data WHERE week_start=$1 AND obalovna_id=$2', [weekStart, obalovnaId]);
-          const rows = wRes.rows[0] ? JSON.parse(wRes.rows[0].rows_json) : [];
-          for (const item of weekItems) {
-            const newRow = {
-              checked:false,cislo:'',lokalita:item.lokalita||'',objednavka:item.firma||'',
-              smes:item.smes||'',itt:item.itt||'',ceta:item.firma||'',
-              lat:item.lat!=null?parseFloat(item.lat):null,lng:item.lng!=null?parseFloat(item.lng):null,
-              d0:0,d1:0,d2:0,d3:0,d4:0,d5:0,d6:0
-            };
-            newRow[`d${item.di}`] = parseInt(item.tuny)||0;
-            rows.push(newRow);
-          }
-          await pool.query(
-            `INSERT INTO week_data(week_start,rows_json,obalovna_id,updated_at) VALUES($1,$2,$3,NOW())
-             ON CONFLICT(week_start,obalovna_id) DO UPDATE SET rows_json=EXCLUDED.rows_json,updated_at=NOW()`,
-            [weekStart, JSON.stringify(rows), obalovnaId]
-          );
-        }
+        await propagateOrderToWeekData(approvedRows.rows, obalovnaId, pool);
         console.log(`Objednávka ${groupId} finalizována: ${approvedRows.rows.length} řádků do harmonogramu`);
       }
       res.json({ ok: true, approved: approvedRows.rows.length });
@@ -4079,6 +4064,8 @@ if (require.main === module) {
     isIsoDate, isIntOrEmpty, sanitizeStr, validateRows, fv, fmtDateCz, escHtml,
     // Záloha + obnova (Tier 1 integrační)
     sendBackup, collectObalovnaSnapshot, listObalovnyForBackup, restoreFromSnapshot,
+    // Objednávkový tok — sdílená write-propagace do week_data (Tier 1)
+    propagateOrderToWeekData,
     // Multi-obalovna (Tier 1 unit) — aktivní obalovna + superadmin gate + pojistka + moduly
     getObalovnaId, requireSuperadmin, isLastSuperadmin, normalizeModuly, generateTempPassword,
     // HTTP + DB přístup (Tier 2 supertest)
