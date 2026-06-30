@@ -23,7 +23,7 @@ const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 const { normalizeRowsByRecipe, buildRecipeMap } = require('./lib/recipe-normalize');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '4.90';
+const APP_VERSION = '4.91';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -774,6 +774,29 @@ app.post('/api/inputs', requireAuth, requireAdmin, async (req, res) => {
     [JSON.stringify(rows), getObalovnaId(req)]
   );
   res.json({ ok: true });
+});
+
+// Read-only: kolik řádků harmonogramu / které týdny používají danou směs (dle názvu smes).
+// Guard pro mazání receptury (frontend se ptá PŘED smazáním). Scoped na obalovna_id ze session.
+// NEMĚNÍ data — jen SELECT. Mazání samotné jde dál přes POST /api/inputs (week_data se NEdotýká).
+app.get('/api/inputs/usage', requireAuth, requireAdmin, async (req, res) => {
+  const smes = String(req.query.smes || '').trim();
+  if (!smes) return res.json({ smes: '', rowCount: 0, weeks: [] });
+  const obalovnaId = getObalovnaId(req);
+  const wd = await pool.query('SELECT week_start, rows_json FROM week_data WHERE obalovna_id=$1 ORDER BY week_start', [obalovnaId]);
+  let rowCount = 0;
+  const weeks = [];
+  for (const w of wd.rows) {
+    let rows;
+    try { rows = JSON.parse(w.rows_json); } catch (e) { continue; }
+    const cnt = rows.filter(r => String(r.smes || '').trim() === smes).length;
+    if (cnt > 0) {
+      rowCount += cnt;
+      const ws = (w.week_start instanceof Date) ? w.week_start.toISOString().slice(0, 10) : String(w.week_start).slice(0, 10);
+      weeks.push(ws);
+    }
+  }
+  res.json({ smes, rowCount, weeks });
 });
 
 app.get('/api/companies', requireAuth, async (req, res) => {

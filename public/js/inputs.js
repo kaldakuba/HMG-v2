@@ -27,7 +27,26 @@ function render(){renderHead();const b=document.getElementById('mixBody');b.inne
 function selectRow(idx){selectedIndex=idx;render()}
 function updateSelectedInfo(){selectedInfo.textContent=selectedIndex===null?'Není označen žádný řádek':'Označen řádek: '+(selectedIndex+1)}
 function snapshot(){undoStack.push(JSON.stringify(loadRows()));if(undoStack.length>20)undoStack.shift()}
-function deleteSelectedRow(){if(selectedIndex===null){alert('Nejdřív klikni na řádek tabulky, který chceš smazat.');return}const rows=loadRows();const r=rows[selectedIndex];if(!confirm('Smazat označený řádek: '+((r&&r.smes)||'bez názvu')+'?'))return;snapshot();rows.splice(selectedIndex,1);saveRows(rows);selectedIndex=null;render()}
+async function deleteSelectedRow(){
+  if(selectedIndex===null){alert('Nejdřív klikni na řádek tabulky, který chceš smazat.');return}
+  const rows=loadRows();const r=rows[selectedIndex];
+  const smes=((r&&r.smes)||'').trim();
+  // Guard: zjisti použití směsi v harmonogramu (read-only). Použitou recepturu lze smazat,
+  // ale řádky harmonogramu ZŮSTANOU a zobrazí se červeně (osiřelé) — na to upozorni.
+  let msg='Smazat označený řádek: '+((r&&r.smes)||'bez názvu')+'?';
+  if(smes){
+    try{
+      const u=await fetch('/api/inputs/usage?smes='+encodeURIComponent(smes)).then(x=>x.json());
+      if(u&&u.rowCount>0){
+        msg='Směs „'+smes+'" je použita v '+u.rowCount+' řádcích harmonogramu (týdny: '+(u.weeks||[]).join(', ')+').\n\n'
+          +'Po smazání receptury řádky v harmonogramu ZŮSTANOU, ale zobrazí se ČERVENĚ jako osiřelé.\n\n'
+          +'Opravdu smazat recepturu?';
+      }
+    }catch(e){/* síťová chyba → spadne na běžné potvrzení */}
+  }
+  if(!confirm(msg))return;
+  snapshot();rows.splice(selectedIndex,1);saveRows(rows);selectedIndex=null;render();
+}
 function undoLast(){if(!undoStack.length){alert('Není co vrátit zpět.');return}saveRows(JSON.parse(undoStack.pop()));selectedIndex=null;render()}
 function updateTotal(){let total=0;sumCols.forEach(c=>total+=parseNumber(document.getElementById('in_'+c)?.value));in_celkem.value=formatNumber(total);in_celkem.classList.toggle('total-ok',Math.abs(total-100)<0.05);in_celkem.classList.toggle('total-bad',Math.abs(total-100)>=0.05)}
 function isTotalOk(){return Math.abs(parseNumber(in_celkem.value)-100)<0.05}
