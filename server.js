@@ -23,7 +23,7 @@ const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 const { normalizeRowsByRecipe, buildRecipeMap } = require('./lib/recipe-normalize');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '4.87';
+const APP_VERSION = '4.88';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -2919,6 +2919,12 @@ app.post('/api/orders', requireAuth, requireOrdersEnabled, async (req, res) => {
 async function propagateOrderToWeekData(items, obalovnaId, dbExec) {
   if (!obalovnaId) throw new Error('propagateOrderToWeekData: chybí obalovna_id');
   const db = dbExec || pool;
+  // SVATÉ PRAVIDLO: cislo/itt propagovaného řádku srovnat s recepturou TÉ obalovny dle názvu smes.
+  // recipeMap přes TÝŽ executor (db) a TÝŽ obalovna_id jako zápis week_data — multi-tenant scoped.
+  // (Chyba čtení se chová jako dnešní SELECT week_data → best-effort u approve / fatal u finalize.)
+  const inpRes = await db.query('SELECT rows_json FROM inputs WHERE obalovna_id=$1', [obalovnaId]);
+  const recipeRows = inpRes.rows[0] ? JSON.parse(inpRes.rows[0].rows_json) : [];
+  const { map: recipeMap } = buildRecipeMap(recipeRows);
   const byWeek = {};
   for (const item of items) {
     const datum = item.datum instanceof Date
@@ -2948,7 +2954,12 @@ async function propagateOrderToWeekData(items, obalovnaId, dbExec) {
         d0: 0, d1: 0, d2: 0, d3: 0, d4: 0, d5: 0, d6: 0
       };
       newRow[`d${item.di}`] = parseInt(item.tuny) || 0;
-      rows.push(newRow);
+      // Normalizace JEN nového řádku (existující řádky týdne se NEdotýkáme).
+      // Osiřelá smes (mimo receptury) → cislo/itt beze změny; _osirela do DB neukládáme.
+      const { rows: normed } = normalizeRowsByRecipe([newRow], recipeMap);
+      const finalRow = normed[0];
+      if ('_osirela' in finalRow) delete finalRow._osirela;
+      rows.push(finalRow);
     }
     await db.query(
       `INSERT INTO week_data (week_start, rows_json, obalovna_id, updated_at) VALUES($1, $2, $3, NOW())

@@ -27,6 +27,7 @@ module.exports = {
         '<rootDir>/__tests__/recipe-normalize.test.js',
         '<rootDir>/__tests__/week-normalize.test.js',
         '<rootDir>/__tests__/import-excel-normalize.test.js',
+        '<rootDir>/__tests__/propagate-order-normalize.test.js',
       ],
     },
 
