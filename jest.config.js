@@ -25,6 +25,7 @@ module.exports = {
         '<rootDir>/__tests__/authz-export-obalovna.test.js',
         '<rootDir>/__tests__/propagate-order.test.js',
         '<rootDir>/__tests__/recipe-normalize.test.js',
+        '<rootDir>/__tests__/week-normalize.test.js',
       ],
     },
 

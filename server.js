@@ -20,9 +20,10 @@ const { buildMonthWorkbook } = require('./lib/month-export');
 const { migrateObalovny, listObalovny, normalizeModuly, getObalovnaModuly, updateObalovnaModuly } = require('./lib/obalovny');
 const { migrateObalovnaId, migrateSingleRowConfigUnique, migrateObalovnaSettings, migrateWeekDataCompositePk } = require('./lib/obalovna-id');
 const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
+const { normalizeRowsByRecipe, buildRecipeMap } = require('./lib/recipe-normalize');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '4.85';
+const APP_VERSION = '4.86';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -674,10 +675,21 @@ app.post('/api/week/:start', requireAuth, requireAdmin, async (req, res) => {
     lat: (r.lat != null && isFinite(+r.lat)) ? +r.lat : null,
     lng: (r.lng != null && isFinite(+r.lng)) ? +r.lng : null,
   }));
+  const obalovnaId = getObalovnaId(req);   // scope JEN ze session (NE z body/URL)
+  // SVATÉ PRAVIDLO: cislo/itt srovnat s recepturou DANÉ obalovny dle názvu smes.
+  // recipeMap MUSÍ být z receptur TÉŽE obalovny jako ukládaný týden (multi-tenant pojistka).
+  const inpRes = await pool.query('SELECT rows_json FROM inputs WHERE obalovna_id=$1', [obalovnaId]);
+  const recipeRows = inpRes.rows[0] ? JSON.parse(inpRes.rows[0].rows_json) : [];
+  const { map: recipeMap } = buildRecipeMap(recipeRows);
+  const { rows: normRows, osirele } = normalizeRowsByRecipe(safeRows, recipeMap);
+  // Osiřelé (smes mimo receptury): cislo/itt NEMĚNIT (historická pravda), neodmítat uložení.
+  // _osirela je jen zobrazovací příznak — do DB ho neukládáme (zachová bajtový tvar řádku).
+  for (const r of normRows) { if ('_osirela' in r) delete r._osirela; }
+  if (osirele.length) console.error(`POST /api/week ${req.params.start} (${obalovnaId}): ${osirele.length} osiřelých řádků (smes mimo receptury) — cislo/itt ponechány`);
   await pool.query(
     `INSERT INTO week_data (week_start,rows_json,obalovna_id,updated_at) VALUES($1,$2,$3,NOW())
      ON CONFLICT(week_start,obalovna_id) DO UPDATE SET rows_json=EXCLUDED.rows_json, updated_at=NOW()`,
-    [req.params.start, JSON.stringify(safeRows), getObalovnaId(req)]
+    [req.params.start, JSON.stringify(normRows), obalovnaId]
   );
   res.json({ ok: true });
 });
