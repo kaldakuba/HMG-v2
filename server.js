@@ -22,7 +22,7 @@ const { migrateObalovnaId, migrateSingleRowConfigUnique, migrateObalovnaSettings
 const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '4.3';
+const APP_VERSION = '4.4';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -366,7 +366,13 @@ app.use(session({
 // HTML soubory jsou chráněny přes explicitní routes níže
 app.use(express.static(path.join(__dirname, 'public'), {
   index: false,  // Nezobrazovat index.html automaticky
-  extensions: [] // Nezkoušet přidat přípony
+  extensions: [], // Nezkoušet přidat přípony
+  setHeaders: (res, filePath) => {
+    // PWA manifest se správným MIME (jinak by .json bylo application/json).
+    if (filePath.endsWith('manifest.json')) {
+      res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+    }
+  }
 }));
 
 // ── Rate-limit zápisových mutací (POST/PUT/PATCH/DELETE) na vybrané prefixy ──
