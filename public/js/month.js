@@ -12,6 +12,7 @@ let _weekStarts = []; // seřazené pondělky pro určení hranic týdnů
 let _isAdmin = false;
 let _ordersEnabled = true; // přepínač objednávkového systému (načteno ze settings)
 let _monthOrderDaySums = {}; // keyed by iso date – přidané tuny z pending objednávek
+let _receptury = []; // receptury (/api/inputs) pro B2 živé cislo/itt; ve /share bez session zůstane prázdné → B2 off
 
 function n(v){const x=parseInt(String(v||'').replace(/\D+/g,''),10);return isNaN(x)?0:x}
 function cc(name){return _companies.find(x=>x.name===name)||{color:'',text:'#111'}}
@@ -114,6 +115,8 @@ function render(){
   const _mc=document.getElementById('monthContext');if(_mc)_mc.textContent=monthName(m)+' '+y;
   const days=new Date(y,m+1,0).getDate();
   const rows=rowsForMonth(y,m);
+  // B2: recipeMap z receptur (pokud dostupné). Prázdné/nedostupné (/share) → null → B2 off.
+  const _recipeMap=(_receptury && _receptury.length && typeof buildRecipeMap==='function')?buildRecipeMap(_receptury).map:null;
 
   // Hlavička - datumy
   const dayIds=[];
@@ -167,10 +170,18 @@ function render(){
       const firma=cc(r.ceta);
       const bg=firma.color?'background:'+firma.color+';color:#111;':'';
       const sepClass=r._firstInWeek?'week-sep':'';
+      // B2 (svaté pravidlo): itt ŽIVĚ z receptury dle smes. Osiřelá → oa-orphan (červeně).
+      // Fallback: recipeMap null (např. /share bez receptur) → uložené hodnoty, žádné červené.
+      let _itt=r.itt, _orphan=false;
+      if(_recipeMap && typeof resolveCisloItt==='function'){
+        const _res=resolveCisloItt(r.smes,r.cislo||'',r.itt,_recipeMap);
+        _itt=_res.itt; _orphan=_res.osirela;
+      }
+      const _ocls=_orphan?' class="oa-orphan"':'';
       h+='<tr class="'+sepClass+'"><td style="text-align:left;padding-left:8px;'+bg+'">'+esc(r.lokalita)+'</td>';
       h+='<td style="'+((!r.objednavka)?'background:#fff;border:1px solid #374151;':bg)+'">'+esc(r.objednavka)+'</td>';
-      h+='<td style="text-align:center;'+bg+'">'+esc(r.smes)+'</td>';
-      h+='<td style="font-size:11px;'+bg+'">'+esc(r.itt)+'</td><td style="'+bg+'font-weight:500">'+esc(r.ceta)+'</td>';
+      h+='<td'+_ocls+' style="text-align:center;'+bg+'">'+esc(r.smes)+'</td>';
+      h+='<td'+_ocls+' style="font-size:11px;'+bg+'">'+esc(_itt)+'</td><td style="'+bg+'font-weight:500">'+esc(r.ceta)+'</td>';
       for(let d=1;d<=days;d++){
         const id=iso(y,m,d);
         const dc=dayClass(id);
@@ -234,12 +245,15 @@ function updateNavButtons() {
 
 async function init(){
   try{
-    const[companies,weeks,settings]=await Promise.all([
+    const[companies,weeks,settings,receptury]=await Promise.all([
       fetch('/api/companies').then(r=>r.json()).catch(()=>null),
       fetch('/api/weeks').then(r=>r.json()).catch(()=>[]),
-      fetch('/api/settings').then(r=>r.json()).catch(()=>({}))
+      fetch('/api/settings').then(r=>r.json()).catch(()=>({})),
+      // B2: receptury pro živé cislo/itt. Ve /share (bez session) vrátí 401 → null → B2 off (žádné falešné červené).
+      fetch('/api/inputs').then(r=>r.ok?r.json():null).catch(()=>null)
     ]);
     if(companies)_companies=companies;
+    if(Array.isArray(receptury))_receptury=receptury;
     if(settings&&settings.hmg_max_daily){
       _maxDaily=parseInt(settings.hmg_max_daily,10);
       if(isNaN(_maxDaily)||_maxDaily<=0)_maxDaily=1000;
