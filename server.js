@@ -23,7 +23,7 @@ const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 const { normalizeRowsByRecipe, buildRecipeMap, resolveCisloItt } = require('./lib/recipe-normalize');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '4.97';
+const APP_VERSION = '4.98';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -40,10 +40,12 @@ app.use(helmet({
     useDefaults: true,
     directives: {
       defaultSrc:     ["'self'"],
-      scriptSrc:      ["'self'", "'unsafe-inline'", "https://unpkg.com"],
-      // scriptSrcAttr je v helmet defaults nastavený na 'none' a blokoval by
-      // inline onclick/onchange handlery — explicitně povolíme 'unsafe-inline'.
-      scriptSrcAttr:  ["'unsafe-inline'"],
+      // P2 #5 dokončeno: všech 9 stránek má inline JS v externích /js/*.js a 0 inline on*
+      // handlerů → 'unsafe-inline' pro skripty ZRUŠENO (script-src i script-src-attr).
+      scriptSrc:      ["'self'", "https://unpkg.com"],
+      scriptSrcAttr:  ["'none'"],
+      // styleSrc PONECHÁVÁ 'unsafe-inline' — appka masivně používá inline style= atributy
+      // (script-src se stylů netýká; jejich rušení není součástí P2 #5).
       styleSrc:       ["'self'", "'unsafe-inline'", "https://unpkg.com", "https://fonts.googleapis.com"],
       imgSrc:         ["'self'", "data:", "blob:", "https://*.tile.openstreetmap.org", "https://unpkg.com"],
       connectSrc:     ["'self'", "https://api.mapy.cz", "https://nominatim.openstreetmap.org"],
