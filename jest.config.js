@@ -29,6 +29,7 @@ module.exports = {
         '<rootDir>/__tests__/import-excel-normalize.test.js',
         '<rootDir>/__tests__/propagate-order-normalize.test.js',
         '<rootDir>/__tests__/inputs-usage.test.js',
+        '<rootDir>/__tests__/dashboard-normalize.test.js',
       ],
     },
 

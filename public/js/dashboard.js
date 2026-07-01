@@ -90,7 +90,7 @@ function buildConfirmedView(list, isAdmin) {
     let day = node.days.get(o.datum);
     if (!day) { day = { sum: 0, items: [] }; node.days.set(o.datum, day); }
     day.sum += tuny;
-    day.items.push({ smes: o.smes, itt: o.itt, tuny });
+    day.items.push({ smes: o.smes, itt: o.itt, tuny, osirela: !!o.osirela });
   }
 
   // Seřaď stavby podle nejmenšího data (chronologicky), dny v rámci stavby vzestupně
@@ -104,13 +104,14 @@ function buildConfirmedView(list, isAdmin) {
   return arr.map(s => {
     const daysHtml = s.dayKeys.map(d => {
       const day = s.days.get(d);
-      const items = day.items.map(dv =>
-        `<div class="delivery-row">
-           <span class="dv-smes">${esc(dv.smes || '–')}</span>
-           <span class="dv-itt">${esc(dv.itt || '')}</span>
+      const items = day.items.map(dv => {
+        const _oc = dv.osirela ? ' oa-orphan' : '';   // B2: osiřelá smes (mimo receptury) → červeně
+        return `<div class="delivery-row">
+           <span class="dv-smes${_oc}">${esc(dv.smes || '–')}</span>
+           <span class="dv-itt${_oc}">${esc(dv.itt || '')}</span>
            <span class="dv-tuny">${dv.tuny} t</span>
-         </div>`
-      ).join('');
+         </div>`;
+      }).join('');
       return `<div class="day-block">
         <div class="day-head">
           <span class="day-date">${weekdayShortCs(d)} ${fmtDate(d)}</span>
@@ -151,7 +152,7 @@ function buildConfirmedBySmes(list, isAdmin) {
 
     const sm = o.smes || '–';
     let sn = node.smesMap.get(sm);
-    if (!sn) { sn = { tuny: 0, itts: new Set() }; node.smesMap.set(sm, sn); }
+    if (!sn) { sn = { tuny: 0, itts: new Set(), osirela: !!o.osirela }; node.smesMap.set(sm, sn); }
     sn.tuny += tuny;
     if (o.itt) sn.itts.add(o.itt);
   }
@@ -165,9 +166,10 @@ function buildConfirmedBySmes(list, isAdmin) {
     const smesArr = Array.from(s.smesMap.entries()).sort((a, b) => b[1].tuny - a[1].tuny);
     const rows = smesArr.map(([sm, sn]) => {
       const itt = sn.itts.size === 1 ? Array.from(sn.itts)[0] : '';
+      const _oc = sn.osirela ? ' oa-orphan' : '';   // B2: osiřelá smes → červeně
       return `<div class="delivery-row">
-        <span class="dv-smes">${esc(sm)}</span>
-        <span class="dv-itt">${esc(itt)}</span>
+        <span class="dv-smes${_oc}">${esc(sm)}</span>
+        <span class="dv-itt${_oc}">${esc(itt)}</span>
         <span class="dv-tuny">${sn.tuny} t</span>
       </div>`;
     }).join('');

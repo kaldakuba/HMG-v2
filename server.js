@@ -20,10 +20,10 @@ const { buildMonthWorkbook } = require('./lib/month-export');
 const { migrateObalovny, listObalovny, normalizeModuly, getObalovnaModuly, updateObalovnaModuly } = require('./lib/obalovny');
 const { migrateObalovnaId, migrateSingleRowConfigUnique, migrateObalovnaSettings, migrateWeekDataCompositePk } = require('./lib/obalovna-id');
 const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
-const { normalizeRowsByRecipe, buildRecipeMap } = require('./lib/recipe-normalize');
+const { normalizeRowsByRecipe, buildRecipeMap, resolveCisloItt } = require('./lib/recipe-normalize');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '4.92';
+const APP_VERSION = '4.93';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -3891,13 +3891,22 @@ async function loadConfirmedForDashboard(req) {
               row_data->>'objednavka' AS komentar,
               ${dayVal}               AS tuny`;
 
-  const [list, agg] = await Promise.all([
+  const [list, agg, inpRes] = await Promise.all([
     pool.query(`${selectCols} ${baseFROM} ${whereScope} ORDER BY datum ASC`, params),
     pool.query(`SELECT COUNT(*) AS cnt, COALESCE(SUM(${dayVal}), 0) AS tons ${baseFROM} ${whereScope}`, params),
+    pool.query('SELECT rows_json FROM inputs WHERE obalovna_id=$1', [obalovnaId]),   // receptury TÉ obalovny (B2)
   ]);
+  // B2 (svaté pravidlo): itt ŽIVĚ z receptury dle smes. recipeMap scoped na tutéž obalovnu.
+  // Výpis i export „Potvrzené stavby" sdílí tuto funkci → nemohou se rozejít. Osiřelé → příznak.
+  const recipeRows = inpRes.rows[0] ? JSON.parse(inpRes.rows[0].rows_json) : [];
+  const { map: recipeMap } = buildRecipeMap(recipeRows);
+  const confirmedList = list.rows.map(r => {
+    const res = resolveCisloItt(r.smes, '', r.itt, recipeMap);
+    return { ...r, itt: res.itt, osirela: res.osirela };
+  });
   return {
-    role, firma,
-    confirmedList:  list.rows,
+    role, firma, recipeMap,
+    confirmedList,
     confirmedTons:  parseInt(agg.rows[0].tons, 10),
     confirmedCount: parseInt(agg.rows[0].cnt,  10),
   };
@@ -3914,7 +3923,7 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
       pool.query("SELECT value FROM obalovna_settings WHERE obalovna_id=$1 AND key='vazenky_share_enabled'", [getObalovnaId(req)]), // per-obalovna
       pool.query('SELECT orders_allowed FROM users WHERE id=$1', [req.session.userId]),
     ]);
-    const { role, firma, confirmedList, confirmedTons, confirmedCount } = confirmedData;
+    const { role, firma, confirmedList, confirmedTons, confirmedCount, recipeMap } = confirmedData;
     const obalovnaId = getObalovnaId(req);   // multi-obalovna: další podmínka navíc
     // KASKÁDA krok 6: efektivní stav = strop modulu (obalovna) AND přepínač (settings).
     // Pro Holubici jsou moduly true → efektivní = settings → identické s dneškem.
@@ -3963,6 +3972,12 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
       pendingList  = pRes.rows;
       recentOrders = rRes.rows;
     }
+
+    // B2: objednávky (pending/recent) — itt ŽIVĚ z receptury dle smes (orders.itt může zastarat
+    // po změně receptury; jeho normalizace při VZNIKU je samostatné 7c). Osiřelé → příznak.
+    const _resolveOrder = o => { const res = resolveCisloItt(o.smes, '', o.itt, recipeMap); return { ...o, itt: res.itt, osirela: res.osirela }; };
+    pendingList  = pendingList.map(_resolveOrder);
+    recentOrders = recentOrders.map(_resolveOrder);
 
     res.json({
       role,
