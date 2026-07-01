@@ -232,7 +232,18 @@ function moveCheckedDown(){
   render();saveRows();
 }
 function updateCheck(i,val){_rows[i].checked=val;render();saveRows()}
-function updateMixSelect(i,key,val){snapshot();let m=key==='cislo'?mixByNumber(val):key==='smes'?mixByName(val):mixByItt(val);applyMix(_rows[i],m);render();saveRows()}
+function updateMixSelect(i,key,val){
+  snapshot();
+  // Sjednocená logika (svaté pravidlo): výběr v kterémkoli ze tří selectů doplní CELOU trojici
+  // z receptury přes sdílenou findRecipe (recipe-normalize.js). Symetricky cislo+smes+itt →
+  // odstraněna dřívější asymetrie applyMix (podržení starého cislo). recipeIndex z _mixes
+  // (/api/inputs TÉTO obalovny — session scope). Nenalezeno (nemělo by, výběr ze seznamu) → nehádat.
+  const _idxKey = key==='itt' ? 'zt' : key;   // select 'itt' → index klíč 'zt'
+  const _index = (typeof buildRecipeIndex==='function') ? buildRecipeIndex(_mixes) : null;
+  const rec = (_index && typeof findRecipe==='function') ? findRecipe(_index,{key:_idxKey,val}) : null;
+  if(rec){ _rows[i].cislo=rec.cislo||''; _rows[i].smes=rec.smes||''; _rows[i].itt=rec.zt||''; }
+  render();saveRows();
+}
 function updateCell(i,key,val,autofill=false,integer=false){snapshot();_rows[i][key]=integer?intVal(val):val;render();saveRows()}
 function addRow(){snapshot();_rows.push({checked:false,cislo:'',lokalita:'',objednavka:'',smes:'',itt:'',ceta:'',d0:'',d1:'',d2:'',d3:'',d4:'',d5:'',d6:'',lat:null,lng:null});render();saveRows()}
 function deleteCheckedRows(){if(!_rows.some(r=>r.checked)){alert('Nejdřív zatrhni řádky ke smazání.');return}snapshot();_rows=_rows.filter(r=>!r.checked);render();saveRows()}

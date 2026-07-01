@@ -237,3 +237,43 @@ describe('findRecipe', () => {
     expect(findRecipe(IDX, null)).toBeNull();
   });
 });
+
+// dropdown krok 2 — sjednocená logika doplnění trojice (kterou používá updateMixSelect
+// v index-page.js): výběr v kterémkoli ze tří → doplní cislo+smes+itt SYMETRICKY; neznámá → beze změny.
+describe('doplnění trojice přes findRecipe (jako updateMixSelect)', () => {
+  const IDX = buildRecipeIndex([
+    { cislo: '6',  smes: 'ACP 22S 50/70',    zt: '6-2025-Ho' },
+    { cislo: '18', smes: 'ACL 16S 25/55-60', zt: '18-2025-Ho' },
+  ]);
+  // Přesně logika z updateMixSelect (select 'itt' → index klíč 'zt'):
+  const applySelect = (row, key, val) => {
+    const idxKey = key === 'itt' ? 'zt' : key;
+    const rec = findRecipe(IDX, { key: idxKey, val });
+    if (rec) { row.cislo = rec.cislo || ''; row.smes = rec.smes || ''; row.itt = rec.zt || ''; }
+    return row;
+  };
+
+  test('výběr NÁZVU → doplní cislo i itt (symetricky)', () => {
+    const row = { cislo: 'STARE', smes: 'X', itt: 'STARE-itt' };
+    applySelect(row, 'smes', 'ACP 22S 50/70');
+    expect(row).toEqual({ cislo: '6', smes: 'ACP 22S 50/70', itt: '6-2025-Ho' });
+  });
+
+  test('výběr ČÍSLA → doplní smes i itt', () => {
+    const row = { cislo: '', smes: '', itt: '' };
+    applySelect(row, 'cislo', '18');
+    expect(row).toEqual({ cislo: '18', smes: 'ACL 16S 25/55-60', itt: '18-2025-Ho' });
+  });
+
+  test('výběr ITT → doplní cislo i smes', () => {
+    const row = { cislo: '', smes: '', itt: '' };
+    applySelect(row, 'itt', '6-2025-Ho');
+    expect(row).toEqual({ cislo: '6', smes: 'ACP 22S 50/70', itt: '6-2025-Ho' });
+  });
+
+  test('neznámá hodnota → řádek BEZE ZMĚNY (nehádat)', () => {
+    const row = { cislo: 'A', smes: 'B', itt: 'C' };
+    applySelect(row, 'smes', 'Neznámá směs');
+    expect(row).toEqual({ cislo: 'A', smes: 'B', itt: 'C' });
+  });
+});
