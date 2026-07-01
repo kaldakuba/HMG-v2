@@ -95,3 +95,51 @@ describe('lib/month-export — workbook', () => {
     expect(wb.worksheets.map(w => w.name)).toEqual(MONTH_NAMES);
   });
 });
+
+// FÁZE B/7a — B2 v exportu: cislo/itt ŽIVĚ z receptury (recipeMap z `inputs`); osiřelé červeně.
+describe('lib/month-export — B2 (cislo/itt z receptury)', () => {
+  const RECIPES = [{ cislo: '6', smes: 'ACO 11', zt: '6-2025-Ho' }];
+  const b2weeks = [{
+    start: '2026-06-01',
+    rows: [
+      { cislo: '4',  lokalita: 'Brno',    objednavka: 'O1', smes: 'ACO 11',  itt: 'STARE-itt', ceta: 'Colas', d0: '100', d1: '', d2: '', d3: '', d4: '', d5: '', d6: '' },
+      { cislo: '99', lokalita: 'Olomouc', objednavka: 'O2', smes: 'Neznámá', itt: 'X-itt',     ceta: 'Colas', d0: '50',  d1: '', d2: '', d3: '', d4: '', d5: '', d6: '' },
+    ],
+  }];
+  const RED = 'FFDC2626';
+  const findRow = (ws, lok) => { for (let i = 3; i <= ws.rowCount; i++) { if (ws.getRow(i).getCell(2).value === lok) return i; } return -1; };
+
+  test('běžná smes → cislo/itt ŽIVĚ z receptury (ne z uložené kopie); bez červené', () => {
+    const wb = buildMonthWorkbook({ weeks: b2weeks, companies, year: 2026, inputs: RECIPES });
+    const ws = wb.getWorksheet('Červen');
+    const r = findRow(ws, 'Brno');
+    expect(r).toBeGreaterThan(0);
+    expect(ws.getRow(r).getCell(1).value).toBe('6');           // cislo z receptury (NE '4')
+    expect(ws.getRow(r).getCell(5).value).toBe('6-2025-Ho');   // itt z receptury (NE 'STARE-itt')
+    const f = ws.getRow(r).getCell(1).font;
+    expect(f && f.color && f.color.argb).not.toBe(RED);
+  });
+
+  test('osiřelá smes → uložená hodnota + červené písmo na č.(1)/směs(4)/ITT(5)', () => {
+    const wb = buildMonthWorkbook({ weeks: b2weeks, companies, year: 2026, inputs: RECIPES });
+    const ws = wb.getWorksheet('Červen');
+    const r = findRow(ws, 'Olomouc');
+    expect(r).toBeGreaterThan(0);
+    expect(ws.getRow(r).getCell(1).value).toBe('99');          // uložené cislo (nehádá)
+    expect(ws.getRow(r).getCell(5).value).toBe('X-itt');       // uložené itt
+    expect(ws.getRow(r).getCell(1).font.color.argb).toBe(RED);
+    expect(ws.getRow(r).getCell(4).font.color.argb).toBe(RED);
+    expect(ws.getRow(r).getCell(5).font.color.argb).toBe(RED);
+  });
+
+  test('bez inputs → B2 vypnuto (zpětná kompat: uložené hodnoty, bez červené)', () => {
+    const wb = buildMonthWorkbook({ weeks: b2weeks, companies, year: 2026 });   // inputs neuveden
+    const ws = wb.getWorksheet('Červen');
+    const rB = findRow(ws, 'Brno');
+    expect(ws.getRow(rB).getCell(1).value).toBe('4');          // uložené (neživé)
+    expect(ws.getRow(rB).getCell(5).value).toBe('STARE-itt');
+    const rO = findRow(ws, 'Olomouc');
+    const f = ws.getRow(rO).getCell(1).font;
+    expect(f && f.color && f.color.argb).not.toBe(RED);        // žádné označení osiřelých
+  });
+});

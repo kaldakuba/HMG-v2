@@ -23,7 +23,7 @@ const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 const { normalizeRowsByRecipe, buildRecipeMap } = require('./lib/recipe-normalize');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '4.91';
+const APP_VERSION = '4.92';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -720,14 +720,16 @@ app.get('/api/month/export', requireAuth, async (req, res) => {
     if (isNaN(year) || year < 2000 || year > 2100) year = new Date().getFullYear();
 
     const obalovnaId = getObalovnaId(req);
-    const [wRes, cRes] = await Promise.all([
+    const [wRes, cRes, iRes] = await Promise.all([
       pool.query('SELECT week_start,rows_json FROM week_data WHERE obalovna_id=$1 ORDER BY week_start', [obalovnaId]),
       pool.query('SELECT data_json FROM companies WHERE obalovna_id=$1', [obalovnaId]),
+      pool.query('SELECT rows_json FROM inputs WHERE obalovna_id=$1', [obalovnaId]),   // receptury TÉ obalovny (B2)
     ]);
     const weeks = wRes.rows.map(r => ({ start: r.week_start, rows: JSON.parse(r.rows_json) }));
     const companies = cRes.rows[0] ? JSON.parse(cRes.rows[0].data_json) : [];
+    const inputs = iRes.rows[0] ? JSON.parse(iRes.rows[0].rows_json) : [];
 
-    const wb = buildMonthWorkbook({ weeks, companies, year });
+    const wb = buildMonthWorkbook({ weeks, companies, year, inputs });
     const buf = await wb.xlsx.writeBuffer();
 
     const fullName = `harmonogram ${year}.xlsx`;
