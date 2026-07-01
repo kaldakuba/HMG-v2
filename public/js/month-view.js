@@ -1,0 +1,1177 @@
+// month-view.js — vytaženo z inline <script> v month-view.html (P2 #5 CSP) + B2 (Fáze 7e).
+// FUNKCE BEZE ZMĚNY. on* atributy převedeny na addEventListener/delegaci (viz sekce DOLE).
+
+// ═══ BLOK 1: hlavní aplikační logika ═══
+// ── GLOBÁLNÍ STAV ──
+let _maxDaily = 1500, _minDaily = 0, _accessOk = false;
+let _ordersEnabled = true; // přepínač objednávkového systému (načteno ze settings)
+let _meRole = '', _meFirma = '', _meUsername = '';
+let _meOrdersAllowed = false; // per-user povolení objednávek (jen hmg_share)
+let _receptury = [], _orders = [], _entries = {};
+let _orderRowCount = 0;
+let _mapyCzKey = '', _mapTempCoords = null;
+let _dayCapCache = {}; // datum → {harmonogram, orders, maxDaily, minDaily}
+// Nová objednávka – sdílená lokalita
+let _ppLat = null, _ppLng = null;
+// Leaflet mapa
+let _ppLeafletMap = null, _ppLeafletMarker = null;
+
+const _urlToken = new URLSearchParams(location.search).get('t') || localStorage.getItem('hmg_view_token') || '';
+
+// Barvy skupin objednávek – cyklické přiřazení podle order_group_id
+const ORDER_GROUP_COLORS = [
+  {bg:'#ede9fe',dot:'#7c3aed'},{bg:'#fce7f3',dot:'#be185d'},{bg:'#d1fae5',dot:'#047857'},
+  {bg:'#fff7ed',dot:'#c2410c'},{bg:'#eff6ff',dot:'#1d4ed8'},{bg:'#ecfdf5',dot:'#065f46'},
+  {bg:'#fef9c3',dot:'#a16207'},{bg:'#f3e8ff',dot:'#6d28d9'},{bg:'#cffafe',dot:'#0e7490'}
+];
+const _groupColorMap = {};
+let _groupColorIdx = 0;
+
+function getGroupColor(groupId) {
+  if (!_groupColorMap[groupId]) {
+    _groupColorMap[groupId] = ORDER_GROUP_COLORS[_groupColorIdx % ORDER_GROUP_COLORS.length];
+    _groupColorIdx++;
+  }
+  return _groupColorMap[groupId];
+}
+
+// ── SETTINGS ──
+async function loadSettings() {
+  try {
+    const s = await fetch('/api/settings' + (_urlToken ? '?t=' + _urlToken : '')).then(r => r.json());
+    if (s && s.hmg_max_daily) _maxDaily = parseInt(s.hmg_max_daily) || 1500;
+    if (s && s.hmg_min_daily) _minDaily = parseInt(s.hmg_min_daily) || 0;
+    if (s && s.orders_enabled !== undefined) _ordersEnabled = (s.orders_enabled !== 'false');
+  } catch(e) {}
+}
+
+// ── Unified navigation ──
+const NAV_ITEMS = {
+  admin: [
+    { key:'weekly',    label:'Týdenní',      href:'/index.html' },
+    { key:'monthly',   label:'Měsíční',      href:'/month-view.html' },
+    { key:'dashboard', label:'Dashboard',    href:'/dashboard' },
+    { key:'inputs',    label:'Vstupy',       href:'/inputs' },
+    { key:'settings',  label:'Nastavení',    href:'/settings.html' },
+  ],
+  operator: [
+    { key:'weekly',    label:'Týdenní',      href:'/index.html' },
+    { key:'monthly',   label:'Měsíční',      href:'/month-view.html' },
+  ],
+  hmg_share: [
+    { key:'monthly',   label:'Měsíční',      href:'/month-view.html' },
+    { key:'dashboard', label:'Seznam staveb',href:'/dashboard' },
+  ],
+};
+function buildNav(role, activePage) {
+  const nav = document.getElementById('navMenu');
+  if (!nav) return;
+  const items = NAV_ITEMS[role] || [];
+  nav.innerHTML = items.map(function(item) {
+    const active = item.key === activePage;
+    return '<a href="' + item.href + '" class="btn nav' + (active ? ' active' : '') + '">' + item.label + '</a>';
+  }).join('');
+}
+
+// ── PŘÍSTUP ──
+async function checkAccess() {
+  try {
+    const me = await fetch('/api/me').then(r => r.json());
+    if (me && me.role) {
+      _accessOk = true;
+      _meRole = me.role;
+      _meUsername = me.username || '';
+      _meFirma = me.firma || '';
+      _meOrdersAllowed = !!me.orders_allowed;
+      // Operátor nemá Export dat (měsíční harmonogram); admin a hmg_share beze změny.
+      if (me.role === 'operator') {
+        const exportBtn = document.getElementById('exportMonthBtn');
+        if (exportBtn) exportBtn.style.display = 'none';
+      }
+      const emailEl = document.getElementById('viewerEmail');
+      if (emailEl && me.username) emailEl.textContent = me.username;
+      const ha = document.getElementById('hdrAvatar');
+      if (ha && me.username) ha.textContent = me.username.trim().charAt(0).toUpperCase();
+      if (me.role === 'hmg_share') {
+        const badge = document.getElementById('hdrFirma');
+        if (badge) { badge.textContent = _meFirma || 'firma'; badge.style.display=''; }
+        // Tlačítko "Nová objednávka" se NEZOBRAZUJE zde – až po načtení settings (viz inicializace)
+        // _meFirma je uložena, zobrazení rozhodne Promise.all().then() po ověření orders_enabled
+      }
+      // Navigace
+      buildNav(me.role, 'monthly');
+      return true;
+    }
+  } catch(e) {}
+  if (!_urlToken) {
+    document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:Inter,sans-serif"><div style="text-align:center;padding:40px"><h2 style="color:#991b1b">Přístup zamítnut</h2><p style="color:#6b7280">Nemáte platný přístupový odkaz.</p></div></div>';
+    return false;
+  }
+  localStorage.setItem('hmg_view_token', _urlToken);
+  try {
+    const r = await fetch('/api/viewer-check?t=' + _urlToken);
+    const d = await r.json();
+    if (!d.ok) {
+      document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:Inter,sans-serif"><div style="text-align:center;padding:40px"><h2 style="color:#991b1b">Přístup zamítnut</h2><p style="color:#6b7280">Váš přístup byl odvolán nebo odkaz je neplatný.</p></div></div>';
+      return false;
+    }
+    const emailEl = document.getElementById('viewerEmail');
+    if (emailEl && d.email) emailEl.textContent = d.email;
+    const ha2 = document.getElementById('hdrAvatar');
+    if (ha2 && d.email) ha2.textContent = d.email.trim().charAt(0).toUpperCase();
+  } catch(e) {}
+  _accessOk = true;
+  return true;
+}
+
+// ── NAČÍTÁNÍ DAT ──
+async function loadReceptury() {
+  try {
+    const r = await fetch('/api/inputs');
+    if (r.ok) { const d = await r.json(); _receptury = Array.isArray(d) ? d : []; }
+  } catch(e) {}
+}
+
+async function loadMapyCzKey() {
+  try {
+    const cfg = await fetch('/api/config').then(r => r.json());
+    _mapyCzKey = cfg.mapyCzKey || '';
+  } catch(e) {}
+}
+
+async function loadOrders() {
+  try {
+    const val = monthPick.value || defaultMonth();
+    const r = await fetch('/api/orders?month=' + val);
+    if (r.ok) { _orders = await r.json(); } else { _orders = []; }
+  } catch(e) { _orders = []; }
+}
+
+// ── POMOCNÉ FUNKCE ──
+function todayIso(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function defaultMonth(){const d=new Date();return d.toISOString().slice(0,7)}
+function monthName(m){return['LEDEN','ÚNOR','BŘEZEN','DUBEN','KVĚTEN','ČERVEN','ČERVENEC','SRPEN','ZÁŘÍ','ŘÍJEN','LISTOPAD','PROSINEC'][m]}
+function iso(y,m,d){return y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0')}
+function esc(v){return String(v||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function n(v){const x=parseInt(String(v||'').replace(/\D+/g,''),10);return isNaN(x)?0:x}
+// Vrátí pondělí (YYYY-MM-DD) pro daný datum – shodná logika jako v month.html
+function mondayOf(id){const d=new Date(id);const dow=d.getDay();const diff=(dow===0?-6:1-dow);d.setDate(d.getDate()+diff);return d.toISOString().slice(0,10)}
+
+function easterSunday(y){const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*m+114)/31),da=((h+l-7*m+114)%31)+1;return new Date(y,mo-1,da)}
+function addDays(date,days){const d=new Date(date);d.setDate(d.getDate()+days);return d}
+function isHoliday(id){const[y,m,d]=id.split('-').map(Number);const fixed=['01-01','05-01','05-08','07-05','07-06','09-28','10-28','11-17','12-24','12-25','12-26'];if(fixed.includes(String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0')))return true;const e=easterSunday(y);return id===addDays(e,-2).toISOString().slice(0,10)||id===addDays(e,1).toISOString().slice(0,10)}
+
+function dayClass(y,m,d){
+  const id=iso(y,m,d),today=todayIso();
+  if(id===today) return 'today-col';
+  if(isHoliday(id)) return 'holiday';
+  const dow=new Date(y,m,d).getDay();
+  return (dow===0||dow===6)?'gray':'blue';
+}
+
+function loadCompanies(){
+  try{return JSON.parse(localStorage.getItem('hmg_companies')||'null')||[{name:'Colas',color:'#fff2a8'},{name:'Firesta',color:'#d9ead3'},{name:'Mi Roads',color:'#ff7f86'}]}
+  catch(e){return[]}
+}
+function companyColor(name){const c=loadCompanies().find(x=>x.name===name);return c?c.color:''}
+function daySum(entries,id){return(entries[id]||[]).reduce((s,e)=>s+n(e.tuny),0)}
+
+// Součet dne ze harmonogramu + live objednávky (approved jsou už v harmonogramu = necount dvakrát)
+// Pokud je orders_enabled = false, nezahrnuj objednávkové tuny (systém je vypnut)
+function dayTotalWithOrders(entries, orders, dateId) {
+  const wk = daySum(entries, dateId);
+  if (!_ordersEnabled) return wk;
+  const ord = (orders||[])
+    .filter(o=>(o.datum||'').slice(0,10)===dateId && ['pending','pre_approved','pre_rejected'].includes(o.status))
+    .reduce((s,o)=>s+(o.tuny||0),0);
+  return wk + ord;
+}
+
+const FIRMA_ORDER={'Colas':0,'Firesta':1,'Mi Roads':2};
+// Řadí řádky po týdnech – identická logika jako v month.html (admin měsíční)
+function rowsForMonth(y,m,entries){
+  const weekMap={};
+  Object.keys(entries).sort().forEach(id=>{
+    const dt=new Date(id);
+    if(dt.getFullYear()===y&&dt.getMonth()===m){
+      (entries[id]||[]).forEach(e=>{
+        if(!(e.smes||'').trim()||!(e.itt||'').trim()||!(e.ceta||'').trim())return;
+        const ws=mondayOf(id);
+        if(!weekMap[ws])weekMap[ws]={};
+        const key=[e.lokalita||'',e.objednavka||'',e.smes||'',e.itt||'',e.ceta||''].join('|');
+        if(!weekMap[ws][key])weekMap[ws][key]={lokalita:e.lokalita||'',objednavka:e.objednavka||'',smes:e.smes||'',itt:e.itt||'',ceta:e.ceta||'',weekStart:ws,days:{}};
+        const d=dt.getDate();
+        weekMap[ws][key].days[d]=(weekMap[ws][key].days[d]||0)+n(e.tuny);
+      });
+    }
+  });
+  // Seřadit týdny chronologicky, uvnitř každého týdne firmy dle FIRMA_ORDER + lokalita
+  const result=[];
+  Object.keys(weekMap).sort().forEach(ws=>{
+    const rows=Object.values(weekMap[ws]);
+    rows.sort((a,b)=>{
+      const oa=FIRMA_ORDER[a.ceta]!==undefined?FIRMA_ORDER[a.ceta]:99;
+      const ob=FIRMA_ORDER[b.ceta]!==undefined?FIRMA_ORDER[b.ceta]:99;
+      if(oa!==ob)return oa-ob;
+      return(a.lokalita||'').localeCompare(b.lokalita||'','cs');
+    });
+    rows.forEach((r,i)=>{r._firstInWeek=(i===0);});
+    result.push(...rows);
+  });
+  return result;
+}
+
+// Skupiny objednávek → řádky tabulky (s barvami skupin)
+function buildOrderRows(y,m,orders){
+  const map={};
+  (orders||[]).forEach(o=>{
+    const datum=(o.datum||'').slice(0,10);
+    if(!datum)return;
+    if(o.status==='approved')return; // approved jsou v harmonogramu (week_data), nezobrazuj jako objednávkový řádek
+    const dt=new Date(datum+'T00:00:00Z');
+    if(dt.getUTCFullYear()!==y||dt.getUTCMonth()!==m)return;
+    const key=o.order_group_id+'||'+o.smes+'||'+o.itt;
+    if(!map[key]){
+      map[key]={
+        firma:o.firma, smes:o.smes, itt:o.itt,
+        status:o.status, groupId:o.order_group_id,
+        lokalita:o.lokalita||'', days:{}
+      };
+    }
+    const d=dt.getUTCDate();
+    map[key].days[d]=(map[key].days[d]||0)+(o.tuny||0);
+    // Nejmíň příznivý status pro skupinu
+    const so={'pending':0,'pre_approved':1,'pre_rejected':2,'approved':3};
+    if((so[o.status]||0)<(so[map[key].status]||3)) map[key].status=o.status;
+  });
+  const result=Object.values(map);
+  const so={'pending':0,'pre_approved':1,'pre_rejected':2,'approved':3};
+  result.sort((a,b)=>{
+    const diff=(so[a.status]||0)-(so[b.status]||0);
+    if(diff!==0)return diff;
+    return (a.firma||'').localeCompare(b.firma||'','cs');
+  });
+  return result;
+}
+
+// ── RENDER ──
+async function renderMonth(){
+  if(_urlToken&&!new URLSearchParams(location.search).get('t')){
+    const u=new URL(location.href);u.searchParams.set('t',_urlToken);history.replaceState({},'',u);
+  }
+  const val=monthPick.value||defaultMonth();
+  const[yy,mm]=val.split('-');
+  const y=parseInt(yy),m=parseInt(mm)-1;
+  // B2 (svaté pravidlo): itt ŽIVĚ z receptury dle smes. recipeMap z _receptury (scoped na obalovnu
+  // ze session). Fallback: recipeMap null (např. /share token bez receptur) → uložené, žádné červené.
+  const _recipeMap=(_receptury && _receptury.length && typeof buildRecipeMap==='function')?buildRecipeMap(_receptury).map:null;
+  const _b2row=(r)=>{ if(_recipeMap && typeof resolveCisloItt==='function'){ const x=resolveCisloItt(r.smes,r.cislo||'',r.itt,_recipeMap); return {itt:x.itt, oc:x.osirela?' oa-orphan':''}; } return {itt:r.itt, oc:''}; };
+  const _ml=document.getElementById('monthCalLabel');if(_ml)_ml.textContent=monthName(m).toLowerCase()+' '+y;
+  const today=todayIso();
+  const[ty,tm]=today.split('-').map(Number);
+  const totalDays=new Date(y,m+1,0).getDate();
+  const isCurrentMonth=(y===ty&&m===tm-1);
+  const isPastMonth=(y<ty||(y===ty&&m<tm-1));
+
+  // Filtr dnů: pouze hmg_share (a anonymní viewer přes share token) vidí jen
+  // dny ode dneška včetně. Admin a operátor vidí celý měsíc — všechny dny.
+  const isViewerMode = (_meRole === 'hmg_share' || (_urlToken && !_meRole));
+
+  // Tlačítko „‹ Předchozí" — admin/operátor vždy povolené,
+  // hmg_share/token viewer disabled, pokud zobrazený měsíc <= aktuální měsíc.
+  const btnPrev = document.getElementById('btnPrev');
+  if (btnPrev) {
+    const prevBlocked = isViewerMode && (isCurrentMonth || isPastMonth);
+    btnPrev.disabled = prevBlocked;
+    btnPrev.title = prevBlocked ? 'Přístup k minulým měsícům není povolen' : '';
+  }
+
+  let visibleDays=[];
+  for(let d=1;d<=totalDays;d++){
+    const id=iso(y,m,d);
+    if(!isPastMonth){
+      if(isCurrentMonth && isViewerMode){
+        if(id>=today)visibleDays.push(d);  // hmg_share: ode dneška včetně (10.6. ano)
+      } else {
+        visibleDays.push(d);                // admin/operátor: celý měsíc
+      }
+    }
+  }
+
+  let entries={};
+  try{
+    const url='/api/weeks'+(_urlToken?'?t='+_urlToken:'');
+    const weeks=await fetch(url).then(r=>r.json());
+    (weeks||[]).forEach(w=>{
+      const rows=w.rows||[];
+      for(let i=0;i<7;i++){
+        const d=new Date(w.start);d.setDate(d.getDate()+i);
+        const isoStr=d.toISOString().slice(0,10);
+        entries[isoStr]=[];
+        rows.forEach(r=>{
+          const tuny=parseInt(r['d'+i]||'0',10);
+          if(tuny>0)entries[isoStr].push({lokalita:r.lokalita||'',objednavka:r.objednavka||'',smes:r.smes||'',itt:r.itt||'',ceta:r.ceta||'',tuny});
+        });
+      }
+    });
+  }catch(e){console.error('Chyba načítání dat:',e);}
+
+  _entries=entries;
+  const _allRows=rowsForMonth(y,m,entries);
+  // hmg_share: v aktuálním měsíci skryj řádky, které mají objem jen v již proběhlých dnech
+  const rows=isCurrentMonth
+    ? _allRows.filter(r=>visibleDays.some(d=>(r.days[d]||0)>0))
+    : _allRows;
+  // Objednávkové řádky jen pokud je systém zapnut
+  const orderRows=_ordersEnabled ? buildOrderRows(y,m,_orders) : [];
+
+  if(isPastMonth||visibleDays.length===0){
+    tableWrap.innerHTML='<div style="padding:40px;text-align:center;color:#6b7280;font-size:14px">Pro tento měsíc nejsou k dispozici žádná budoucí data.</div>';
+    return;
+  }
+
+  let h='<table id="monthTable"><thead>';
+  // Řádek součtů (harmonogram + objednávky)
+  h+='<tr class="sticky-head"><th class="left-head col-lok sticky-lok"></th><th class="left-head col-obj"></th><th class="left-head col-smes sticky-smes"></th><th class="left-head col-itt"></th><th class="left-head col-ceta">Součet t/den:</th>';
+  let _monthTotal=0;
+  visibleDays.forEach(d=>{
+    const dateId=iso(y,m,d);
+    const _ds=dayTotalWithOrders(entries,_orders,dateId);
+    _monthTotal+=_ds;
+    const _overMax=_maxDaily&&_ds>=_maxDaily;
+    const _underMin=_minDaily>0&&_ds>0&&_ds<_minDaily;
+    h+='<th class="sum-head day'+(_overMax?' over-limit':_underMin?' under-limit':'')+'">'+_ds+'</th>';
+  });
+  // Koncová sticky buňka: celkový součet všech denních součtů zobrazeného měsíce
+  h+='<th class="col-total col-total-sticky tot-sum">Celkem '+_monthTotal.toLocaleString('cs-CZ')+' t</th>';
+  h+='</tr>';
+  // Řádek datumů – bez onclick pro objednávky (objednávka jen přes tlačítko)
+  h+='<tr class="sticky-head-2"><th class="col-lok sticky-lok">lokalita</th><th class="col-obj">objednávka</th><th class="col-smes sticky-smes">Směs a průkazná zk. typu</th><th class="col-itt">ITT</th><th class="col-ceta">četa</th>';
+  visibleDays.forEach(d=>{
+    const cls=dayClass(y,m,d);
+    h+='<th class="day '+cls+'" style="font-size:11px">'+d+'.'+(m+1)+'.'+(cls==='today-col'?' ▲':'')+'</th>';
+  });
+  h+='<th class="col-total col-total-sticky tot-head" style="font-size:11px">Σ celkem</th>';
+  h+='</tr></thead><tbody>';
+
+  if(!rows.length&&!orderRows.length){
+    for(let i=0;i<10;i++){
+      h+='<tr><td class="sticky-lok" style="background:#fff"></td><td></td><td class="sticky-smes" style="background:#fff"></td><td></td><td></td>';
+      visibleDays.forEach(d=>h+='<td class="'+dayClass(y,m,d)+'"></td>');
+      h+='<td class="col-total col-total-sticky tot-body"></td>';
+      h+='</tr>';
+    }
+  } else {
+    // Standardní řádky HMG harmonogramu – řazené po týdnech, první řádek týdne oddělený silnou linkou
+    rows.forEach(r=>{
+      const color=companyColor(r.ceta);
+      const sepClass=r._firstInWeek?'week-sep':'';
+      h+='<tr class="'+sepClass+'" style="'+(color?'background:'+color:'')+'">';
+      h+='<td class="sticky-lok" style="background:'+(color||'#fff')+';text-align:center;vertical-align:middle">'+esc(r.lokalita)+'</td>';
+      h+='<td style="'+((!r.objednavka)?'background:#fff;border:1px solid #374151;':'')+'">'+esc(r.objednavka)+'</td>';
+      const _b2a=_b2row(r);
+      h+='<td class="sticky-smes'+_b2a.oc+'" style="background:'+(color||'#fff')+';text-align:left;padding-left:6px">'+esc(r.smes)+'</td>';
+      h+='<td'+(_b2a.oc?' class="oa-orphan"':'')+' style="font-size:11px">'+esc(_b2a.itt)+'</td><td>'+esc(r.ceta)+'</td>';
+      visibleDays.forEach(d=>h+='<td class="'+dayClass(y,m,d)+'">'+(r.days[d]||'')+'</td>');
+      h+='<td class="col-total col-total-sticky tot-body" style="background:'+(color||'#fff')+'"></td>';
+      h+='</tr>';
+    });
+
+    // Řádky objednávek (barevné podle skupiny)
+    orderRows.forEach(r=>{
+      const isWaiting=['pending','pre_approved','pre_rejected'].includes(r.status);
+      const gc=getGroupColor(r.groupId);
+      const bg=isWaiting?'#fffbeb':'#f0fdf4';
+      const fc=isWaiting?'#92400e':'#065f46';
+      const dot='<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+gc.dot+';margin-right:4px;vertical-align:middle;flex-shrink:0"></span>';
+
+      let badge;
+      if(r.status==='pending'){
+        badge='<span style="font-size:9px;background:#fef9c3;color:#d97706;border:1px solid #fde68a;border-radius:3px;padding:1px 5px;font-weight:700">ČEKÁ</span>';
+      } else if(r.status==='pre_approved'){
+        badge='<span style="font-size:9px;background:#dcfce7;color:#15803d;border:1px dashed #6ee7b7;border-radius:3px;padding:1px 5px;font-weight:700">PRE OK</span>';
+      } else if(r.status==='pre_rejected'){
+        badge='<span style="font-size:9px;background:#fee2e2;color:#dc2626;border:1px dashed #fca5a5;border-radius:3px;padding:1px 5px;font-weight:700">PRE ZAMÍT.</span>';
+      } else {
+        badge='<span style="font-size:9px;background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;border-radius:3px;padding:1px 5px;font-weight:700">OK</span>';
+      }
+
+      h+='<tr>';
+      h+='<td class="sticky-lok" style="background:'+bg+';font-size:11px;font-weight:600;color:'+fc+';border-left:3px solid '+gc.dot+'">'+dot+esc(r.firma)+'</td>';
+      h+='<td style="background:'+bg+';text-align:center">'+badge+'</td>';
+      const _b2b=_b2row(r);
+      h+='<td class="sticky-smes'+_b2b.oc+'" style="background:'+bg+';text-align:left;padding-left:6px;font-size:12px">'+esc(r.smes)+'</td>';
+      h+='<td'+(_b2b.oc?' class="oa-orphan"':'')+' style="background:'+bg+';font-size:11px">'+esc(_b2b.itt)+'</td>';
+      h+='<td style="background:'+bg+';font-size:11px">'+esc(r.firma)+'</td>';
+      visibleDays.forEach(d=>{
+        const tuny=r.days[d]||'';
+        if(tuny&&isWaiting){
+          h+='<td style="border:2px dashed #f59e0b;background:#fffbeb;font-weight:700;color:#d97706">'+tuny+'</td>';
+        } else if(tuny){
+          h+='<td style="background:#dcfce7;font-weight:700;color:#15803d">'+tuny+'</td>';
+        } else {
+          h+='<td style="background:'+bg+'"></td>';
+        }
+      });
+      h+='<td class="col-total col-total-sticky tot-body" style="background:'+bg+'"></td>';
+      h+='</tr>';
+    });
+  }
+  h+='</tbody></table>';
+  tableWrap.innerHTML=h;
+  setupHover();
+}
+
+// ── HOVER zvýraznění ──
+function setupHover(){
+  const table=document.getElementById('monthTable');
+  if(!table)return;
+  const tbody=table.querySelector('tbody');
+  if(!tbody)return;
+  let _lastTd=null;
+  function applyHover(td){
+    if(!td||!td.parentElement)return;
+    const tr=td.parentElement,col=Array.from(tr.cells).indexOf(td);
+    tr.classList.add('row-hover');
+    Array.from(tbody.rows).forEach(row=>{if(row.cells[col])row.cells[col].classList.add('col-hover');});
+  }
+  function clearHover(td){
+    if(!td||!td.parentElement)return;
+    const tr=td.parentElement,col=Array.from(tr.cells).indexOf(td);
+    tr.classList.remove('row-hover');
+    Array.from(tbody.rows).forEach(row=>{if(row.cells[col])row.cells[col].classList.remove('col-hover');});
+  }
+  tbody.addEventListener('mouseover',e=>{
+    const td=e.target.closest('td');
+    if(!td||td===_lastTd)return;
+    if(_lastTd)clearHover(_lastTd);
+    _lastTd=td;applyHover(td);
+  });
+  tbody.addEventListener('mouseleave',()=>{if(_lastTd)clearHover(_lastTd);_lastTd=null;});
+}
+
+// ── NAVIGACE ──
+function onMonthChange(){
+  const val=monthPick.value||defaultMonth();
+  if(val<defaultMonth()){monthPick.value=defaultMonth();}
+  loadOrders().then(()=>renderMonth());
+}
+function openMonthPicker(){
+  const i=document.getElementById('monthPick');
+  if(!i)return;
+  try{ i.showPicker(); }catch(e){ i.focus(); try{ i.click(); }catch(_){} }
+}
+function shiftMonth(delta){
+  const val=monthPick.value||defaultMonth();
+  const[y,m]=val.split('-').map(Number);
+  let ny=y,nm=m-1+delta;
+  if(nm>11){nm=0;ny++;}if(nm<0){nm=11;ny--;}
+  const newVal=ny+'-'+String(nm+1).padStart(2,'0');
+  if(newVal<defaultMonth())return;
+  monthPick.value=newVal;
+  const t=_urlToken;
+  if(t){const u=new URL(location.href);u.searchParams.set('t',t);history.replaceState({},'',u);}
+  loadOrders().then(()=>renderMonth());
+}
+function thisMonth(){monthPick.value=defaultMonth();loadOrders().then(()=>renderMonth());}
+function setMonthMin(){document.getElementById('monthPick').min=defaultMonth();}
+
+// ── EXPORT ──
+function downloadBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
+
+// Export: celý rok (12 listů, Leden…Prosinec) jako .xlsx přes server (ExcelJS).
+// Rok se bere ze zobrazeného měsíce; barvy řádků dle firmy generuje server.
+function exportMonth(){
+  const val=monthPick.value||defaultMonth();
+  const y=parseInt(val.split('-')[0],10)||new Date().getFullYear();
+  const url='/api/month/export?year='+y+(_urlToken?'&t='+encodeURIComponent(_urlToken):'');
+  window.location.href=url;
+}
+
+// ── MAPOVÉ FUNKCE (Leaflet – přetahovatelný praporek) ────────────────────────
+
+async function ppGeocodeAddress(query) {
+  if (!query) return null;
+  // Zkus Mapy.cz pokud máme klíč, jinak Nominatim (OSM, bez klíče)
+  if (_mapyCzKey) {
+    try {
+      const url = 'https://api.mapy.cz/v1/geocode?query=' + encodeURIComponent(query)
+        + '&apikey=' + encodeURIComponent(_mapyCzKey) + '&lang=cs&limit=1';
+      const r = await fetch(url);
+      const d = await r.json();
+      if (d.items && d.items.length > 0) {
+        const p = d.items[0].position;
+        return { lat: p.lat, lng: p.lon };
+      }
+    } catch(e) {}
+  }
+  // Fallback: Nominatim (OSM)
+  try {
+    const url = 'https://nominatim.openstreetmap.org/search?q=' + encodeURIComponent(query)
+      + '&format=json&limit=1&accept-language=cs';
+    const r = await fetch(url, { headers: { 'User-Agent': 'HMG-app/1.0' } });
+    const d = await r.json();
+    if (d && d.length > 0) {
+      return { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) };
+    }
+  } catch(e) {}
+  return null;
+}
+
+// Inicializuje nebo aktualizuje Leaflet mapu
+function ppInitOrUpdateLeafletMap(lat, lng) {
+  const mapDiv = document.getElementById('ppLeafletMap');
+  if (!mapDiv || typeof L === 'undefined') return;
+
+  if (!_ppLeafletMap) {
+    // První inicializace
+    _ppLeafletMap = L.map('ppLeafletMap', { zoomControl: true }).setView([lat, lng], 14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19
+    }).addTo(_ppLeafletMap);
+
+    // Přetahovatelný marker
+    _ppLeafletMarker = L.marker([lat, lng], { draggable: true }).addTo(_ppLeafletMap);
+
+    // Po přetažení markeru → aktualizuj souřadnice
+    _ppLeafletMarker.on('dragend', function() {
+      const pos = _ppLeafletMarker.getLatLng();
+      _mapTempCoords = { lat: pos.lat, lng: pos.lng };
+      ppUpdateMapInputs();
+    });
+
+    // Klik do mapy → přesune praporek na nové místo
+    _ppLeafletMap.on('click', function(e) {
+      _ppLeafletMarker.setLatLng(e.latlng);
+      _mapTempCoords = { lat: e.latlng.lat, lng: e.latlng.lng };
+      ppUpdateMapInputs();
+    });
+  } else {
+    // Aktualizace existující mapy
+    _ppLeafletMap.setView([lat, lng], 14);
+    _ppLeafletMarker.setLatLng([lat, lng]);
+  }
+
+  // Leaflet potřebuje přepočítat velikost po zobrazení
+  setTimeout(() => { if (_ppLeafletMap) _ppLeafletMap.invalidateSize(); }, 120);
+}
+
+function ppShowMapMsg(text, isError) {
+  const el = document.getElementById('ppMapStatusText');
+  if (!el) return;
+  if (text) {
+    el.textContent = text;
+    el.style.color = isError ? '#dc2626' : '#6b7280';
+  } else {
+    el.textContent = 'Klikněte do mapy nebo přetáhněte 📍 praporek pro upřesnění polohy.';
+    el.style.color = '#6b7280';
+  }
+}
+
+function ppShowMapImage(lat, lng) {
+  _mapTempCoords = { lat, lng };
+  ppInitOrUpdateLeafletMap(lat, lng);
+  ppUpdateMapInputs();
+  ppShowMapMsg('', false);
+}
+
+function ppShowMapPlaceholder() {
+  // Zobraz mapu nad ČR jako výchozí pohled (bez specifického markeru)
+  const lat = 49.8, lng = 15.5;
+  if (!_ppLeafletMap) {
+    ppInitOrUpdateLeafletMap(lat, lng);
+  } else {
+    setTimeout(() => { if (_ppLeafletMap) _ppLeafletMap.invalidateSize(); }, 120);
+  }
+  ppShowMapMsg('Zadejte lokalitu a klikněte Hledat, nebo klikněte do mapy.', false);
+}
+
+function ppUpdateMapInputs() {
+  const coordsInput = document.getElementById('ppMapCoords');
+  if (coordsInput && _mapTempCoords) {
+    coordsInput.value = _mapTempCoords.lat.toFixed(6) + ', ' + _mapTempCoords.lng.toFixed(6);
+  }
+}
+
+async function ppMapGeoSearch() {
+  const searchInput = document.getElementById('ppMapSearch');
+  const query = searchInput ? searchInput.value.trim() : '';
+  if (!query) return;
+  ppShowMapMsg('⏳ Hledám…', false);
+  const coords = await ppGeocodeAddress(query);
+  if (coords) {
+    ppShowMapImage(coords.lat, coords.lng);
+  } else {
+    ppShowMapMsg('Lokalita nenalezena. Zkuste jiný název nebo zadejte souřadnice ručně.', true);
+  }
+}
+
+function ppApplyManualCoords() {
+  const coordsInput = document.getElementById('ppMapCoords');
+  if (!coordsInput) return;
+  const val = coordsInput.value.trim();
+  const parts = val.split(',').map(s => parseFloat(s.trim()));
+  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) &&
+      parts[0] >= -90 && parts[0] <= 90 && parts[1] >= -180 && parts[1] <= 180) {
+    ppShowMapImage(parts[0], parts[1]);
+  } else {
+    ppShowMapMsg('Neplatný formát. Použijte "lat, lng" (např. 49.195, 16.608)', true);
+  }
+}
+
+// Live update: přesouvá marker při dopsání validních souřadnic (bez nutnosti kliknout ↺)
+function ppApplyManualCoordsLive() {
+  const coordsInput = document.getElementById('ppMapCoords');
+  if (!coordsInput) return;
+  const val = coordsInput.value.trim();
+  const parts = val.split(',').map(s => parseFloat(s.trim()));
+  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) &&
+      parts[0] >= -90 && parts[0] <= 90 && parts[1] >= -180 && parts[1] <= 180) {
+    _mapTempCoords = { lat: parts[0], lng: parts[1] };
+    if (_ppLeafletMap && _ppLeafletMarker) {
+      _ppLeafletMarker.setLatLng([parts[0], parts[1]]);
+      _ppLeafletMap.setView([parts[0], parts[1]], _ppLeafletMap.getZoom());
+    }
+    ppShowMapMsg('', false);
+  }
+}
+
+// Uložit souřadnice z mapy do hlavního popupu
+// Čte aktuální hodnotu VŽDY z input pole (jako admin v index.html), ne jen z _mapTempCoords
+function ppSaveGpsCoords() {
+  // 1) Přečti aktuální pozici z Leaflet markeru (nejpřesnější)
+  if (_ppLeafletMarker) {
+    const pos = _ppLeafletMarker.getLatLng();
+    if (pos && !isNaN(pos.lat) && !isNaN(pos.lng)) {
+      _mapTempCoords = { lat: pos.lat, lng: pos.lng };
+    }
+  }
+  // 2) Fallback: přečti z input pole (uživatel mohl ručně upravit)
+  if (!_mapTempCoords) {
+    const coordsInput = document.getElementById('ppMapCoords');
+    if (coordsInput && coordsInput.value.trim()) {
+      const parts = coordsInput.value.trim().split(',').map(s => parseFloat(s.trim()));
+      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        _mapTempCoords = { lat: parts[0], lng: parts[1] };
+      }
+    }
+  }
+  if (!_mapTempCoords) {
+    ppShowMapMsg('Nejprve vyberte polohu v mapě nebo zadejte souřadnice.', true);
+    return;
+  }
+  // 3) Ulož do globálních proměnných
+  _ppLat = _mapTempCoords.lat;
+  _ppLng = _mapTempCoords.lng;
+  // 4) Aktualizuj zobrazovací pole v hlavním popupu
+  const coordsDisp = document.getElementById('ppGlobalCoordsDisp');
+  if (coordsDisp) coordsDisp.value = _ppLat.toFixed(6) + ', ' + _ppLng.toFixed(6);
+  const gpsStatus = document.getElementById('ppGpsStatus');
+  if (gpsStatus) { gpsStatus.textContent = '✓ Nastaveno'; gpsStatus.style.color = '#15803d'; }
+  closeMapPopup();
+  updateOrderSum();
+}
+
+function closeMapPopup() {
+  const overlay = document.getElementById('ppMapOverlay');
+  if (overlay) overlay.style.display = 'none';
+  // Leaflet mapu NEdestruujeme – jen skryjeme overlay, map si pamatuje stav
+}
+
+// Otevřít mapový popup pro sdílenou lokalitu objednávky
+function openMapForLokalita() {
+  _mapTempCoords = (_ppLat !== null && _ppLng !== null) ? { lat: _ppLat, lng: _ppLng } : null;
+  const query = (document.getElementById('ppGlobalLokalita')?.value || '').trim();
+  const searchInput = document.getElementById('ppMapSearch');
+  if (searchInput) searchInput.value = query;
+  const overlay = document.getElementById('ppMapOverlay');
+  if (overlay) overlay.style.display = 'flex';
+
+  if (_mapTempCoords) {
+    ppShowMapImage(_mapTempCoords.lat, _mapTempCoords.lng);
+  } else if (query) {
+    ppShowMapPlaceholder(); // Zobraz mapu nejdřív, pak geokóduj
+    ppMapGeoSearch();
+  } else {
+    ppShowMapPlaceholder();
+  }
+}
+
+// Ruční zadání souřadnic do zobrazovacího pole hlavního popupu
+function onGlobalCoordsInput() {
+  const val = (document.getElementById('ppGlobalCoordsDisp')?.value || '').trim();
+  const parts = val.split(',').map(s => parseFloat(s.trim()));
+  const gpsStatus = document.getElementById('ppGpsStatus');
+  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) &&
+      parts[0] >= -90 && parts[0] <= 90 && parts[1] >= -180 && parts[1] <= 180) {
+    _ppLat = parts[0];
+    _ppLng = parts[1];
+    if (gpsStatus) { gpsStatus.textContent = '✓ ' + parts[0].toFixed(6) + ', ' + parts[1].toFixed(6); gpsStatus.style.color = '#15803d'; }
+  } else {
+    _ppLat = null;
+    _ppLng = null;
+    if (gpsStatus) { gpsStatus.textContent = val ? '✗ Neplatný formát' : ''; gpsStatus.style.color = '#dc2626'; }
+  }
+  updateOrderSum();
+}
+
+// ── POPUP — NOVÁ OBJEDNÁVKA ───────────────────────────────────────────────────
+
+function openOrderPopup() {
+  if (!_ordersEnabled) return; // pojistka: systém vypnut, žádná akce i kdyby se kliklo při načítání
+  if (_meRole !== 'hmg_share') return;
+  if (!_meFirma) { alert('Váš účet nemá přiřazenu firmu. Kontaktujte admina.'); return; }
+
+  // Reset state
+  _ppLat = null;
+  _ppLng = null;
+  _orderRowCount = 0;
+  _mapTempCoords = null;
+  _dayCapCache = {}; // Vymaž cache kapacity — načteme aktuální data
+
+  // Reset formuláře
+  const lokEl = document.getElementById('ppGlobalLokalita');
+  if (lokEl) lokEl.value = '';
+  const coordsEl = document.getElementById('ppGlobalCoordsDisp');
+  if (coordsEl) coordsEl.value = '';
+  const gpsStatus = document.getElementById('ppGpsStatus');
+  if (gpsStatus) { gpsStatus.textContent = ''; }
+  document.getElementById('ppOrderRows').innerHTML = '';
+
+  // User label
+  document.getElementById('ppUserLabel').innerHTML =
+    esc(_meUsername) + '<br><span style="color:#818cf8;font-size:11px">' + esc(_meFirma) + '</span>';
+
+  // Zavři případně otevřenou mapu
+  const mapOv = document.getElementById('ppMapOverlay');
+  if (mapOv) mapOv.style.display = 'none';
+
+  // Přidej první řádek
+  addOrderRow();
+
+  // Reset varování
+  const warn = document.getElementById('ppWarning');
+  warn.style.display = 'none';
+  const btn = document.getElementById('ppSubmitBtn');
+  btn.disabled = false;
+  btn.style.opacity = '1';
+  btn.textContent = 'Odeslat požadavek';
+
+  updateOrderSum();
+
+  document.getElementById('orderPopupOverlay').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeOrderPopup() {
+  document.getElementById('orderPopupOverlay').style.display = 'none';
+  document.body.style.overflow = '';
+  const mapOv = document.getElementById('ppMapOverlay');
+  if (mapOv) mapOv.style.display = 'none';
+}
+
+function addOrderRow() {
+  const idx = _orderRowCount++;
+  const today = todayIso();
+  const smesOpts = _receptury.length
+    ? _receptury.map(r => '<option value="' + esc(r.smes) + '" data-itt="' + esc(r.zt || '') + '">' +
+        esc((r.cislo ? r.cislo + ' — ' : '') + r.smes) + '</option>').join('')
+    : '';
+
+  // Wrapper — ppRow<idx> — content: grid div + capacity breakdown div
+  const wrap = document.createElement('div');
+  wrap.id = 'ppRow' + idx;
+  wrap.style.cssText = 'margin-bottom:8px';
+
+  wrap.innerHTML =
+    '<div style="display:grid;grid-template-columns:122px 1.6fr 82px 68px 1fr 32px;gap:5px;align-items:center;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;background:#fafafa">' +
+      '<input id="ppDate' + idx + '" type="date" min="' + today + '" ' +
+        'style="height:34px;border:1px solid #d1d5db;border-radius:6px;padding:0 6px;font-size:12px;font-family:Inter,sans-serif;width:100%;min-width:0">' +
+      '<select id="ppSmes' + idx + '" ' +
+        'style="height:34px;border:1px solid #d1d5db;border-radius:6px;padding:0 6px;font-size:12px;font-family:Inter,sans-serif;width:100%;min-width:0">' +
+        '<option value="">— směs —</option>' + smesOpts +
+      '</select>' +
+      '<input id="ppItt' + idx + '" type="text" placeholder="ITT" readonly ' +
+        'style="height:34px;border:1px solid #e5e7eb;border-radius:6px;padding:0 6px;font-size:11px;background:#f9fafb;color:#6b7280;font-family:Inter,sans-serif;width:100%;min-width:0">' +
+      '<input id="ppTuny' + idx + '" type="number" min="1" max="99999" placeholder="t" ' +
+        'style="height:34px;border:1px solid #d1d5db;border-radius:6px;padding:0 6px;font-size:13px;font-weight:600;font-family:Inter,sans-serif;width:100%;text-align:center">' +
+      '<input id="ppKom' + idx + '" type="text" placeholder="komentář…" ' +
+        'style="height:34px;border:1px solid #d1d5db;border-radius:6px;padding:0 8px;font-size:12px;font-family:Inter,sans-serif;width:100%;min-width:0">' +
+      '<button id="ppDel' + idx + '" title="Odebrat" ' +
+        'style="height:32px;width:32px;background:none;border:1px solid #fca5a5;border-radius:6px;cursor:pointer;color:#dc2626;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0">🗑</button>' +
+    '</div>' +
+    // Breakdown obsazenosti dne — zobrazí se jakmile je vybrán den
+    '<div id="ppRowCap' + idx + '" style="display:none;margin-top:2px;padding:5px 10px;font-size:11px;line-height:1.5;border-radius:6px"></div>';
+
+  document.getElementById('ppOrderRows').appendChild(wrap);
+  // CSP: inline on* generovaného řádku → addEventListener (prvky právě vytvořeny; idx v closure)
+  document.getElementById('ppDate' + idx).addEventListener('input', updateOrderSum);
+  document.getElementById('ppSmes' + idx).addEventListener('change', function () { onSmesChange(idx); });
+  document.getElementById('ppTuny' + idx).addEventListener('input', updateOrderSum);
+  document.getElementById('ppDel' + idx).addEventListener('click', function () { removeOrderRow(idx); });
+}
+
+function removeOrderRow(idx) {
+  const el = document.getElementById('ppRow' + idx);
+  if (el) el.remove();
+  updateOrderSum();
+}
+
+function onSmesChange(idx) {
+  const sel = document.getElementById('ppSmes' + idx);
+  if (!sel) return;
+  const opt = sel.options[sel.selectedIndex];
+  const ittInput = document.getElementById('ppItt' + idx);
+  if (ittInput) ittInput.value = opt ? (opt.getAttribute('data-itt') || '') : '';
+  updateOrderSum();
+}
+
+// Přeloží status objednávky do češtiny pro breakdown
+function _statusLabel(s) {
+  return s === 'pending' ? 'čeká' : s === 'pre_approved' ? 'přesch.' : s === 'pre_rejected' ? 'přezam.' : 'schváleno';
+}
+
+// Aktualizuje breakdown div pro jeden řádek (ppRowCap<idx>)
+function _renderCapDiv(idx, datum, cap, dayTuny) {
+  const capDiv = document.getElementById('ppRowCap' + idx);
+  if (!capDiv) return;
+  if (!datum || !cap) { capDiv.style.display = 'none'; return; }
+
+  const myTuny = dayTuny[datum] || 0;
+  const existingTotal = cap.orders.reduce((s, o) => s + (o.tuny || 0), 0);
+  const total = cap.harmonogram + existingTotal + myTuny;
+  const maxD = cap.maxDaily || _maxDaily;
+  const minD = cap.minDaily || _minDaily;
+
+  // Datum popisek
+  const d = new Date(datum + 'T00:00:00Z');
+  const dStr = d.getUTCDate() + '.' + (d.getUTCMonth() + 1) + '.';
+
+  // Rozpad: harmonogram + cizí firmy + moje
+  const parts = [];
+  if (cap.harmonogram > 0) parts.push('harmonogram <b>' + cap.harmonogram + ' t</b>');
+  cap.orders.forEach(o => {
+    parts.push(esc(o.firma) + ' <b>' + o.tuny + ' t</b> (' + _statusLabel(o.status) + ')');
+  });
+  if (myTuny > 0) parts.push('tvých <b>' + myTuny + ' t</b>');
+
+  const breakdownHtml = dStr + ': ' + (parts.length ? parts.join(' · ') : 'zatím prázdný')
+    + ' = <b>' + total + ' t</b> / max ' + maxD + ' t';
+
+  let bg, color, icon;
+  if (maxD && total > maxD) {
+    bg = '#fee2e2'; color = '#991b1b';
+    const over = total - maxD;
+    capDiv.innerHTML = '<span style="font-weight:700">⛔ PŘEKROČENO o ' + over + ' t</span> — ' + breakdownHtml;
+  } else if (minD && total > 0 && total < minD) {
+    bg = '#fefce8'; color = '#92400e';
+    capDiv.innerHTML = '<span style="font-weight:600">⚠ Pod minimem</span> — ' + breakdownHtml;
+  } else {
+    bg = '#f0fdf4'; color = '#166534';
+    capDiv.innerHTML = '✓ ' + breakdownHtml;
+  }
+  capDiv.style.cssText = 'display:block;margin-top:2px;padding:5px 10px;font-size:11px;line-height:1.5;border-radius:6px;background:' + bg + ';color:' + color;
+}
+
+async function updateOrderSum() {
+  const domRows = document.querySelectorAll('#ppOrderRows > div');
+  let totalTuny = 0;
+  const dayTuny = {};   // datum → tuny z AKTUÁLNÍ objednávky (součet přes všechny řádky)
+  const rowMeta = [];   // {idx, datum, smes, tuny, valid}
+
+  domRows.forEach(row => {
+    const idx = row.id.replace('ppRow', '');
+    const datum = document.getElementById('ppDate' + idx)?.value || '';
+    const smes  = document.getElementById('ppSmes' + idx)?.value || '';
+    const tuny  = parseInt(document.getElementById('ppTuny' + idx)?.value || '0') || 0;
+    const valid = !!(datum && smes && tuny > 0);
+    if (valid) {
+      dayTuny[datum] = (dayTuny[datum] || 0) + tuny;
+      totalTuny += tuny;
+    }
+    rowMeta.push({ idx, datum, smes, tuny, valid });
+  });
+
+  const dayCount = Object.keys(dayTuny).length;
+  const summaryEl = document.getElementById('ppTotalSummary');
+  if (summaryEl) summaryEl.textContent = 'Celkem objednávka: ' + totalTuny + ' t ve ' + dayCount + ' dnech';
+
+  // Dny které potřebujeme načíst z /api/day-capacity (zatím nejsou v cache)
+  const missingDates = Object.keys(dayTuny).filter(date => !_dayCapCache[date]);
+  if (missingDates.length > 0) {
+    await Promise.all(missingDates.map(async date => {
+      try {
+        const r = await fetch('/api/day-capacity?date=' + date);
+        if (r.ok) _dayCapCache[date] = await r.json();
+      } catch(e) { /* chyba sítě — tiše přeskočit */ }
+    }));
+  }
+
+  // Aktualizuj breakdown div pro každý řádek
+  rowMeta.forEach(({ idx, datum, valid }) => {
+    const capDiv = document.getElementById('ppRowCap' + idx);
+    if (!capDiv) return;
+    if (!valid || !datum) {
+      capDiv.style.display = 'none';
+      return;
+    }
+    const cap = _dayCapCache[datum];
+    if (!cap) {
+      // Ještě se načítá (nebo chyba sítě) — ukaž spinner
+      capDiv.style.cssText = 'display:block;margin-top:2px;padding:5px 10px;font-size:11px;border-radius:6px;background:#f1f5f9;color:#6b7280';
+      capDiv.textContent = '⏳ Načítám kapacitu pro ' + datum + '…';
+      return;
+    }
+    _renderCapDiv(idx, datum, cap, dayTuny);
+  });
+
+  // ── Kapacitní kontrola pro submit button ──
+  const capErrors = [];
+  const capWarns  = [];
+
+  for (const [datum, newTuny] of Object.entries(dayTuny)) {
+    const cap   = _dayCapCache[datum];
+    const wkTuny    = cap ? cap.harmonogram : daySum(_entries, datum);
+    const existTuny = cap
+      ? cap.orders.reduce((s, o) => s + (o.tuny || 0), 0)
+      : (_orders || [])
+          .filter(o => (o.datum || '').slice(0, 10) === datum &&
+                       ['pending','pre_approved','pre_rejected','approved'].includes(o.status))
+          .reduce((s, o) => s + (o.tuny || 0), 0);
+    const total  = wkTuny + existTuny + newTuny;
+    const maxD   = (cap && cap.maxDaily) || _maxDaily;
+    const minD   = (cap && cap.minDaily) || _minDaily;
+    const d      = new Date(datum + 'T00:00:00Z');
+    const dStr   = d.getUTCDate() + '.' + (d.getUTCMonth() + 1) + '.';
+    if (maxD && total > maxD) {
+      capErrors.push(dStr + ': kapacita překročena (' + total + ' t &gt; max ' + maxD + ' t)');
+    } else if (minD && total > 0 && total < minD) {
+      capWarns.push(dStr + ': pod minimem (' + total + ' t &lt; min ' + minD + ' t)');
+    }
+  }
+
+  const warn = document.getElementById('ppWarning');
+  const btn  = document.getElementById('ppSubmitBtn');
+
+  if (capErrors.length > 0) {
+    warn.innerHTML = '⚠ ' + capErrors.join('<br>');
+    warn.style.display   = 'block';
+    warn.style.background = '#fee2e2';
+    warn.style.color      = '#991b1b';
+    btn.disabled      = true;
+    btn.style.opacity = '0.4';
+  } else if (capWarns.length > 0) {
+    warn.innerHTML = 'ℹ ' + capWarns.join('<br>');
+    warn.style.display   = 'block';
+    warn.style.background = '#fefce8';
+    warn.style.color      = '#92400e';
+    btn.disabled      = false;
+    btn.style.opacity = '1';
+  } else {
+    warn.style.display = 'none';
+    btn.disabled       = false;
+    btn.style.opacity  = '1';
+  }
+}
+
+function ppShowWarnError(msg) {
+  const warn = document.getElementById('ppWarning');
+  warn.innerHTML = esc(msg);
+  warn.style.display = 'block';
+  warn.style.background = '#fee2e2';
+  warn.style.color = '#991b1b';
+}
+
+async function submitOrder() {
+  // Re-sync: pokud _ppLat/_ppLng nejsou nastaveny, zkus znovu načíst z zobrazovacího pole
+  // (obrana proti race condition nebo programovému nastavení hodnoty bez oninput)
+  if (_ppLat === null || _ppLng === null) {
+    const dispVal = (document.getElementById('ppGlobalCoordsDisp')?.value || '').trim();
+    if (dispVal) onGlobalCoordsInput();
+  }
+
+  const lokalitaName = (document.getElementById('ppGlobalLokalita')?.value || '').trim();
+
+  if (!lokalitaName) {
+    ppShowWarnError('Vyplňte název lokality.');
+    return;
+  }
+  if (_ppLat === null || _ppLng === null || isNaN(_ppLat) || isNaN(_ppLng)) {
+    ppShowWarnError('Nastavte GPS souřadnice lokality (tlačítko 🗺 Mapa nebo ruční zadání do pole Souřadnice, např. 49.195061, 16.606836).');
+    return;
+  }
+
+  const domRows = document.querySelectorAll('#ppOrderRows > div');
+  const items = [];
+  let hasPartial = false;
+
+  domRows.forEach(row => {
+    const idx = row.id.replace('ppRow', '');
+    const datum = document.getElementById('ppDate' + idx)?.value || '';
+    const smes = document.getElementById('ppSmes' + idx)?.value || '';
+    const itt = document.getElementById('ppItt' + idx)?.value || '';
+    const tuny = parseInt(document.getElementById('ppTuny' + idx)?.value || '0') || 0;
+    const kom = document.getElementById('ppKom' + idx)?.value || '';
+    // Zcela prázdný řádek přeskočíme
+    if (!datum && !smes && !tuny) return;
+    // Neúplný řádek = chyba
+    if (!datum || !smes || tuny <= 0) { hasPartial = true; return; }
+    items.push({ datum, smes, itt, tuny, komentar: kom || undefined });
+  });
+
+  if (hasPartial) {
+    ppShowWarnError('Každý řádek musí mít datum, směs a tuny (> 0). Odeberte nebo doplňte neúplné řádky.');
+    return;
+  }
+  if (items.length === 0) {
+    ppShowWarnError('Přidejte alespoň jeden kompletní řádek (datum, směs, tuny).');
+    return;
+  }
+
+  const btn = document.getElementById('ppSubmitBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Odesílám…';
+
+  try {
+    const r = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lokalita: lokalitaName, lat: _ppLat, lng: _ppLng, items })
+    });
+    const data = await r.json();
+    if (data.ok) {
+      // Zobraz potvrzovací modal místo přímého zavření
+      showOrderConfirmModal(lokalitaName, items);
+    } else {
+      ppShowWarnError(data.error || 'Chyba při odesílání objednávky.');
+      btn.disabled = false;
+      btn.textContent = 'Odeslat požadavek';
+    }
+  } catch (e) {
+    ppShowWarnError('Chyba spojení: ' + esc(e.message));
+    btn.disabled = false;
+    btn.textContent = 'Odeslat požadavek';
+  }
+}
+
+// ── POTVRZOVACÍ MODAL PO ODESLÁNÍ OBJEDNÁVKY ──
+function showOrderConfirmModal(lokalita, items) {
+  // Agregace tun podle směsi přes všechny dny
+  const smesMap = {};
+  const days = new Set();
+  items.forEach(item => {
+    smesMap[item.smes] = (smesMap[item.smes] || 0) + item.tuny;
+    days.add(item.datum);
+  });
+
+  const sortedDays = [...days].sort();
+  const totalTuny = Object.values(smesMap).reduce((s, t) => s + t, 0);
+
+  // Formát dnů: "29.5., 30.5., 31.5."
+  const daysText = sortedDays.map(d => {
+    const parts = d.split('-');
+    return parseInt(parts[2]) + '.' + parseInt(parts[1]) + '.';
+  }).join(', ');
+
+  // HTML pro směsi
+  const smesHtml = Object.entries(smesMap)
+    .map(([smes, tuny]) =>
+      '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #f3f4f6">' +
+      '<span style="color:#374151">' + esc(smes) + '</span>' +
+      '<strong style="color:#111;white-space:nowrap;margin-left:12px">' + tuny + ' t</strong></div>')
+    .join('');
+
+  const modal = document.getElementById('orderConfirmModal');
+  if (!modal) return;
+  document.getElementById('ocmLokalita').textContent = lokalita;
+  document.getElementById('ocmDays').textContent = daysText;
+  document.getElementById('ocmSmesi').innerHTML = smesHtml;
+  document.getElementById('ocmTotal').textContent = totalTuny + ' t';
+  modal.style.display = 'flex';
+}
+
+function closeOrderConfirmModal() {
+  const modal = document.getElementById('orderConfirmModal');
+  if (modal) modal.style.display = 'none';
+  closeOrderPopup();
+  loadOrders().then(() => renderMonth());
+}
+
+// ── INICIALIZACE ──
+setInterval(() => { if (_accessOk) loadOrders().then(() => renderMonth()); }, 3 * 60 * 1000);
+setMonthMin();
+monthPick.value = localStorage.getItem('hmg_view_month') || defaultMonth();
+checkAccess().then(ok => {
+  if (ok) {
+    Promise.all([loadSettings(), loadReceptury(), loadMapyCzKey()]).then(() => {
+      // Per-user gating: hmg_share bez orders_allowed vidí aplikaci jako při vypnutém systému.
+      // Globální orders_enabled=false má vždy přednost (už je v _ordersEnabled zohledněno).
+      if (_meRole === 'hmg_share' && !_meOrdersAllowed) _ordersEnabled = false;
+      // Tlačítko "Nová objednávka": zobrazit JEDINĚ pokud orders_enabled=true AND hmg_share AND má firmu
+      // Výchozí stav je display:none (v HTML) – nikdy "zobrazit a pak schovat", vždy "až po ověření"
+      const btnNew = document.getElementById('btnNewOrder');
+      if (btnNew && _ordersEnabled && _meRole === 'hmg_share' && _meFirma) {
+        btnNew.style.display = 'inline-block';
+      }
+      loadOrders().then(() => renderMonth());
+    });
+  }
+});
+async function doLogout(){await fetch('/api/logout',{method:'POST'}).catch(()=>{});window.location.href='/login';}
+
+// ═══ BLOK 2: verze v patičce ═══
+fetch('/api/version').then(r=>r.json()).then(function(d){var v=document.getElementById('footerVersion');if(v&&d.version)v.textContent='TAXIS v'+d.version+' · 2026';}).catch(function(){});
+
+// ═══ BLOK 3: auto-otevření objednávky přes #new ═══
+if(window.location.hash==='#new'){
+  history.replaceState(null,'',window.location.pathname);
+  // Počkej na plnou inicializaci (renderMonth + data load)
+  const tryOpen = (attempts) => {
+    if (typeof openOrderPopup === 'function' && document.getElementById('orderPopupOverlay')) {
+      openOrderPopup();
+    } else if (attempts > 0) {
+      setTimeout(() => tryOpen(attempts - 1), 300);
+    }
+  };
+  setTimeout(() => tryOpen(10), 500);
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NAPOJENÍ STATICKÝCH on* ATRIBUTŮ → addEventListener (P2 #5 CSP).
+// Skript je na konci body → všechny prvky existují; funkce jsou hoisted.
+// Dynamické on* (řádky objednávky z addOrderRow) jsou wired při vytvoření (viz addOrderRow).
+// ═══════════════════════════════════════════════════════════════════════════
+(function wireStaticHandlers(){
+  const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
+  // Toolbar
+  on('exportMonthBtn', 'click', exportMonth);
+  on('btnNewOrder',    'click', openOrderPopup);
+  on('btnPrev',        'click', () => shiftMonth(-1));
+  on('thisMonthBtn',   'click', thisMonth);
+  on('btnNext',        'click', () => shiftMonth(1));
+  on('monthCalBtn',    'click', openMonthPicker);
+  on('monthPick',      'change', onMonthChange);
+  // Order popup
+  on('ppCloseX',          'click', closeOrderPopup);
+  on('ppCancelBtn',       'click', closeOrderPopup);
+  on('ppSubmitBtn',       'click', submitOrder);
+  on('ppAddRowBtn',       'click', addOrderRow);
+  on('ppMapOpenBtn',      'click', openMapForLokalita);
+  on('ppGlobalLokalita',  'input', updateOrderSum);
+  on('ppGlobalCoordsDisp','input', onGlobalCoordsInput);
+  // Map popup
+  on('ppMapCloseX',   'click', closeMapPopup);
+  on('ppMapCancelBtn','click', closeMapPopup);
+  on('ppMapSearchBtn','click', ppMapGeoSearch);
+  on('ppMapApplyBtn', 'click', ppApplyManualCoords);
+  on('ppMapSaveBtn',  'click', ppSaveGpsCoords);
+  on('ppMapSearch',   'keydown', (e) => { if (e.key === 'Enter') ppMapGeoSearch(); });
+  on('ppMapCoords',   'keydown', (e) => { if (e.key === 'Enter') ppApplyManualCoords(); });
+  on('ppMapCoords',   'input',  ppApplyManualCoordsLive);
+  // Confirm modal + logout
+  on('ocmCloseX',   'click', closeOrderConfirmModal);
+  on('ocmCloseBtn', 'click', closeOrderConfirmModal);
+  on('logoutBtn',   'click', doLogout);
+})();
