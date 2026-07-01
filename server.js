@@ -23,7 +23,7 @@ const { migrateAudit, logAudit, listAudit } = require('./lib/audit');
 const { normalizeRowsByRecipe, buildRecipeMap, resolveCisloItt } = require('./lib/recipe-normalize');
 
 // ── Verze aplikace (jeden zdroj pravdy — zvednout ručně při každém vydání) ──
-const APP_VERSION = '4.93';
+const APP_VERSION = '4.94';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -2898,6 +2898,13 @@ app.post('/api/orders', requireAuth, requireOrdersEnabled, async (req, res) => {
       return res.status(409).json({ error: errors.join('; '), warnings });
     }
 
+    // B2 (svaté pravidlo): itt objednávky srovnat s recepturou TÉ obalovny dle názvu smes už při
+    // VZNIKU (zápisová pojistka). orders tabulka nemá `cislo` → normalizuje se jen itt.
+    // recipeMap scoped na tutéž obalovnu jako zápis objednávky (multi-tenant). Osiřelé → itt z klienta.
+    const inpRes = await pool.query('SELECT rows_json FROM inputs WHERE obalovna_id=$1', [obalovnaId]);
+    const recipeRows = inpRes.rows[0] ? JSON.parse(inpRes.rows[0].rows_json) : [];
+    const { map: recipeMap } = buildRecipeMap(recipeRows);
+
     // Uložení celé skupiny v transakci
     const groupId = crypto.randomUUID();
     const lokSafe = sanitizeStr(lokalita.trim(), 200);
@@ -2905,6 +2912,9 @@ app.post('/api/orders', requireAuth, requireOrdersEnabled, async (req, res) => {
     try {
       await client.query('BEGIN');
       for (const item of items) {
+        // B2: itt dle receptury (smes je klíč). Osiřelá smes (mimo receptury) → itt z klienta (nehádat).
+        const _ittRes = resolveCisloItt(item.smes, '', item.itt, recipeMap);
+        const _ittNorm = _ittRes.itt ? sanitizeStr(_ittRes.itt, 50) : '';
         await client.query(
           `INSERT INTO orders (order_group_id, user_id, firma, datum, smes, itt, tuny, komentar, lokalita, lat, lng, obalovna_id)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
@@ -2914,7 +2924,7 @@ app.post('/api/orders', requireAuth, requireOrdersEnabled, async (req, res) => {
             firma,
             item.datum,
             sanitizeStr(item.smes, 200),
-            item.itt ? sanitizeStr(item.itt, 50) : '',
+            _ittNorm,
             parseInt(item.tuny),
             item.komentar ? sanitizeStr(item.komentar, 500) : null,
             lokSafe,
