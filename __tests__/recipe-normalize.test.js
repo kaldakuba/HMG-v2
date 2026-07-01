@@ -1,7 +1,7 @@
 // Test sdíleného modulu lib/recipe-normalize.js (FÁZE 0).
 // Čisté funkce „směs → cislo/itt" (vstupy = zdroj pravdy). Nikde se zatím nevolají.
 
-const { normalizeRowsByRecipe, resolveCisloItt, buildRecipeMap }
+const { normalizeRowsByRecipe, resolveCisloItt, buildRecipeMap, buildRecipeIndex, findRecipe }
   = require('../lib/recipe-normalize');
 
 // Mapa receptur jedné obalovny (jako z buildRecipeMap).
@@ -164,5 +164,76 @@ describe('buildRecipeMap', () => {
     expect(zmeneno).toBe(1);
     expect(rows[0].cislo).toBe('6');
     expect(rows[0].itt).toBe('6-2025-Ho');
+  });
+});
+
+// dropdown krok 1 — výběr směsi podle kteréhokoli ze tří identifikátorů. Nikde se zatím nevolá.
+describe('buildRecipeIndex', () => {
+  const INPUTS = [
+    { cislo: '6',   smes: 'ACP 22S 50/70',    zt: '6-2025-Ho' },
+    { cislo: '18',  smes: 'ACL 16S 25/55-60', zt: '18-2025-Ho' },
+    { cislo: 'LAK', smes: 'Lakovka',          zt: 'LAK' },
+  ];
+
+  test('sestaví tři mapy bySmes / byCislo / byZt (hodnota = celá receptura)', () => {
+    const idx = buildRecipeIndex(INPUTS);
+    expect(Object.keys(idx.bySmes)).toHaveLength(3);
+    expect(Object.keys(idx.byCislo)).toHaveLength(3);
+    expect(Object.keys(idx.byZt)).toHaveLength(3);
+    expect(idx.bySmes['ACP 22S 50/70']).toEqual({ smes: 'ACP 22S 50/70', cislo: '6', zt: '6-2025-Ho' });
+    expect(idx.byCislo['6']).toEqual({ smes: 'ACP 22S 50/70', cislo: '6', zt: '6-2025-Ho' });
+    expect(idx.byZt['18-2025-Ho']).toEqual({ smes: 'ACL 16S 25/55-60', cislo: '18', zt: '18-2025-Ho' });
+    expect(idx.duplicitni).toEqual({ smes: [], cislo: [], zt: [] });
+  });
+
+  test('prázdné klíče se přeskočí; prázdný vstup → prázdné mapy', () => {
+    const idx = buildRecipeIndex([{ cislo: '', smes: '', zt: '' }, { cislo: '9', smes: 'X', zt: '' }]);
+    expect(Object.keys(idx.bySmes)).toEqual(['X']);
+    expect(Object.keys(idx.byCislo)).toEqual(['9']);
+    expect(Object.keys(idx.byZt)).toEqual([]);       // prázdné zt přeskočeno
+    const empty = buildRecipeIndex([]);
+    expect(empty.bySmes).toEqual({});
+    expect(empty.duplicitni).toEqual({ smes: [], cislo: [], zt: [] });
+  });
+
+  test('duplicita klíče → poslední vyhrává + varování v duplicitni', () => {
+    const idx = buildRecipeIndex([
+      { cislo: '6', smes: 'A', zt: 'z1' },
+      { cislo: '6', smes: 'B', zt: 'z2' },   // duplicitní cislo '6'
+    ]);
+    expect(idx.byCislo['6']).toEqual({ smes: 'B', cislo: '6', zt: 'z2' }); // poslední
+    expect(idx.duplicitni.cislo).toEqual(['6']);
+    expect(idx.duplicitni.smes).toEqual([]);
+  });
+});
+
+describe('findRecipe', () => {
+  const IDX = buildRecipeIndex([
+    { cislo: '6',  smes: 'ACP 22S 50/70',    zt: '6-2025-Ho' },
+    { cislo: '18', smes: 'ACL 16S 25/55-60', zt: '18-2025-Ho' },
+  ]);
+  const REC6 = { smes: 'ACP 22S 50/70', cislo: '6', zt: '6-2025-Ho' };
+
+  test('podle smes → doplní cislo/zt', () => {
+    expect(findRecipe(IDX, { key: 'smes', val: 'ACP 22S 50/70' })).toEqual(REC6);
+  });
+  test('podle cislo → doplní smes/zt', () => {
+    expect(findRecipe(IDX, { key: 'cislo', val: '6' })).toEqual(REC6);
+  });
+  test('podle zt (ITT) → doplní smes/cislo', () => {
+    expect(findRecipe(IDX, { key: 'zt', val: '6-2025-Ho' })).toEqual(REC6);
+  });
+  test('trim val', () => {
+    expect(findRecipe(IDX, { key: 'cislo', val: '  6 ' })).toEqual(REC6);
+  });
+  test('nenalezeno → null', () => {
+    expect(findRecipe(IDX, { key: 'cislo', val: '999' })).toBeNull();
+    expect(findRecipe(IDX, { key: 'smes', val: 'Neznámá' })).toBeNull();
+  });
+  test('prázdný val / neznámý key / chybějící vstup → null', () => {
+    expect(findRecipe(IDX, { key: 'smes', val: '' })).toBeNull();
+    expect(findRecipe(IDX, { key: 'itt', val: '6-2025-Ho' })).toBeNull(); // key musí být 'zt', ne 'itt'
+    expect(findRecipe(null, { key: 'smes', val: 'X' })).toBeNull();
+    expect(findRecipe(IDX, null)).toBeNull();
   });
 });
