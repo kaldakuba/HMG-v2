@@ -821,9 +821,22 @@ function removeOrderRow(idx) {
 function onSmesChange(idx) {
   const sel = document.getElementById('ppSmes' + idx);
   if (!sel) return;
-  const opt = sel.options[sel.selectedIndex];
   const ittInput = document.getElementById('ppItt' + idx);
-  if (ittInput) ittInput.value = opt ? (opt.getAttribute('data-itt') || '') : '';
+  if (ittInput) {
+    // Sjednocená logika (svaté pravidlo): itt z receptury přes sdílenou findRecipe
+    // (recipe-normalize.js). orders nemá pole cislo → doplňuje se jen itt (cislo dopočítá server, 7c).
+    // recipeIndex z _receptury TÉTO obalovny (session scope). /share fallback: bez receptur
+    // (_receptury prázdné / modul nenačten) → index null → přeskočí se na původní data-itt option
+    // (žádný pád; zadání funguje jako dnes; server orders.itt stejně normalizuje při vzniku).
+    const _index = (typeof buildRecipeIndex === 'function' && _receptury.length) ? buildRecipeIndex(_receptury) : null;
+    const rec = (_index && typeof findRecipe === 'function') ? findRecipe(_index, { key: 'smes', val: sel.value }) : null;
+    if (rec) {
+      ittInput.value = rec.zt || '';
+    } else {
+      const opt = sel.options[sel.selectedIndex];
+      ittInput.value = opt ? (opt.getAttribute('data-itt') || '') : '';
+    }
+  }
   updateOrderSum();
 }
 

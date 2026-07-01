@@ -277,3 +277,31 @@ describe('doplnění trojice přes findRecipe (jako updateMixSelect)', () => {
     expect(row).toEqual({ cislo: 'A', smes: 'B', itt: 'C' });
   });
 });
+
+// dropdown krok 3 — objednávka (onSmesChange): itt z receptury dle názvu; /share bez receptur → přeskočit.
+describe('objednávka: itt z receptury (jako onSmesChange)', () => {
+  const RECS = [
+    { cislo: '6',  smes: 'ACP 22S 50/70', zt: '6-2025-Ho' },
+    { cislo: '18', smes: 'ACL 16S 25/55-60', zt: '18-2025-Ho' },
+  ];
+  // Přesná logika z onSmesChange (jen itt — orders nemá cislo):
+  const resolveItt = (receptury, smes) => {
+    const index = (receptury && receptury.length) ? buildRecipeIndex(receptury) : null;
+    const rec = index ? findRecipe(index, { key: 'smes', val: smes }) : null;
+    return rec ? (rec.zt || '') : null;   // null = přeskočit (fallback na data-itt v UI)
+  };
+
+  test('výběr směsi → itt z receptury', () => {
+    expect(resolveItt(RECS, 'ACP 22S 50/70')).toBe('6-2025-Ho');
+    expect(resolveItt(RECS, 'ACL 16S 25/55-60')).toBe('18-2025-Ho');
+  });
+
+  test('neznámá směs → null (přeskočit, nehádat)', () => {
+    expect(resolveItt(RECS, 'Neznámá')).toBeNull();
+  });
+
+  test('/share bez receptur (prázdné _receptury) → null (přeskočit, žádný pád)', () => {
+    expect(resolveItt([], 'ACP 22S 50/70')).toBeNull();
+    expect(resolveItt(null, 'ACP 22S 50/70')).toBeNull();
+  });
+});
